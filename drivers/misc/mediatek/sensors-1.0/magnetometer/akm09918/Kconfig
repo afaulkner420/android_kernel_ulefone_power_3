@@ -1,0 +1,25 @@
+
+config MTK_AKM09918
+	bool "AKM09918 for MediaTek package"
+	default n
+	help
+	  It support different magnetometer sensor.
+	  If this option is set,
+	  it will support
+	  AKMD09918 magnetometer.
+
+#add CAQGHLSS-1 by jixiaopan 20171124 start
+if MTK_AKM09918
+config AKM_DEVICE_SELECT
+        string "akm device type"
+        default "NO"
+
+if AKM_DEVICE_SELECT = "akm09916"
+config AKM_DEVICE_AKM09916
+        bool "AKM_Device_AK09916"
+        default y
+        ---help---
+         AKM_Device_AK09916 FACTORY CIT
+endif
+endif
+#add CAQGHLSS-1 by jixiaopan 20171124 end

@@ -1,0 +1,5 @@
+config SMARTPA_TFA98XX
+	bool "SMARTPA TFA98XX I2C DRIVER"
+	default n
+	help
+	  It support NXP smartpa tfa98xx i2c driver.

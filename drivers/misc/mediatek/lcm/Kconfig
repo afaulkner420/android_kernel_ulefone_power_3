@@ -1,0 +1,46 @@
+config MTK_LCM
+	bool "Enble LCM driver"
+	default n
+	help
+	  define LCM driver config to enable LCM driver.
+	  To set LCM driver which you choose avoid cannot driver LCM.
+	  Please make sure CONFIG_MTK_LCM in xxxxxx_defconfig.mk.
+	  And also make sure true on in ProjectConfig.mk
+
+config CUSTOM_KERNEL_LCM
+	string "define mediatek kernel LCM driver"
+	help
+	  To choose kernel LCM driver name.
+	  This config is to select which LCM driver you want to use.
+	  Please make sure CUSTOME_KERNEL_LCM in xxxxx_defconfig.mk.
+	  And also make sure turn on in ProjectConfig.mk
+
+config MTK_LCM_DEVICE_TREE_SUPPORT
+	bool "support LCM device tree connect with display drivers"
+	help
+	  Decide whether to support LCM device tree based configuration.
+	  This feature requires the connection between display driver and LCM devices.
+	  Please also turn on MTK_LCM_DEVICE_TREE_SUPPORT in ProjectConfig.mk.
+	  If not define MTK_LCM_DEVICE_TREE_SUPPORT
+	  there will not connect between display driver and LCM devices.
+
+#add by zhangkun for set avdd && avee voltage value --begin--
+config TRAN_LCM_SET_VOLTAGE
+	bool "Enble LCM set voltage"
+	default n
+	help
+	  define LCM driver config to enable LCM auto set voltage.
+	  To set LCM voltage  which you can set different value.
+	  Please make sure CONFIG_TRAN_LCM_SET_VOLTAGE in
+	  xxxxxx_defconfig.mk for transsion.
+#add by zhangkun for set avdd && avee voltage value --end--
+#add by tao.wang for x604 project time optimization mechanism start
+config TRAN_LCM_TIME_OPT_ENABLE
+	bool "Enble LCM TIME OPTIMIZE MACHANISM"
+	default n
+	help
+	  define LCM driver config to enable LCM TIME OPTIMIZE function.
+	  Enable this function can take advantage of the time that display driver
+	  executes as the time of LCM 0x11 delay time.The purpose of this function
+	  is to accelerate wake-up time.
+#add by tao.wang for x604 project time optimization mechanism end

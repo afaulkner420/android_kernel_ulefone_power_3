@@ -1,0 +1,19 @@
+#
+# For a description of the syntax of this configuration file,
+# see Documentation/kbuild/kconfig-language.txt.
+#
+mainmenu "Linux/$ARCH $KERNELVERSION Kernel Configuration"
+
+config SRCARCH
+	string
+	option env="SRCARCH"
+
+# Add project macro resolution by guangxu.wang 20171121 start
+config CUSTOM_TRAN_PROJECT
+	string "CUSTOM_TRAN_PROJECT"
+
+config CUSTOM_TRAN_BOM
+	string "CUSTOM_TRAN_BOM"
+# Add project macro resolution by guangxu.wang 20171121 end
+
+source "arch/$SRCARCH/Kconfig"
