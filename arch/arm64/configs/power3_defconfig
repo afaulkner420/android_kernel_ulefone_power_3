@@ -1247,8 +1247,8 @@ CONFIG_MTK_THERMAL_PA_VIA_ATCMD=y
 #
 # MultiMedia, Display, Camera related configs
 #
-CONFIG_CUSTOM_KERNEL_IMGSENSOR="s5k3p3sx_mipi_raw s5k3p3sx_mipi_raw_pdaf s5k3p3sx_mipi_raw_pdaf_jd s5k3l8_mipi_raw ov8856_mipi_raw gc0310_mipi_yuv gc0310_mipi_yuv_sub"
-CONFIG_CUSTOM_KERNEL_CAM_CAL_DRV="s5k3p3sx_otp s5k3p3sx_otp_pdaf s5k3p3sx_otp_pdaf_jd BRCB032GWZ_3 GT24c32a cat24c16"
+CONFIG_CUSTOM_KERNEL_IMGSENSOR="s5k3p3sx_mipi_raw ov8856_mipi_raw"
+CONFIG_CUSTOM_KERNEL_CAM_CAL_DRV="s5k3p3sx_otp BRCB032GWZ_3 GT24c32a cat24c16"
 # CONFIG_MTK_TEE_GP_SUPPORT is not set
 # CONFIG_MTK_LCM_PHYSICAL_ROTATION_HW is not set
 CONFIG_MTK_CAMERA_ISP=y
