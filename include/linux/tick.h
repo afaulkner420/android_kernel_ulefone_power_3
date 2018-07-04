@@ -103,7 +103,6 @@ extern void tick_nohz_idle_enter(void);
 extern void tick_nohz_idle_exit(void);
 extern void tick_nohz_irq_exit(void);
 extern ktime_t tick_nohz_get_sleep_length(void);
-extern unsigned long tick_nohz_get_idle_calls(void);
 extern u64 get_cpu_idle_time_us(int cpu, u64 *last_update_time);
 extern u64 get_cpu_iowait_time_us(int cpu, u64 *last_update_time);
 
@@ -217,11 +216,5 @@ static inline void tick_nohz_task_switch(void)
 	if (tick_nohz_full_enabled())
 		__tick_nohz_task_switch();
 }
-
-#if defined(CONFIG_TICK_ONESHOT) && defined(CONFIG_MTK_RAM_CONSOLE)
-extern void tick_broadcast_mtk_aee_dump(void);
-#else
-static inline void tick_broadcast_mtk_aee_dump(void) { };
-#endif
 
 #endif

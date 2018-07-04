@@ -70,7 +70,6 @@ enum EXT_DISP_PATH_MODE ext_disp_mode;
 static struct disp_lcm_handle *plcm_interface;
 static int is_context_inited;
 static int init_roi;
-static unsigned int gCurrentPresentFenceIndex = -1;
 
 static struct mutex esd_check_lock;
 struct ext_disp_path_context {
@@ -84,7 +83,7 @@ struct ext_disp_path_context {
 	enum EXT_DISP_PATH_MODE mode;
 	unsigned int last_vsync_tick;
 	struct mutex lock;
-	char *mutex_locker;
+	struct mutex vsync_lock;
 	struct disp_lcm_handle *plcm;
 	struct cmdqRecStruct *cmdq_handle_config;
 	struct cmdqRecStruct *cmdq_handle_trigger;
@@ -110,8 +109,6 @@ LCM_PARAMS extd_lcm_params;
 atomic_t g_extd_trigger_ticket = ATOMIC_INIT(1);
 atomic_t g_extd_release_ticket = ATOMIC_INIT(1);
 
-unsigned int g_extd_mobilelog;
-
 static struct ext_disp_path_context *_get_context(void)
 {
 	static struct ext_disp_path_context g_context;
@@ -119,7 +116,7 @@ static struct ext_disp_path_context *_get_context(void)
 	if (!is_context_inited) {
 		memset((void *)&g_context, 0, sizeof(struct ext_disp_path_context));
 		is_context_inited = 1;
-		EXTDMSG("_get_context set is_context_inited\n");
+		EXT_DISP_LOG("_get_context set is_context_inited\n");
 	}
 
 	return &g_context;
@@ -152,34 +149,53 @@ void ext_disp_path_set_mode(enum EXT_DISP_PATH_MODE mode, unsigned int session)
 	init_roi = 1;
 }
 
-static void _ext_disp_path_lock(const char *caller)
+static void _ext_disp_path_lock(void)
 {
-	extd_sw_mutex_lock(&(pgc->lock));
-	pgc->mutex_locker = (char *)caller;
-/*	EXTDINFO("_ext_disp_path_lock caller: %s\n", pgc->mutex_locker);*/
+	int ret = 0;
+
+	do {
+		ret = extd_sw_mutex_lock(NULL);
+	} while (ret < 0);
 }
 
-static void _ext_disp_path_unlock(const char *caller)
+static void _ext_disp_path_unlock(void)
 {
-	pgc->mutex_locker = NULL;
-	extd_sw_mutex_unlock(&(pgc->lock));
-/*	EXTDINFO("_ext_disp_path_unlock caller: %s\n", pgc->mutex_locker);*/
+	extd_sw_mutex_unlock(NULL);	/* (&(pgc->lock)); */
 }
 
 int ext_disp_manual_lock(void)
 {
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	return 0;
 }
 
 int ext_disp_manual_unlock(void)
 {
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	return 0;
 }
 
+static void _ext_disp_vsync_lock(unsigned int session)
+{
+	mutex_lock(&(pgc->vsync_lock));
+}
+
+static void _ext_disp_vsync_unlock(unsigned int session)
+{
+	mutex_unlock(&(pgc->vsync_lock));
+}
+/*
+*
+	static enum DISP_MODULE_ENUM _get_dst_module_by_lcm(disp_path_handle pHandle)
+	{
+		if (dst_is_dsi)
+			return DISP_MODULE_DSI1;
+		else
+			return DISP_MODULE_DPI;
+	}
+*/
 
 /***************************************************************
 ***trigger operation:    VDO+CMDQ  CMD+CMDQ VDO+CPU  CMD+CPU
@@ -292,6 +308,12 @@ static int _should_insert_wait_frame_done_token(void)
 */
 static int _should_config_ovl_input(void)
 {
+	/* should extend this when display path dynamic switch is ready */
+	/* if(pgc->mode == EXTD_SINGLE_LAYER_MODE ||pgc->mode == EXTD_RDMA_DPI_MODE) */
+	/* return 0; */
+	/* else */
+	/* return 1; */
+
 	if (ext_disp_mode == EXTD_SINGLE_LAYER_MODE || ext_disp_mode == EXTD_RDMA_DPI_MODE)
 		return 0;
 	else
@@ -313,12 +335,53 @@ static int _should_config_ovl_input(void)
 	}
 */
 
+#define OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+static long int get_current_time_us(void)
+{
+	struct timeval t;
+
+	do_gettimeofday(&t);
+	return (t.tv_sec & 0xFFF) * 1000000 + t.tv_usec;
+}
+
+/*
+ *
+static enum hrtimer_restart _DISP_CmdModeTimer_handler(struct hrtimer *timer)
+{
+	EXT_DISP_LOG("fake timer, wake up\n");
+	dpmgr_signal_event(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC);
+#if 0
+	if ((get_current_time_us() - pgc->last_vsync_tick) > 16666) {
+		dpmgr_signal_event(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC);
+		pgc->last_vsync_tick = get_current_time_us();
+	}
+#endif
+	return HRTIMER_RESTART;
+}
+
+static int _init_vsync_fake_monitor(int fps)
+{
+	static struct hrtimer cmd_mode_update_timer;
+	static ktime_t cmd_mode_update_timer_period;
+
+	if (fps == 0)
+		fps = 60;
+
+	cmd_mode_update_timer_period = ktime_set(0, 1000 / fps * 1000);
+	EXT_DISP_LOG("[MTKFB] vsync timer_period=%d\n", 1000 / fps);
+	hrtimer_init(&cmd_mode_update_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	cmd_mode_update_timer.function = _DISP_CmdModeTimer_handler;
+
+	return 0;
+}
+*/
+
 static int _build_path_direct_link(unsigned int session)
 {
 	int ret = 0;
 	M4U_PORT_STRUCT sPort;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 	pgc->mode = EXTD_DIRECT_LINK_MODE;
 
 	if (DISP_SESSION_DEV(session) == DEV_LCM) {
@@ -329,12 +392,13 @@ static int _build_path_direct_link(unsigned int session)
 	}
 
 	if (pgc->dpmgr_handle)
-		EXTDINFO("dpmgr create path SUCCESS(%p)\n", pgc->dpmgr_handle);
+		EXT_DISP_LOG("dpmgr create path SUCCESS(%p)\n", pgc->dpmgr_handle);
 	else {
-		EXTDERR("dpmgr create path FAIL\n");
+		EXT_DISP_LOG("dpmgr create path FAIL\n");
 		return -1;
 	}
 
+	/* EXT_DISP_LOG("dpmgr set dst module FINISHED(%s)\n", ddp_get_module_name(dst_module)); */
 	sPort.ePortID = M4U_PORT_DISP_2L_OVL1_LARB0;
 	sPort.Virtuality = ext_disp_use_m4u;
 	sPort.Security = 0;
@@ -342,10 +406,10 @@ static int _build_path_direct_link(unsigned int session)
 	sPort.Direction = 0;
 	ret = m4u_config_port(&sPort);
 	if (ret == 0) {
-		EXTDINFO("config M4U Port %s to %s SUCCESS\n",
+		EXT_DISP_LOG("config M4U Port %s to %s SUCCESS\n",
 			ddp_get_module_name(DISP_MODULE_OVL1_2L), ext_disp_use_m4u ? "virtual" : "physical");
 	} else {
-		EXTDERR("config M4U Port %s to %s FAIL(ret=%d)\n", "ovl1_2l",
+		EXT_DISP_LOG("config M4U Port %s to %s FAIL(ret=%d)\n", "ovl1_2l",
 			ext_disp_use_m4u ? "virtual" : "physical", ret);
 		return -1;
 	}
@@ -374,14 +438,13 @@ static int _build_path_rdma_dpi(void)
 	int ret = 0;
 	M4U_PORT_STRUCT sPort;
 
-	EXTDFUNC();
 	pgc->mode = EXTD_RDMA_DPI_MODE;
 
 	pgc->dpmgr_handle = dpmgr_create_path(DDP_SCENARIO_SUB_RDMA1_DISP, pgc->cmdq_handle_config);
 	if (pgc->dpmgr_handle)
-		EXTDINFO("dpmgr create path SUCCESS(%p)\n", pgc->dpmgr_handle);
+		EXT_DISP_LOG("dpmgr create path SUCCESS(%p)\n", pgc->dpmgr_handle);
 	else {
-		EXTDERR("dpmgr create path FAIL\n");
+		EXT_DISP_LOG("dpmgr create path FAIL\n");
 		return -1;
 	}
 
@@ -392,10 +455,10 @@ static int _build_path_rdma_dpi(void)
 	sPort.Direction = 0;
 	ret = m4u_config_port(&sPort);
 	if (ret == 0) {
-		EXTDINFO("config M4U Port %s to %s SUCCESS\n", ddp_get_module_name(DISP_MODULE_RDMA1),
+		EXT_DISP_LOG("config M4U Port %s to %s SUCCESS\n", ddp_get_module_name(DISP_MODULE_RDMA1),
 			ext_disp_use_m4u ? "virtual" : "physical");
 	} else {
-		EXTDERR("config M4U Port %s to %s FAIL(ret=%d)\n", ddp_get_module_name(DISP_MODULE_RDMA1),
+		EXT_DISP_LOG("config M4U Port %s to %s FAIL(ret=%d)\n", ddp_get_module_name(DISP_MODULE_RDMA1),
 			ext_disp_use_m4u ? "virtual" : "physical", ret);
 		return -1;
 	}
@@ -410,11 +473,10 @@ static void _cmdq_build_trigger_loop(void)
 {
 	int ret = 0;
 
-	EXTDFUNC();
 	if (pgc->cmdq_handle_trigger == NULL) {
 		ret = cmdqRecCreate(CMDQ_SCENARIO_TRIGGER_LOOP, &(pgc->cmdq_handle_trigger));
 		if (ret) {
-			EXTDERR("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
+			EXT_DISP_LOG("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
 			ASSERT(0);
 		}
 	}
@@ -438,7 +500,6 @@ static void _cmdq_build_trigger_loop(void)
 
 		dpmgr_path_build_cmdq(pgc->dpmgr_handle, pgc->cmdq_handle_trigger, CMDQ_WAIT_LCM_TE, 0);
 
-		ret = cmdqRecWaitNoClear(pgc->cmdq_handle_trigger, CMDQ_SYNC_TOKEN_EXT_CABC_EOF);
 		/* cleat frame done token, now the config thread will not allowed to config registers. */
 		/* remember that config thread's priority is higher than trigger thread, */
 		/* so all the config queued before will be applied then STREAM_EOF token be cleared */
@@ -480,7 +541,6 @@ static void _cmdq_build_trigger_loop(void)
 
 		/* now frame done, config thread is allowed to config register now */
 		ret = cmdqRecSetEventToken(pgc->cmdq_handle_trigger, CMDQ_SYNC_TOKEN_EXT_STREAM_EOF);
-		ret = cmdqRecSetEventToken(pgc->cmdq_handle_trigger, CMDQ_SYNC_TOKEN_EXT_CABC_EOF);
 
 		/* RUN forever!!!! */
 		WARN_ON(ret < 0);
@@ -488,35 +548,32 @@ static void _cmdq_build_trigger_loop(void)
 
 	/* dump trigger loop instructions to check whether dpmgr_path_build_cmdq works correctly */
 	cmdqRecDumpCommand(pgc->cmdq_handle_trigger);
-	EXTDMSG("ext display BUILD cmdq trigger loop finished\n");
+	EXT_DISP_LOG("ext display BUILD cmdq trigger loop finished\n");
 }
 
 void _cmdq_start_extd_trigger_loop(void)
 {
 	int ret = 0;
 
-	EXTDFUNC();
 	/* this should be called only once because trigger loop will nevet stop */
 	ret = cmdqRecStartLoop(pgc->cmdq_handle_trigger);
 	if (!ext_disp_is_video_mode()) {
 		/* need to set STREAM_EOF for the first time, otherwise we will stuck in dead loop */
 		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_EXT_STREAM_EOF);
 		/* /dprec_event_op(DPREC_EVENT_CMDQ_SET_EVENT_ALLOW); */
-		cmdqCoreSetEvent(CMDQ_SYNC_TOKEN_EXT_CABC_EOF);
 	}
 
-	EXTDMSG("START cmdq trigger loop finished\n");
+	EXT_DISP_LOG("START cmdq trigger loop finished\n");
 }
 
 void _cmdq_stop_extd_trigger_loop(void)
 {
 	int ret = 0;
 
-	EXTDFUNC();
 	/* this should be called only once because trigger loop will nevet stop */
 	ret = cmdqRecStopLoop(pgc->cmdq_handle_trigger);
 
-	EXTDMSG("ext display STOP cmdq trigger loop finished\n");
+	EXT_DISP_LOG("ext display STOP cmdq trigger loop finished\n");
 }
 
 
@@ -529,10 +586,10 @@ static void _cmdq_set_config_handle_dirty(void)
 	}
 }
 
-static void _cmdq_handle_clear_dirty(struct cmdqRecStruct *cmdq_handle)
+static void _cmdq_handle_clear_dirty(void)
 {
 	if (!ext_disp_is_video_mode())
-		cmdqRecClearEventToken(cmdq_handle, CMDQ_SYNC_TOKEN_EXT_CONFIG_DIRTY);
+		cmdqRecClearEventToken(pgc->cmdq_handle_config, CMDQ_SYNC_TOKEN_EXT_CONFIG_DIRTY);
 }
 
 static void _cmdq_reset_config_handle(void)
@@ -555,7 +612,6 @@ static void _cmdq_flush_config_handle(int blocking, void *callback, unsigned int
 	/* dprec_event_op(DPREC_EVENT_CMDQ_FLUSH); */
 }
 
-#if 0
 static void _cmdq_insert_wait_frame_done_token(int clear_event)
 {
 	if (ext_disp_is_video_mode()) {
@@ -575,16 +631,6 @@ static void _cmdq_insert_wait_frame_done_token(int clear_event)
 
 	/* /dprec_event_op(DPREC_EVENT_CMDQ_WAIT_STREAM_EOF); */
 }
-#endif
-
-void _ext_cmdq_insert_wait_frame_done_token(void *handle)
-{
-	if (ext_disp_is_video_mode()) {
-		cmdqRecWaitNoClear(handle,
-				dpmgr_path_get_mutex(pgc->dpmgr_handle) + CMDQ_EVENT_MUTEX0_STREAM_EOF);
-	} else
-		cmdqRecWaitNoClear(handle, CMDQ_SYNC_TOKEN_EXT_STREAM_EOF);
-}
 
 static int _convert_disp_input_to_rdma(struct RDMA_CONFIG_STRUCT *dst, struct disp_input_config *src,
 	unsigned int screen_w, unsigned int screen_h)
@@ -597,7 +643,7 @@ static int _convert_disp_input_to_rdma(struct RDMA_CONFIG_STRUCT *dst, struct di
 	enum UNIFIED_COLOR_FMT tmp_fmt;
 
 	if (!src || !dst) {
-		EXTDERR("%s src(0x%p) or dst(0x%p) is null\n", __func__, src, dst);
+		EXT_DISP_ERR("%s src(0x%p) or dst(0x%p) is null\n", __func__, src, dst);
 		return -1;
 	}
 
@@ -636,7 +682,7 @@ static int _convert_disp_input_to_rdma(struct RDMA_CONFIG_STRUCT *dst, struct di
 		dst->bg_ctrl.top    = src->tgt_offset_y;
 		dst->bg_ctrl.bottom = bottom_edge;
 	} else
-		EXTDERR("%s right edge:%d, bottom edge:%d\n", __func__, right_edge, bottom_edge);
+		EXT_DISP_ERR("%s right edge:%d, bottom edge:%d\n", __func__, right_edge, bottom_edge);
 */
 	return 0;
 }
@@ -648,7 +694,7 @@ static int _convert_disp_input_to_ovl(struct OVL_CONFIG_STRUCT *dst, struct disp
 	unsigned int Bpp = 0;
 
 	if (!src || !dst) {
-		EXTDERR("%s src(0x%p) or dst(0x%p) is null\n", __func__, src, dst);
+		EXT_DISP_ERR("%s src(0x%p) or dst(0x%p) is null\n", __func__, src, dst);
 		return -1;
 	}
 
@@ -685,13 +731,7 @@ static int _convert_disp_input_to_ovl(struct OVL_CONFIG_STRUCT *dst, struct disp
 	/* dst W/H should <= src W/H */
 	dst->dst_w = min(src->src_width, src->tgt_width);
 	dst->dst_h = min(src->src_height, src->tgt_height);
-/*
-*
-	EXTDINFO("layer id:%d, src(%d,%d,%d,%d,%d), dst(%d,%d,%d,%d)\n",
-		dst->layer,
-		dst->src_x, dst->src_y, dst->src_w, dst->src_h, dst->src_pitch,
-		dst->dst_x, dst->dst_y, dst->dst_w, dst->dst_h);
-*/
+
 	dst->keyEn = src->src_use_color_key;
 	dst->key = src->src_color_key;
 
@@ -712,7 +752,7 @@ static int _convert_disp_input_to_ovl(struct OVL_CONFIG_STRUCT *dst, struct disp
 	} else if (src->buffer_source == DISP_BUFFER_ION || src->buffer_source == DISP_BUFFER_MVA) {
 		dst->source = OVL_LAYER_SOURCE_MEM;	/* from memory */
 	} else {
-		EXTDERR("unknown source = %d", src->buffer_source);
+		EXT_DISP_ERR("unknown source = %d", src->buffer_source);
 		dst->source = OVL_LAYER_SOURCE_MEM;
 	}
 	dst->ext_sel_layer = src->ext_sel_layer;
@@ -724,7 +764,7 @@ static int _ext_disp_trigger(int blocking, void *callback, unsigned int userdata
 {
 	bool reg_flush = false;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
 	if (_should_wait_path_idle())
 		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE, HZ / 2);
@@ -754,15 +794,14 @@ static int _ext_disp_trigger(int blocking, void *callback, unsigned int userdata
 		_cmdq_reset_config_handle();
 
 	if (_should_insert_wait_frame_done_token())
-		_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+		_cmdq_insert_wait_frame_done_token(0);
 
-	EXTDINFO("_ext_disp_trigger done\n");
 	return 0;
 }
 
 static int _ext_disp_trigger_EPD(int blocking, void *callback, unsigned int userdata)
 {
-	EXTDFUNC();
+	/* /EXT_DISP_FUNC(); */
 
 	if (_should_wait_path_idle())
 		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE, HZ / 2);
@@ -787,15 +826,14 @@ static int _ext_disp_trigger_EPD(int blocking, void *callback, unsigned int user
 		_cmdq_reset_config_handle();
 
 	if (_should_insert_wait_frame_done_token())
-		_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+		_cmdq_insert_wait_frame_done_token(0);
 
-	EXTDINFO("_ext_disp_trigger_EPD done\n");
 	return 0;
 }
 
 static int _ext_disp_trigger_LCM(int blocking, void *callback, unsigned int userdata)
 {
-	EXTDFUNC();
+/*	EXT_DISP_FUNC();	*/
 
 	if (pgc->lcm_state == EXTD_LCM_NO_INIT) {
 /*		disp_lcm_init(pgc->plcm, 1);	*/
@@ -817,13 +855,14 @@ static int _ext_disp_trigger_LCM(int blocking, void *callback, unsigned int user
 
 	/* clear cmdq dirty in case trigger loop starts here */
 	if (_should_set_cmdq_dirty())
-		_cmdq_handle_clear_dirty(pgc->cmdq_handle_config);
+		_cmdq_handle_clear_dirty();
 
 
 	if (_should_insert_wait_frame_done_token())
-		_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+		_cmdq_insert_wait_frame_done_token(0);
 
-	EXTDINFO("_ext_disp_trigger_LCM done\n");
+/*	EXT_DISP_LOG("_ext_disp_trigger_LCM done\n");	*/
+
 	return 0;
 }
 
@@ -844,34 +883,22 @@ static void deinit_cmdq_slots(cmdqBackupSlotHandle hSlot)
 	cmdqBackupFreeSlot(hSlot);
 }
 
-static int ext_disp_cmdq_dump(uint64_t engineFlag, int level)
-{
-	EXTDFUNC();
-
-	if (pgc->dpmgr_handle != NULL)
-		ext_disp_diagnose();
-	else
-		EXTDMSG("external display dpmgr_handle == NULL\n");
-
-	return 0;
-}
-
 static int ext_disp_init_hdmi(unsigned int session)
 {
 	struct disp_ddp_path_config *data_config = NULL;
 	enum EXT_DISP_STATUS ret;
 	enum DISP_MODULE_ENUM dst_module = 0;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 	ret = EXT_DISP_STATUS_OK;
 
 	ret = cmdqRecCreate(CMDQ_SCENARIO_MHL_DISP, &(pgc->cmdq_handle_config));
 	if (ret) {
-		EXTDERR("cmdqRecCreate FAIL, ret=%d\n", ret);
+		EXT_DISP_LOG("cmdqRecCreate FAIL, ret=%d\n", ret);
 		ret = EXT_DISP_STATUS_ERROR;
 		goto done;
 	}
-	EXTDMSG("cmdqRecCreate SUCCESS, g_cmdq_handle=%p\n", pgc->cmdq_handle_config);
+	EXT_DISP_LOG("cmdqRecCreate SUCCESS, g_cmdq_handle=%p\n", pgc->cmdq_handle_config);
 
 	/* Set fake cmdq engineflag for judge path scenario */
 	cmdqRecSetEngine(pgc->cmdq_handle_config,
@@ -895,17 +922,19 @@ static int ext_disp_init_hdmi(unsigned int session)
 	else if (ext_disp_mode == EXTD_RDMA_DPI_MODE)
 		_build_path_rdma_dpi();
 	else
-		EXTDERR("ext_disp display mode is WRONG\n");
+		EXT_DISP_LOG("ext_disp display mode is WRONG\n");
 
 	if (ext_disp_use_cmdq == CMDQ_ENABLE) {
 		if (DISP_SESSION_DEV(session) != DEV_EINK + 1) {
 			_cmdq_build_trigger_loop();
+			EXT_DISP_LOG("ext_disp display BUILD cmdq trigger loop finished\n");
+
 			_cmdq_start_extd_trigger_loop();
 		}
 	}
 	pgc->session = session;
 
-	EXTDINFO("ext_disp display START cmdq trigger loop finished\n");
+	EXT_DISP_LOG("ext_disp display START cmdq trigger loop finished\n");
 
 	dpmgr_path_set_video_mode(pgc->dpmgr_handle, ext_disp_is_video_mode());
 	dpmgr_path_init(pgc->dpmgr_handle, CMDQ_DISABLE);
@@ -934,9 +963,9 @@ static int ext_disp_init_hdmi(unsigned int session)
 
 		init_roi = 0;
 		ret = dpmgr_path_config(pgc->dpmgr_handle, data_config, CMDQ_DISABLE);
-		EXTDMSG("ext_disp_init roi w:%d, h:%d\n", data_config->dst_w, data_config->dst_h);
+		EXT_DISP_LOG("ext_disp_init roi w:%d, h:%d\n", data_config->dst_w, data_config->dst_h);
 	} else
-		EXTDERR("allocate buffer failed!!!\n");
+		EXT_DISP_LOG("allocate buffer failed!!!\n");
 
 	/* this will be set to always enable cmdq later */
 	if (ext_disp_is_video_mode()) {
@@ -952,11 +981,12 @@ static int ext_disp_init_hdmi(unsigned int session)
 	atomic_set(&g_extd_trigger_ticket, 1);
 	atomic_set(&g_extd_release_ticket, 0);
 
+	mutex_init(&(pgc->vsync_lock));
 	pgc->state = EXTD_INIT;
 	pgc->ovl_req_state = EXTD_OVL_NO_REQ;
  done:
 
-	EXTDMSG("ext_disp_init_hdmi done\n");
+	EXT_DISP_LOG("ext_disp_init_hdmi done\n");
 	return ret;
 }
 
@@ -966,12 +996,12 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 	struct disp_ddp_path_config *data_config = NULL;
 	LCM_PARAMS *lcm_param = NULL;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
 	if (pgc->plcm == NULL) {
 		pgc->plcm = plcm_interface;
 		if (pgc->plcm == NULL) {
-			EXTDERR("Does not found lcm!\n");
+			EXT_DISP_ERR("Does not found lcm!\n");
 			ret = EXT_DISP_STATUS_ERROR;
 			goto done;
 		}
@@ -979,7 +1009,7 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 
 	lcm_param = disp_lcm_get_params(pgc->plcm);
 	if (lcm_param == NULL) {
-		EXTDERR("get lcm params FAILED\n");
+		EXT_DISP_ERR("get lcm params FAILED\n");
 		ret = EXT_DISP_STATUS_ERROR;
 		goto done;
 	} else {
@@ -989,11 +1019,11 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 	if (ext_disp_use_cmdq == CMDQ_ENABLE) {
 		ret = cmdqRecCreate(CMDQ_SCENARIO_MHL_DISP, &(pgc->cmdq_handle_config));
 		if (ret) {
-			EXTDERR("cmdqRecCreate FAIL, ret=%d\n", ret);
+			EXT_DISP_ERR("cmdqRecCreate FAIL, ret=%d\n", ret);
 			ret = EXT_DISP_STATUS_ERROR;
 			goto done;
 		}
-		EXTDMSG("cmdqRecCreate SUCCESS, g_cmdq_handle=%p\n", pgc->cmdq_handle_config);
+		EXT_DISP_LOG("cmdqRecCreate SUCCESS, g_cmdq_handle=%p\n", pgc->cmdq_handle_config);
 
 		/* Set fake cmdq engineflag for judge path scenario */
 		cmdqRecSetEngine(pgc->cmdq_handle_config,
@@ -1011,11 +1041,12 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 		_build_path_rdma_dpi();
 		dpmgr_set_lcm_utils(pgc->dpmgr_handle, pgc->plcm->drv);
 	} else
-		EXTDERR("ext_disp display mode is WRONG\n");
+		EXT_DISP_LOG("ext_disp display mode is WRONG\n");
 
 	if (ext_disp_use_cmdq == CMDQ_ENABLE) {
 		_cmdq_build_trigger_loop();
 		_cmdq_start_extd_trigger_loop();
+		EXT_DISP_LOG("ext_disp display build/start cmdq trigger loop finished\n");
 	}
 
 	dpmgr_path_set_video_mode(pgc->dpmgr_handle, disp_lcm_is_video_mode(pgc->plcm));
@@ -1041,7 +1072,7 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 
 	ret = dpmgr_path_config(pgc->dpmgr_handle, data_config,
 								ext_disp_use_cmdq ? pgc->cmdq_handle_config : NULL);
-	EXTDMSG("ext_disp_init roi w:%d, h:%d\n", data_config->dst_w, data_config->dst_h);
+	EXT_DISP_LOG("ext_disp_init roi w:%d, h:%d\n", data_config->dst_w, data_config->dst_h);
 
 	dpmgr_path_start(pgc->dpmgr_handle, ext_disp_use_cmdq);
 
@@ -1054,7 +1085,7 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 	if (ext_disp_use_cmdq) {
 		_cmdq_flush_config_handle(0, NULL, 0);
 		_cmdq_reset_config_handle();
-		_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+		_cmdq_insert_wait_frame_done_token(0);
 	}
 
 	atomic_set(&g_extd_trigger_ticket, 1);
@@ -1064,11 +1095,12 @@ static int ext_disp_init_lcm(char *lcm_name, unsigned int session)
 	external_display_lowpower_init();
 #endif
 
+	mutex_init(&(pgc->vsync_lock));
 	pgc->state = EXTD_INIT;
 	pgc->ovl_req_state = EXTD_OVL_NO_REQ;
 	pgc->session = session;
 done:
-	EXTDMSG("ext_disp_init_lcm done\n");
+	EXT_DISP_LOG("ext_disp_init_lcm done\n");
 	return ret;
 }
 
@@ -1089,14 +1121,16 @@ int ext_disp_esd_recovery(void)
 	LCM_PARAMS *lcm_param = NULL;
 	struct cmdqRecStruct *handle = NULL;
 
-	EXTDFUNC();
-
-	_ext_disp_path_lock(__func__);
+/*	EXT_DISP_FUNC();*/
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_START, 0, 0);
+	_ext_disp_path_lock();
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE,
+		       ext_disp_is_video_mode(), 1);
 
 	if (pgc->plcm == NULL) {
 		pgc->plcm = plcm_interface;
 		if (pgc->plcm == NULL) {
-			EXTDERR("Does not found lcm!\n");
+			EXT_DISP_ERR("Does not found lcm!\n");
 			ret = EXT_DISP_STATUS_ERROR;
 			goto done;
 		}
@@ -1104,7 +1138,7 @@ int ext_disp_esd_recovery(void)
 
 	lcm_param = disp_lcm_get_params(pgc->plcm);
 	if (pgc->state != EXTD_RESUME) {
-		EXTDERR("[ESD]esd recovery but external display path is slept??\n");
+		EXT_DISP_ERR("[ESD]esd recovery but external display path is slept??\n");
 		goto done;
 	}
 
@@ -1116,7 +1150,7 @@ int ext_disp_esd_recovery(void)
 	/* blocking flush before stop trigger loop */
 	ret = cmdqRecCreate(CMDQ_SCENARIO_MHL_DISP, &handle);
 	if (ret) {
-		EXTDERR("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
+		EXT_DISP_ERR("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
 		return -1;
 	}
 	/* Set fake cmdq engineflag for judge path scenario */
@@ -1124,69 +1158,82 @@ int ext_disp_esd_recovery(void)
 						((1LL << CMDQ_ENG_DISP_OVL1) | (1LL << CMDQ_ENG_DISP_WDMA1)));
 
 	cmdqRecReset(handle);
-	_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+	_cmdq_insert_wait_frame_done_token(0);
 	cmdqRecFlush(handle);
 	cmdqRecDestroy(handle);
 
-	EXTDINFO("[ESD]display cmdq trigger loop stop[begin]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 3);
+
+	DISPINFO("[ESD]display cmdq trigger loop stop[begin]\n");
 	_cmdq_stop_extd_trigger_loop();
-	EXTDINFO("[ESD]display cmdq trigger loop stop[end]\n");
+	DISPINFO("[ESD]display cmdq trigger loop stop[end]\n");
 
-	EXTDINFO("[ESD]stop dpmgr path[begin]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 4);
+
+	DISPINFO("[ESD]stop dpmgr path[begin]\n");
 	dpmgr_path_stop(pgc->dpmgr_handle, CMDQ_DISABLE);
-	EXTDINFO("[ESD]stop dpmgr path[end]\n");
+	DISPINFO("[ESD]stop dpmgr path[end]\n");
 
 	if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-		EXTDINFO("[ESD]external display path is busy after stop\n");
+		DISPINFO("[ESD]external display path is busy after stop\n");
 		dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE, HZ * 1);
-		EXTDINFO("[ESD]wait frame done ret:%d\n", ret);
+		DISPINFO("[ESD]wait frame done ret:%d\n", ret);
 	}
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 5);
 
-	EXTDINFO("[ESD]reset display path[begin]\n");
+	DISPINFO("[ESD]reset display path[begin]\n");
 	dpmgr_path_reset(pgc->dpmgr_handle, CMDQ_DISABLE);
-	EXTDINFO("[ESD]reset display path[end]\n");
+	DISPINFO("[ESD]reset display path[end]\n");
 
-	EXTDINFO("[ESD]lcm suspend[begin]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 6);
+
+	DISPINFO("[ESD]lcm suspend[begin]\n");
 	disp_lcm_suspend(pgc->plcm);
-	EXTDINFO("[ESD]lcm force init[begin]\n");
+	DISPINFO("[ESD]lcm force init[begin]\n");
 	disp_lcm_init(pgc->plcm, 1);
-	EXTDINFO("[ESD]lcm force init[end]\n");
+	DISPINFO("[ESD]lcm force init[end]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 8);
 
-	EXTDINFO("[ESD]start dpmgr path[begin]\n");
+	DISPINFO("[ESD]start dpmgr path[begin]\n");
 	dpmgr_path_start(pgc->dpmgr_handle, CMDQ_DISABLE);
-	EXTDINFO("[ESD]start dpmgr path[end]\n");
+	DISPINFO("[ESD]start dpmgr path[end]\n");
 	if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-		EXTDERR("[ESD]Fatal error, we didn't trigger display path but it's already busy\n");
+		EXT_DISP_ERR("[ESD]Fatal error, we didn't trigger display path but it's already busy\n");
 		ret = -1;
 	}
 
-	EXTDINFO("[ESD]start cmdq trigger loop[begin]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 9);
+	DISPINFO("[ESD]start cmdq trigger loop[begin]\n");
 	_cmdq_start_extd_trigger_loop();
-	EXTDINFO("[ESD]start cmdq trigger loop[end]\n");
+	DISPINFO("[ESD]start cmdq trigger loop[end]\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 10);
 	if (disp_lcm_is_video_mode(pgc->plcm)) {
 		/* for video mode, we need to force trigger here */
 		/* for cmd mode, just set DPREC_EVENT_CMDQ_SET_EVENT_ALLOW when trigger loop start */
 		dpmgr_path_trigger(pgc->dpmgr_handle, NULL, CMDQ_DISABLE);
 	}
-
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_PULSE, 0, 11);
+	ddp_dump_reg(DISP_MODULE_OVL1);
+	ddp_dump_reg(DISP_MODULE_RDMA1);
 done:
-	_ext_disp_path_unlock(__func__);
-	EXTDINFO("[ESD]ESD recovery end\n");
+	_ext_disp_path_unlock();
+	DISPINFO("[ESD]ESD recovery end\n");
+	mmprofile_log_ex(ddp_mmp_get_events()->esd_recovery_t, MMPROFILE_FLAG_END, 0, 0);
 
 	return ret;
 }
 
 void ext_disp_probe(void)
 {
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	if (plcm_interface == NULL) {
 		plcm_interface = disp_ext_lcm_probe(ext_mtkfb_lcm_name, LCM_INTERFACE_NOTDEFINED, 0);
 		if (plcm_interface == NULL)
-			EXTDERR("disp_ext_lcm_probe returns null\n");
+			EXT_DISP_ERR("disp_ext_lcm_probe returns null\n");
 		else
-			EXTDMSG("disp_ext_lcm_probe SUCCESS. lcm name:%s\n", plcm_interface->drv->name);
+			EXT_DISP_ERR("disp_ext_lcm_probe SUCCESS. lcm name:%s\n", plcm_interface->drv->name);
 	}
 #endif
 
@@ -1205,11 +1252,9 @@ int ext_disp_init(char *lcm_name, unsigned int session)
 {
 	int ret = 0;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
 	dpmgr_init();
-
-	_ext_disp_path_lock(__func__);
 
 	if (pgc->state == EXTD_DEINIT) {
 		init_cmdq_slots(&(pgc->ext_cur_config_fence), EXTD_OVERLAY_CNT, 0);
@@ -1220,18 +1265,17 @@ int ext_disp_init(char *lcm_name, unsigned int session)
 #endif
 	}
 
-	if (pgc->state != EXTD_DEINIT)
-		EXTDERR("status is not EXTD_DEINIT!\n");
+	_ext_disp_path_lock();
 
-	/* Register external session cmdq dump callback */
-	dpmgr_register_cmdq_dump_callback(ext_disp_cmdq_dump);
+	if (pgc->state != EXTD_DEINIT)
+		EXT_DISP_ERR("status is not EXTD_DEINIT!\n");
 
 	if (DISP_SESSION_DEV(session) == DEV_LCM)
 		ret = ext_disp_init_lcm(lcm_name, session);
 	else
 		ret = ext_disp_init_hdmi(session);
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	return ret;
 }
@@ -1240,17 +1284,17 @@ int ext_disp_deinit(unsigned int session)
 {
 	int loop_cnt = 0;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	if (pgc->state == EXTD_DEINIT)
 		goto deinit_exit;
 
 	while (((atomic_read(&g_extd_trigger_ticket) - atomic_read(&g_extd_release_ticket)) != 1) && (loop_cnt < 10)) {
-		_ext_disp_path_unlock(__func__);
+		_ext_disp_path_unlock();
 		usleep_range(5000, 6000);
-		_ext_disp_path_lock(__func__);
+		_ext_disp_path_lock();
 		/* wait the last configuration done */
 		loop_cnt++;
 	}
@@ -1258,9 +1302,9 @@ int ext_disp_deinit(unsigned int session)
 	if (DISP_SESSION_DEV(session) == DEV_LCM) {
 		external_display_esd_check_enable(0);
 		if (pgc->state == EXTD_RESUME) {
-			_ext_disp_path_unlock(__func__);
+			_ext_disp_path_unlock();
 			ext_disp_suspend(session);
-			_ext_disp_path_lock(__func__);
+			_ext_disp_path_lock();
 		}
 	}
 
@@ -1270,9 +1314,6 @@ int ext_disp_deinit(unsigned int session)
 	dpmgr_path_deinit(pgc->dpmgr_handle, CMDQ_DISABLE);
 
 	dpmgr_destroy_path_handle(pgc->dpmgr_handle);
-
-	/* Release present timeline fence */
-	mtkfb_release_present_timeline_fence(pgc->session);
 
 	cmdqRecDestroy(pgc->cmdq_handle_config);
 	cmdqRecDestroy(pgc->cmdq_handle_trigger);
@@ -1288,47 +1329,52 @@ int ext_disp_deinit(unsigned int session)
 #endif
 	}
 
-	/* Unregister external session cmdq dump callback */
-	dpmgr_unregister_cmdq_dump_callback(ext_disp_cmdq_dump);
-
 	pgc->state = EXTD_DEINIT;
 
  deinit_exit:
-	_ext_disp_path_unlock(__func__);
-	EXTDMSG("ext_disp_deinit done\n");
+	_ext_disp_path_unlock();
+	is_context_inited = 0;
+	EXT_DISP_LOG("ext_disp_deinit done\n");
 	return 0;
 }
 
 int ext_disp_wait_for_vsync(void *config, unsigned int session)
 {
 	int ret = 0;
+	struct disp_session_vsync_config *c = (struct disp_session_vsync_config *) config;
 
-	/* EXTDFUNC(); */
+	/*EXT_DISP_FUNC();*/
 
-	if (pgc->state != EXTD_RESUME && pgc->state != EXTD_INIT) {
-		EXTDERR("%s: External display path is suspended\n", __func__);
+	if (pgc->state != EXTD_RESUME) {
+		EXT_DISP_LOG("%s: External display path is suspended\n", __func__);
 		mdelay(20);
 		return -1;
 	}
 
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	if ((pgc->lcm_state == EXTD_LCM_SUSPEND) || (pgc->lcm_state == EXTD_LCM_NO_INIT)) {
-		EXTDERR("%s: SUB LCM is suspended\n", __func__);
-		return -1;
+		EXT_DISP_LOG("%s: SUB LCM is suspended\n", __func__);
+		return -2;
 	}
 
 	/* kick idle manager here to ensure sodi is disabled when screen update begin(not 100% ensure) */
 	external_display_idlemgr_kick((char *)__func__, 1);
 #endif
 
+	_ext_disp_vsync_lock(session);
+
 	ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, HZ / 10);
 
 	if (ret == -2) {
-		EXTDERR("vsync for ext display path not enabled yet\n");
+		EXT_DISP_LOG("vsync for ext display path not enabled yet\n");
+		_ext_disp_vsync_unlock(session);
 		return -1;
 	}
-	/*EXTDINFO("ext_disp_wait_for_vsync - vsync signaled\n");*/
+	/*EXT_DISP_LOG("ext_disp_wait_for_vsync - vsync signaled\n");*/
+	c->vsync_ts = get_current_time_us();
+	c->vsync_cnt++;
 
+	_ext_disp_vsync_unlock(session);
 	return ret;
 }
 
@@ -1336,14 +1382,12 @@ static int ext_disp_suspend_release_fence(unsigned int session)
 {
 	unsigned int i = 0;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
-	/* Release input fence */
 	for (i = 0; i < EXTERNAL_SESSION_INPUT_LAYER_COUNT; i++) {
 		DISPPR_FENCE("ext_disp_suspend_release_fence  session=0x%x,layerid=%d\n", session, i);
 		mtkfb_release_layer_fence(session, i);
 	}
-	EXTDINFO("ext_disp_suspend_release_fence done\n");
 	return 0;
 }
 
@@ -1351,15 +1395,15 @@ int ext_disp_suspend(unsigned int session)
 {
 	enum EXT_DISP_STATUS ret = EXT_DISP_STATUS_OK;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	ext_disp_esd_check_lock();
 #endif
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	if (pgc->state == EXTD_DEINIT || pgc->state == EXTD_SUSPEND || session != pgc->session) {
-		EXTDERR("status is not EXTD_RESUME or session is not match\n");
+		EXT_DISP_ERR("status is not EXTD_RESUME or session is not match\n");
 		goto done;
 	}
 
@@ -1384,29 +1428,26 @@ int ext_disp_suspend(unsigned int session)
 
 	if (DISP_SESSION_DEV(session) == DEV_LCM) {
 		external_display_esd_check_enable(0);
-		EXTDMSG("lcm suspend[begin]\n");
+		EXT_DISP_LOG("lcm suspend[begin]\n");
 		disp_lcm_suspend(pgc->plcm);
-		EXTDMSG("lcm suspend[end]\n");
+		EXT_DISP_LOG("lcm suspend[end]\n");
 		pgc->lcm_state = EXTD_LCM_SUSPEND;
 		ext_disp_suspend_release_fence(session);
 	}
 
 	dpmgr_path_power_off(pgc->dpmgr_handle, CMDQ_DISABLE);
 
-	/* Unregister external session cmdq dump callback */
-	dpmgr_unregister_cmdq_dump_callback(ext_disp_cmdq_dump);
-
 	pgc->state = EXTD_SUSPEND;
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	ext_disp_set_state(EXTD_SUSPEND);
 #endif
  done:
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 	ext_disp_esd_check_unlock();
 #endif
 
-	EXTDMSG("ext_disp_suspend done\n");
+	EXT_DISP_LOG("ext_disp_suspend done\n");
 	return ret;
 }
 
@@ -1414,19 +1455,15 @@ int ext_disp_resume(unsigned int session)
 {
 	struct disp_ddp_path_config *data_config;
 	enum EXT_DISP_STATUS ret = EXT_DISP_STATUS_OK;
-	int i = 0;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	if (pgc->state != EXTD_SUSPEND || session != pgc->session) {
-		EXTDERR("EXTD_DEINIT/EXTD_INIT/EXTD_RESUME\n");
+		EXT_DISP_ERR("EXTD_DEINIT/EXTD_INIT/EXTD_RESUME\n");
 		goto done;
 	}
-
-	/* Register external session cmdq dump callback */
-	dpmgr_register_cmdq_dump_callback(ext_disp_cmdq_dump);
 
 	init_roi = 1;
 
@@ -1461,24 +1498,17 @@ int ext_disp_resume(unsigned int session)
 		/*data_config->fps = lcm_fps;*/
 		data_config->dst_dirty = 1;
 
-		/* disable all ovl layers to show black screen */
-		for (i = 0; i < ARRAY_SIZE(data_config->ovl_config); i++)
-			data_config->ovl_config[i].layer_en = 0;
-
-		data_config->ovl_dirty = 1;
-
-		ret = dpmgr_path_config(pgc->dpmgr_handle, data_config, NULL);
-		data_config->dst_dirty = 0;
+		dpmgr_path_config(pgc->dpmgr_handle, data_config, NULL);
 
 		if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-			EXTDERR("[POWER]Fatal error, we didn't start display path but it's already busy\n");
+			EXT_DISP_ERR("[POWER]Fatal error, we didn't start display path but it's already busy\n");
 			ret = EXT_DISP_STATUS_ERROR;
 		}
 
 		if (DISP_SESSION_DEV(session) == DEV_LCM) {
-			EXTDMSG("[POWER]lcm resume[begin]\n");
+			EXT_DISP_LOG("[POWER]lcm resume[begin]\n");
 			disp_lcm_resume(pgc->plcm);
-			EXTDMSG("[POWER]lcm resume[end]\n");
+			EXT_DISP_LOG("[POWER]lcm resume[end]\n");
 			external_display_esd_check_enable(1);
 			pgc->lcm_state = EXTD_LCM_RESUME;
 		}
@@ -1492,7 +1522,7 @@ int ext_disp_resume(unsigned int session)
 			/* for video mode, we need to force trigger here */
 			/* for cmd mode, just set DPREC_EVENT_CMDQ_SET_EVENT_ALLOW when trigger loop start */
 			if (_should_insert_wait_frame_done_token())
-				_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+				_cmdq_insert_wait_frame_done_token(0);
 
 			dpmgr_path_trigger(pgc->dpmgr_handle, NULL, CMDQ_DISABLE);
 		}
@@ -1503,7 +1533,7 @@ int ext_disp_resume(unsigned int session)
 
 	if (DISP_SESSION_DEV(session) != DEV_LCM) {
 		if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-			EXTDERR("stop display path failed, still busy\n");
+			EXT_DISP_LOG("stop display path failed, still busy\n");
 			ret = -1;
 			goto done;
 		}
@@ -1518,8 +1548,8 @@ int ext_disp_resume(unsigned int session)
 #endif
 
  done:
-	_ext_disp_path_unlock(__func__);
-	EXTDMSG("ext_disp_resume done\n");
+	_ext_disp_path_unlock();
+	EXT_DISP_LOG("ext_disp_resume done\n");
 	mmprofile_log_ex(ddp_mmp_get_events()->Extd_State, MMPROFILE_FLAG_PULSE, Resume, 1);
 	return ret;
 }
@@ -1535,7 +1565,8 @@ int ext_fence_release_callback(unsigned long userdata)
 	unsigned int status = 0;
 #endif
 
-	EXTDFUNC();
+
+	/*EXT_DISP_FUNC();*/
 
 	cmdqBackupReadSlot(pgc->ext_input_config_info, 0, &input_config_info);
 
@@ -1547,7 +1578,7 @@ int ext_fence_release_callback(unsigned long userdata)
 			ext_disp_path_change(EXTD_OVL_NO_REQ, pgc->session);
 	}
 
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	for (i = 0; i < EXTD_OVERLAY_CNT; i++) {
 		cmdqBackupReadSlot(pgc->ext_cur_config_fence, i, &fence_idx);
@@ -1559,24 +1590,20 @@ int ext_fence_release_callback(unsigned long userdata)
 			MMPROFILE_FLAG_PULSE, fence_idx, i);
 	}
 
-	/* Release present fence */
-	if (gCurrentPresentFenceIndex != -1)
-		mtkfb_release_present_fence(pgc->session, gCurrentPresentFenceIndex);
-
 #ifdef EXTD_DEBUG_SUPPORT
 	/* check last ovl/rdma status: should be idle when config */
 	cmdqBackupReadSlot(pgc->ext_ovl_rdma_status_info, 0, &status);
 	if (input_config_info & 0x100) {	/*input source is rdma*/
 		if ((status & 0x1000) != 0) {
 			/* rdma smi is not idle !! */
-			EXTDERR("extd rdma-smi status error!! stat=0x%x\n", status);
+			EXT_DISP_ERR("extd rdma-smi status error!! stat=0x%x\n", status);
 			ext_disp_diagnose();
 			ret = -1;
 		}
 	} else {
 		if ((status & 0x1) != 0) {
 			/* ovl is not idle !! */
-			EXTDERR("extd ovl status error!! stat=0x%x\n", status);
+			EXT_DISP_ERR("extd ovl status error!! stat=0x%x\n", status);
 			ext_disp_diagnose();
 			ret = -1;
 		}
@@ -1588,14 +1615,14 @@ int ext_fence_release_callback(unsigned long userdata)
 		/* hdmi video config with layer_type */
 		external_display_util.hdmi_video_format_config(input_config_info & 0xff);
 	else
-		EXTDMSG("ext_fence_release_callback ext display is not resume\n");
+		EXT_DISP_LOG("ext_fence_release_callback ext display is not resume\n");
 #endif
 
 	atomic_set(&g_extd_release_ticket, userdata);
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
-	EXTDINFO("ext_fence_release_callback done\n");
+	/* EXT_DISP_LOG("ext_fence_release_callback done\n"); */
 
 	return ret;
 }
@@ -1604,13 +1631,13 @@ int ext_disp_trigger(int blocking, void *callback, unsigned int userdata, unsign
 {
 	int ret = 0;
 
-	/* EXTDFUNC(); */
-	_ext_disp_path_lock(__func__);
+/*	EXT_DISP_FUNC();	*/
+	_ext_disp_path_lock();
 
 	if (pgc->state == EXTD_DEINIT || pgc->state == EXTD_SUSPEND || pgc->need_trigger_overlay < 1) {
-		EXTDERR("trigger ext display is already slept\n");
+		EXT_DISP_LOG("trigger ext display is already slept\n");
 		mmprofile_log_ex(ddp_mmp_get_events()->Extd_ErrorInfo, MMPROFILE_FLAG_PULSE, Trigger, 0);
-		_ext_disp_path_unlock(__func__);
+		_ext_disp_path_unlock();
 		return -1;
 	}
 
@@ -1633,8 +1660,8 @@ int ext_disp_trigger(int blocking, void *callback, unsigned int userdata, unsign
 
 	pgc->state = EXTD_RESUME;
 done:
-	_ext_disp_path_unlock(__func__);
-	/* EXTDINFO("ext_disp_trigger done\n"); */
+	_ext_disp_path_unlock();
+/*	EXT_DISP_LOG("ext_disp_trigger done\n");	*/
 
 	return ret;
 }
@@ -1643,14 +1670,14 @@ int ext_disp_suspend_trigger(void *callback, unsigned int userdata, unsigned int
 {
 	enum EXT_DISP_STATUS ret = EXT_DISP_STATUS_OK;
 
-	EXTDFUNC();
+	EXT_DISP_FUNC();
 
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	if (pgc->state != EXTD_RESUME) {
-		EXTDERR("trigger ext display is already slept\n");
+		EXT_DISP_LOG("trigger ext display is already slept\n");
 		mmprofile_log_ex(ddp_mmp_get_events()->Extd_ErrorInfo, MMPROFILE_FLAG_PULSE, Trigger, 0);
-		_ext_disp_path_unlock(__func__);
+		_ext_disp_path_unlock();
 		return -1;
 	}
 
@@ -1660,7 +1687,7 @@ int ext_disp_suspend_trigger(void *callback, unsigned int userdata, unsigned int
 		_cmdq_reset_config_handle();
 
 	if (_should_insert_wait_frame_done_token())
-		_ext_cmdq_insert_wait_frame_done_token(pgc->cmdq_handle_config);
+		_cmdq_insert_wait_frame_done_token(0);
 
 	pgc->need_trigger_overlay = 0;
 
@@ -1682,7 +1709,7 @@ int ext_disp_suspend_trigger(void *callback, unsigned int userdata, unsigned int
 
 	pgc->state = EXTD_SUSPEND;
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	mmprofile_log_ex(ddp_mmp_get_events()->Extd_State, MMPROFILE_FLAG_PULSE, Suspend, 1);
 	return ret;
@@ -1701,14 +1728,14 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 
 	unsigned int session = cfg->session_id;
 
-	EXTDFUNC();
-	_ext_disp_path_lock(__func__);
+	/* EXT_DISP_FUNC(); */
+	_ext_disp_path_lock();
 
 	if (pgc->state != EXTD_INIT && pgc->state != EXTD_RESUME && pgc->suspend_config != 1) {
-		EXTDERR("config ext disp is already slept, state:%d\n", pgc->state);
+		EXT_DISP_LOG("config ext disp is already slept, state:%d\n", pgc->state);
 		mmprofile_log_ex(ddp_mmp_get_events()->Extd_ErrorInfo, MMPROFILE_FLAG_PULSE, Config,
 			cfg->input_cfg[0].next_buff_idx);
-		_ext_disp_path_unlock(__func__);
+		_ext_disp_path_unlock();
 		return -2;
 	}
 
@@ -1724,7 +1751,7 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 	if (layer_cnt == 1) {
 		ext_disp_path_change(EXTD_OVL_REMOVE_REQ, session);
 		if (ext_disp_get_ovl_req_status(session) == EXTD_OVL_REMOVE_REQ) {
-			EXTDINFO("config M4U Port DISP_MODULE_RDMA1\n");
+			EXT_DISP_LOG("config M4U Port DISP_MODULE_RDMA1\n");
 			sPort.ePortID = M4U_PORT_DISP_RDMA1;
 			sPort.Virtuality = 1;
 			sPort.Security = 0;
@@ -1732,7 +1759,7 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 			sPort.Direction = 0;
 			ret = m4u_config_port(&sPort);
 			if (ret != 0)
-				EXTDERR("config M4U Port DISP_MODULE_RDMA1 FAIL\n");
+				EXT_DISP_LOG("config M4U Port DISP_MODULE_RDMA1 FAIL\n");
 
 			if (DISP_SESSION_DEV(session) == DEV_LCM)
 				ddp_set_dst_module(DDP_SCENARIO_SUB_RDMA1_DISP, DISP_MODULE_DSI1);
@@ -1745,7 +1772,7 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 	} else if (layer_cnt > 1) {
 		ext_disp_path_change(EXTD_OVL_INSERT_REQ, session);
 		if (ext_disp_get_ovl_req_status(session) == EXTD_OVL_INSERT_REQ) {
-			EXTDINFO("config M4U Port DISP_MODULE_OVL1_2L\n");
+			EXT_DISP_LOG("config M4U Port DISP_MODULE_OVL1_2L\n");
 			sPort.ePortID = M4U_PORT_DISP_2L_OVL1_LARB0;
 			sPort.Virtuality = 1;
 			sPort.Security = 0;
@@ -1753,7 +1780,7 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 			sPort.Direction = 0;
 			ret = m4u_config_port(&sPort);
 			if (ret != 0)
-				EXTDERR("config M4U Port DISP_MODULE_OVL1 FAIL\n");
+				EXT_DISP_LOG("config M4U Port DISP_MODULE_OVL1 FAIL\n");
 
 			if (DISP_SESSION_DEV(session) == DEV_LCM)
 				ddp_set_dst_module(DDP_SCENARIO_SUB_DISP, DISP_MODULE_DSI1);
@@ -1796,10 +1823,10 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 				memcpy(&(data_config->dispif_config), &extd_lcm_params, sizeof(LCM_PARAMS));
 
 			if (DISP_SESSION_DEV(session) == DEV_LCM)
-				EXTDINFO("set dest w:%d, h:%d\n",
+				EXT_DISP_LOG("set dest w:%d, h:%d\n",
 						data_config->dst_w, data_config->dst_h);
 			else
-				EXTDINFO("set dest w:%d, h:%d\n",
+				EXT_DISP_LOG("set dest w:%d, h:%d\n",
 						extd_lcm_params.dpi.width, extd_lcm_params.dpi.height);
 
 				data_config->dst_dirty = 1;
@@ -1864,34 +1891,32 @@ int ext_disp_frame_cfg_input(struct disp_frame_cfg_t *cfg)
 	cmdqRecBackupUpdateSlot(pgc->cmdq_handle_config, pgc->ext_input_config_info,
 			0, (input_source << 8) | (cfg->input_cfg[0].layer_type));
 
-	/* Update present fence index */
-	if (cfg->present_fence_idx != (unsigned int)-1)
-		gCurrentPresentFenceIndex = cfg->present_fence_idx;
-
 #ifdef EXTD_DEBUG_SUPPORT
-	if (_should_config_ovl_input())
+	if (_should_config_ovl_input()) {
 		cmdqRecBackupRegisterToSlot(pgc->cmdq_handle_config,
 						pgc->ext_ovl_rdma_status_info,
 						0, disp_addr_convert(DDP_REG_BASE_DISP_OVL1 +
 						DISP_REG_OVL_STA));
-	else
+	} else {
 		cmdqRecBackupRegisterToSlot(pgc->cmdq_handle_config,
 						pgc->ext_ovl_rdma_status_info,
 						0, disp_addr_convert(DISP_REG_RDMA_GLOBAL_CON +
 						DISP_RDMA_INDEX_OFFSET));
+	}
 #endif
 
-	if (data_config->ovl_dirty)
-		EXTDINFO("ext_disp_frame_cfg_input idx:%d -w:%d, h:%d, pitch:%d\n",
+	if (data_config->ovl_dirty) {
+		EXT_DISP_LOG("ext_disp_frame_cfg_input idx:%d -w:%d, h:%d, pitch:%d\n",
 				cfg->input_cfg[0].next_buff_idx, data_config->ovl_config[0].src_w,
 				data_config->ovl_config[0].src_h, data_config->ovl_config[0].src_pitch);
-	else
-		EXTDINFO("ext_disp_frame_cfg_input idx:%d -w:%d, h:%d, pitch:%d, mva:0x%lx\n",
+	} else {
+		EXT_DISP_LOG("ext_disp_frame_cfg_input idx:%d -w:%d, h:%d, pitch:%d, mva:0x%lx\n",
 				cfg->input_cfg[0].next_buff_idx, data_config->rdma_config.width,
 				data_config->rdma_config.height, data_config->rdma_config.pitch,
 				data_config->rdma_config.address);
+	}
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	return ret;
 }
@@ -1908,10 +1933,10 @@ int ext_disp_is_alive(void)
 {
 	unsigned int temp = 0;
 
-	/* EXTDFUNC(); */
-	_ext_disp_path_lock(__func__);
+	EXT_DISP_FUNC();
+	_ext_disp_path_lock();
 	temp = pgc->state;
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	return temp;
 }
@@ -1919,11 +1944,10 @@ int ext_disp_is_alive(void)
 int ext_disp_is_sleepd(void)
 {
 	unsigned int temp = 0;
-
-	/* EXTDFUNC(); */
-	_ext_disp_path_lock(__func__);
+	/* EXT_DISP_FUNC(); */
+	_ext_disp_path_lock();
 	temp = !pgc->state;
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 
 	return temp;
 }
@@ -1972,7 +1996,7 @@ int ext_disp_diagnose(void)
 	int ret = 0;
 
 	if (is_context_inited > 0) {
-		EXTDMSG("ext_disp_diagnose, is_context_inited --%d\n", is_context_inited);
+		EXT_DISP_LOG("ext_disp_diagnose, is_context_inited --%d\n", is_context_inited);
 		dpmgr_check_status(pgc->dpmgr_handle);
 	}
 
@@ -1986,12 +2010,12 @@ enum CMDQ_SWITCH ext_disp_cmdq_enabled(void)
 
 int ext_disp_switch_cmdq(enum CMDQ_SWITCH use_cmdq)
 {
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	ext_disp_use_cmdq = use_cmdq;
-	EXTDMSG("display driver use %s to config register now\n", (use_cmdq == CMDQ_ENABLE) ? "CMDQ" : "CPU");
+	EXT_DISP_LOG("display driver use %s to config register now\n", (use_cmdq == CMDQ_ENABLE) ? "CMDQ" : "CPU");
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 	return ext_disp_use_cmdq;
 }
 
@@ -2047,7 +2071,7 @@ enum EXTD_OVL_REQ_STATUS ext_disp_get_ovl_req_status(unsigned int session)
 
 int ext_disp_path_change(enum EXTD_OVL_REQ_STATUS action, unsigned int session)
 {
-/*	EXTDFUNC();*/
+/*	EXT_DISP_FUNC();*/
 
 	if (EXTD_OVERLAY_CNT > 0) {
 /*		_ext_disp_path_lock();*/
@@ -2144,15 +2168,19 @@ int ext_disp_is_dim_layer(unsigned long mva)
 	return ret;
 }
 
-void extd_disp_get_interface(struct disp_lcm_handle **plcm)
+int extd_disp_get_interface(struct disp_lcm_handle **plcm)
 {
 	if (plcm_interface == NULL) {
 		plcm_interface = disp_ext_lcm_probe(NULL, LCM_INTERFACE_NOTDEFINED, 0);
 		if (plcm_interface == NULL)
-			EXTDERR("disp_lcm_probe returns null\n");
+			EXT_DISP_ERR("disp_lcm_probe returns null\n");
+		else
+			EXT_DISP_ERR("disp_lcm_probe SUCCESS. lcm name:%s\n", plcm_interface->drv->name);
 	}
 
 	*plcm = plcm_interface;
+
+	return 0;
 }
 
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
@@ -2168,7 +2196,7 @@ enum EXTD_POWER_STATE ext_disp_set_state(enum EXTD_POWER_STATE new_state)
 	enum EXTD_POWER_STATE old_state = pgc->state;
 
 	pgc->state = new_state;
-	EXTDINFO("%s %d to %d\n", __func__, old_state, new_state);
+	DISPINFO("%s %d to %d\n", __func__, old_state, new_state);
 	wake_up(&ext_disp_state_wait_queue);
 	return old_state;
 }
@@ -2187,12 +2215,17 @@ long ext_disp_wait_state(enum EXTD_POWER_STATE state, long timeout)
 	return ret;
 }
 
+void _ext_cmdq_insert_wait_frame_done_token_no_clear(void *handle)
+{
+	cmdqRecWaitNoClear(handle, CMDQ_SYNC_TOKEN_EXT_STREAM_EOF);
+}
+
 void *ext_disp_get_dpmgr_handle(void)
 {
 	return pgc->dpmgr_handle;
 }
 
-static void _cmdq_flush_config_handle_mira(void *handle, int blocking)
+static void _ext_disp_cmdq_flush_config_handle_mira(void *handle, int blocking)
 {
 	if (blocking)
 		cmdqRecFlush(handle);
@@ -2200,39 +2233,41 @@ static void _cmdq_flush_config_handle_mira(void *handle, int blocking)
 		cmdqRecFlushAsync(handle);
 }
 
+static void _ext_disp_cmdq_handle_clear_dirty_by_handle(struct cmdqRecStruct *cmdq_handle)
+{
+	if (!ext_disp_is_video_mode())
+		cmdqRecClearEventToken(cmdq_handle, CMDQ_SYNC_TOKEN_EXT_CONFIG_DIRTY);
+}
+
 static int _set_backlight_by_cmdq(unsigned int level)
 {
 	int ret = 0;
 	struct cmdqRecStruct *cmdq_handle_backlight = NULL;
 
-	EXTDFUNC();
-
 	ret = cmdqRecCreate(CMDQ_SCENARIO_MHL_DISP, &cmdq_handle_backlight);
 	if (ret) {
-		EXTDERR("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
+		DISPERR("%s:%d, create cmdq handle fail!ret=%d\n", __func__, __LINE__, ret);
 		ret = -1;
 		goto done;
 	}
-	EXTDINFO("external backlight, handle=%p\n", cmdq_handle_backlight);
+	DISPDBG("external backlight, handle=%p\n", cmdq_handle_backlight);
 	cmdqRecSetEngine(cmdq_handle_backlight,
 						((1LL << CMDQ_ENG_DISP_OVL1) | (1LL << CMDQ_ENG_DISP_WDMA1)));
 
 	cmdqRecReset(cmdq_handle_backlight);
 
 	if (ext_disp_is_video_mode()) {
-		_ext_cmdq_insert_wait_frame_done_token(cmdq_handle_backlight);
+		_ext_cmdq_insert_wait_frame_done_token_no_clear(cmdq_handle_backlight);
 		disp_lcm_set_backlight(pgc->plcm, cmdq_handle_backlight, level);
-		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
-		EXTDMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
+		_ext_disp_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
+		DISPMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
 	} else {
-		cmdqRecWait(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_EXT_CABC_EOF);
-		_cmdq_handle_clear_dirty(cmdq_handle_backlight);
-		_ext_cmdq_insert_wait_frame_done_token(cmdq_handle_backlight);
+		_ext_disp_cmdq_handle_clear_dirty_by_handle(cmdq_handle_backlight);
+		_ext_cmdq_insert_wait_frame_done_token_no_clear(cmdq_handle_backlight);
 		disp_lcm_set_backlight(pgc->plcm, cmdq_handle_backlight, level);
-/*		cmdqRecSetEventToken(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_EXT_CONFIG_DIRTY);*/
-		cmdqRecSetEventToken(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_EXT_CABC_EOF);
-		_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
-		EXTDMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
+		cmdqRecSetEventToken(cmdq_handle_backlight, CMDQ_SYNC_TOKEN_EXT_CONFIG_DIRTY);
+		_ext_disp_cmdq_flush_config_handle_mira(cmdq_handle_backlight, 1);
+		DISPMSG("[BL]_set_backlight_by_cmdq ret=%d\n", ret);
 	}
 	cmdqRecDestroy(cmdq_handle_backlight);
 	cmdq_handle_backlight = NULL;
@@ -2245,48 +2280,48 @@ static int _set_backlight_by_cpu(unsigned int level)
 {
 	int ret = 0;
 
-	EXTDFUNC();
+/*	DISPFUNC(); */
 
 	if (ext_disp_is_video_mode()) {
 		disp_lcm_set_backlight(pgc->plcm, NULL, level);
 	} else {
-		EXTDMSG("[BL]display cmdq trigger loop stop[begin]\n");
+		DISPCHECK("[BL]display cmdq trigger loop stop[begin]\n");
 		if (ext_disp_cmdq_enabled())
 			_cmdq_stop_extd_trigger_loop();
 
-		EXTDMSG("[BL]display cmdq trigger loop stop[end]\n");
+		DISPCHECK("[BL]display cmdq trigger loop stop[end]\n");
 
 		if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-			EXTDMSG("[BL]external display path is busy\n");
+			DISPCHECK("[BL]external display path is busy\n");
 			ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE,
 						     HZ * 1);
-			EXTDMSG("[BL]wait frame done ret:%d\n", ret);
+			DISPCHECK("[BL]wait frame done ret:%d\n", ret);
 		}
 
-		EXTDMSG("[BL]stop dpmgr path[begin]\n");
+		DISPCHECK("[BL]stop dpmgr path[begin]\n");
 		dpmgr_path_stop(pgc->dpmgr_handle, CMDQ_DISABLE);
-		EXTDMSG("[BL]stop dpmgr path[end]\n");
+		DISPCHECK("[BL]stop dpmgr path[end]\n");
 		if (dpmgr_path_is_busy(pgc->dpmgr_handle)) {
-			EXTDMSG("[BL]external display path is busy after stop\n");
+			DISPCHECK("[BL]external display path is busy after stop\n");
 			dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_FRAME_DONE,
 						 HZ * 1);
-			EXTDMSG("[BL]wait frame done ret:%d\n", ret);
+			DISPCHECK("[BL]wait frame done ret:%d\n", ret);
 		}
-		EXTDMSG("[BL]reset display path[begin]\n");
+		DISPCHECK("[BL]reset display path[begin]\n");
 		dpmgr_path_reset(pgc->dpmgr_handle, CMDQ_DISABLE);
-		EXTDMSG("[BL]reset display path[end]\n");
+		DISPCHECK("[BL]reset display path[end]\n");
 
 		disp_lcm_set_backlight(pgc->plcm, NULL, level);
 
-		EXTDMSG("[BL]start dpmgr path[begin]\n");
+		DISPCHECK("[BL]start dpmgr path[begin]\n");
 		dpmgr_path_start(pgc->dpmgr_handle, CMDQ_DISABLE);
-		EXTDMSG("[BL]start dpmgr path[end]\n");
+		DISPCHECK("[BL]start dpmgr path[end]\n");
 
 		if (ext_disp_cmdq_enabled()) {
-			EXTDMSG("[BL]start cmdq trigger loop[begin]\n");
+			DISPCHECK("[BL]start cmdq trigger loop[begin]\n");
 			_cmdq_start_extd_trigger_loop();
 		}
-		EXTDMSG("[BL]start cmdq trigger loop[end]\n");
+		DISPCHECK("[BL]start cmdq trigger loop[end]\n");
 	}
 
 	return ret;
@@ -2297,18 +2332,18 @@ int external_display_setbacklight(unsigned int level)
 	int ret = 0;
 	static unsigned int last_level;
 
-	EXTDFUNC();
+	DISPFUNC();
 
 	if (last_level == level)
 		return 0;
 
 	ext_disp_esd_check_lock();
-	_ext_disp_path_lock(__func__);
+	_ext_disp_path_lock();
 
 	if (pgc->state == EXTD_SUSPEND) {
-		EXTDERR("%s: external sleep state set backlight invald\n", __func__);
+		EXT_DISP_LOG("%s: external sleep state set backlight invald\n", __func__);
 	} else if ((pgc->lcm_state == EXTD_LCM_SUSPEND) || (pgc->lcm_state == EXTD_LCM_NO_INIT)) {
-		EXTDERR("%s: SUB LCM is suspended\n", __func__);
+		EXT_DISP_LOG("%s: SUB LCM is suspended\n", __func__);
 	} else {
 		external_display_idlemgr_kick((char *)__func__, 0);
 		if (ext_disp_cmdq_enabled()) {
@@ -2322,10 +2357,10 @@ int external_display_setbacklight(unsigned int level)
 		last_level = level;
 	}
 
-	_ext_disp_path_unlock(__func__);
+	_ext_disp_path_unlock();
 	ext_disp_esd_check_unlock();
 
-	EXTDINFO("external_display_setbacklight done\n");
+	DISPDBG("external_display_setbacklight done\n");
 	return ret;
 }
 #endif

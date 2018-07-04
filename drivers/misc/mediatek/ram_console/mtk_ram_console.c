@@ -32,9 +32,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/pstore.h>
 #include <linux/io.h>
-#include <mt-plat/aee.h>
 #include "ram_console.h"
-#include <mach/memory_layout.h>
 
 #define RAM_CONSOLE_HEADER_STR_LEN 1024
 
@@ -46,7 +44,6 @@ static int mtk_cpu_num;
 static int ram_console_init_done;
 static unsigned int old_wdt_status;
 static int ram_console_clear;
-static bool reserve_mem_fail;
 
 /*
  *  This group of API call by sub-driver module to report reboot reasons
@@ -55,19 +52,17 @@ static bool reserve_mem_fail;
 struct last_reboot_reason {
 	uint32_t fiq_step;
 	uint32_t exp_type;	/* 0xaeedeadX: X=1 (HWT), X=2 (KE), X=3 (nested panic) */
-	uint64_t kaslr_offset;
-	uint64_t ram_console_buffer_addr;
 	uint32_t reboot_mode;
 
-	uint32_t last_irq_enter[AEE_MTK_CPU_NUMS];
-	uint64_t jiffies_last_irq_enter[AEE_MTK_CPU_NUMS];
+	uint32_t last_irq_enter[NR_CPUS];
+	uint64_t jiffies_last_irq_enter[NR_CPUS];
 
-	uint32_t last_irq_exit[AEE_MTK_CPU_NUMS];
-	uint64_t jiffies_last_irq_exit[AEE_MTK_CPU_NUMS];
+	uint32_t last_irq_exit[NR_CPUS];
+	uint64_t jiffies_last_irq_exit[NR_CPUS];
 
-	uint64_t jiffies_last_sched[AEE_MTK_CPU_NUMS];
-	char last_sched_comm[AEE_MTK_CPU_NUMS][TASK_COMM_LEN];
-	uint8_t hotplug_footprint[AEE_MTK_CPU_NUMS];
+	uint64_t jiffies_last_sched[NR_CPUS];
+	char last_sched_comm[NR_CPUS][TASK_COMM_LEN];
+	uint8_t hotplug_footprint[NR_CPUS];
 	uint8_t hotplug_cpu_event;
 	uint8_t hotplug_cb_index;
 	uint64_t hotplug_cb_fp;
@@ -94,8 +89,8 @@ struct last_reboot_reason {
 	uint32_t mcsodi_data;
 	uint32_t spm_suspend_data;
 	uint32_t spm_common_scenario_data;
-	uint32_t mtk_cpuidle_footprint[AEE_MTK_CPU_NUMS];
-	uint32_t mcdi_footprint[AEE_MTK_CPU_NUMS];
+	uint32_t mtk_cpuidle_footprint[NR_CPUS];
+	uint32_t mcdi_footprint[NR_CPUS];
 	uint32_t clk_data[8];
 	uint32_t suspend_debug_flag;
 	uint32_t fiq_cache_step;
@@ -124,13 +119,6 @@ struct last_reboot_reason {
 	uint8_t gpu_dvfs_oppidx;
 	uint8_t gpu_dvfs_status;
 
-	uint32_t drcc_0;
-	uint32_t drcc_1;
-	uint32_t drcc_2;
-	uint32_t drcc_3;
-	uint32_t drcc_dbg_ret;
-	uint32_t drcc_dbg_off;
-	uint64_t drcc_dbg_ts;
 	uint32_t ptp_devinfo_0;
 	uint32_t ptp_devinfo_1;
 	uint32_t ptp_devinfo_2;
@@ -175,6 +163,8 @@ struct last_reboot_reason {
 	uint64_t ptp_temp;
 	uint8_t ptp_status;
 	uint8_t eem_pi_offset;
+	uint8_t etc_status;
+	uint8_t etc_mode;
 
 
 	int8_t thermal_temp[THERMAL_RESERVED_TZS];
@@ -201,7 +191,6 @@ struct last_reboot_reason {
 	unsigned long last_init_func;
 	uint8_t pmic_ext_buck;
 	uint32_t hang_detect_timeout_count;
-	uint32_t gz_irq;
 
 	void *kparams;
 };
@@ -247,16 +236,6 @@ static DEFINE_SPINLOCK(ram_console_lock);
 static atomic_t rc_in_fiq = ATOMIC_INIT(0);
 
 static void ram_console_init_val(void);
-
-#include "desc/desc_s.h"
-void aee_rr_get_desc_info(unsigned long *addr, unsigned long *size, unsigned long *start)
-{
-	if (addr == NULL || size == NULL || start == NULL)
-		return;
-	*addr = IDESC_ADDR;
-	*size = IDESC_SIZE;
-	*start = IDESC_START_POS;
-}
 
 #ifdef __aarch64__
 static void *_memcpy(void *dest, const void *src, size_t count)
@@ -556,7 +535,6 @@ static int __init ram_console_init(struct ram_console_buffer *buffer, size_t buf
 	buffer->log_start = 0;
 	buffer->log_size = 0;
 	memset_io((void *)buffer + buffer->off_linux, 0, buffer_size - buffer->off_linux);
-	ram_console_init_desc(buffer->off_linux);
 #ifndef CONFIG_PSTORE
 	register_console(&ram_console);
 #endif
@@ -700,10 +678,6 @@ static int __init ram_console_late_init(void)
 {
 	struct proc_dir_entry *entry;
 
-	if (reserve_mem_fail) {
-		pr_err("ram_console/pstore wrong reserved memory\n");
-		BUG();
-	}
 	entry = proc_create("last_kmsg", 0444, NULL, &ram_console_file_ops);
 	if (!entry) {
 		pr_err("ram_console: failed to create proc entry\n");
@@ -719,13 +693,7 @@ late_initcall(ram_console_late_init);
 
 int ram_console_pstore_reserve_memory(struct reserved_mem *rmem)
 {
-#ifndef DUMMY_MEMORY_LAYOUT
-	if (rmem->base != KERN_PSTORE_BASE || rmem->size > KERN_PSTORE_MAX_SIZE) {
-		reserve_mem_fail = true;
-		pr_info("pstore: Check the reserved address and size\n");
-	}
-#endif
-	pr_info("[memblock]%s: 0x%llx - 0x%llx (0x%llx)\n", "mediatek,pstore",
+	pr_alert("[memblock]%s: 0x%llx - 0x%llx (0x%llx)\n", "pstore-reserve-memory",
 		 (unsigned long long)rmem->base,
 		 (unsigned long long)rmem->base + (unsigned long long)rmem->size,
 		 (unsigned long long)rmem->size);
@@ -734,20 +702,14 @@ int ram_console_pstore_reserve_memory(struct reserved_mem *rmem)
 
 int ram_console_binary_reserve_memory(struct reserved_mem *rmem)
 {
-#ifndef DUMMY_MEMORY_LAYOUT
-	if (rmem->base != KERN_RAMCONSOLE_BASE || rmem->size > KERN_RAMCONSOLE_MAX_SIZE) {
-		reserve_mem_fail = true;
-		pr_info("ram_console: Check the reserved address and size\n");
-	}
-#endif
-	pr_info("[memblock]%s: 0x%llx - 0x%llx (0x%llx)\n", "mediatek,ram_console",
+	pr_alert("[memblock]%s: 0x%llx - 0x%llx (0x%llx)\n", "ram_console-reserve-memory",
 		 (unsigned long long)rmem->base,
 		 (unsigned long long)rmem->base + (unsigned long long)rmem->size,
 		 (unsigned long long)rmem->size);
 	return 0;
 }
 
-RESERVEDMEM_OF_DECLARE(reserve_memory_pstore, "mediatek,pstore",
+RESERVEDMEM_OF_DECLARE(reserve_memory_pstore, "pstore-reserve-memory",
 		       ram_console_pstore_reserve_memory);
 RESERVEDMEM_OF_DECLARE(reserve_memory_ram_console, "mediatek,ram_console",
 		       ram_console_binary_reserve_memory);
@@ -775,12 +737,6 @@ RESERVEDMEM_OF_DECLARE(reserve_memory_ram_console, "mediatek,ram_console",
 static void ram_console_init_val(void)
 {
 	LAST_RR_SET(pmic_ext_buck, 0xff);
-#if defined(CONFIG_RANDOMIZE_BASE) && defined(CONFIG_ARM64)
-	LAST_RR_SET(kaslr_offset, 0xecab1e);
-#else
-	LAST_RR_SET(kaslr_offset, 0xd15ab1e);
-#endif
-	LAST_RR_SET(ram_console_buffer_addr, (unsigned long)&ram_console_buffer);
 }
 
 void aee_rr_rec_reboot_mode(u8 mode)
@@ -822,13 +778,6 @@ unsigned int aee_rr_curr_exp_type(void)
 	unsigned int exp_type = LAST_RR_VAL(exp_type);
 
 	return (exp_type ^ 0xaeedead0) < 16 ? exp_type ^ 0xaeedead0 : exp_type;
-}
-
-void aee_rr_rec_kaslr_offset(uint64_t offset)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(kaslr_offset, offset);
 }
 
 /* composite api */
@@ -1145,7 +1094,6 @@ u32 aee_rr_curr_vcore_dvfs_opp(void)
 {
 	return LAST_RR_VAL(vcore_dvfs_opp);
 }
-EXPORT_SYMBOL(aee_rr_curr_vcore_dvfs_opp);
 
 void aee_rr_rec_vcore_dvfs_status(u32 val)
 {
@@ -1323,34 +1271,6 @@ void aee_rr_rec_gpu_dvfs_status(u8 val)
 u8 aee_rr_curr_gpu_dvfs_status(void)
 {
 	return LAST_RR_VAL(gpu_dvfs_status);
-}
-
-void aee_rr_rec_drcc_0(u32 val)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(drcc_0, val);
-}
-
-void aee_rr_rec_drcc_1(u32 val)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(drcc_1, val);
-}
-
-void aee_rr_rec_drcc_2(u32 val)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(drcc_2, val);
-}
-
-void aee_rr_rec_drcc_3(u32 val)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(drcc_3, val);
 }
 
 void aee_rr_rec_ptp_devinfo_0(u32 val)
@@ -1661,6 +1581,20 @@ void aee_rr_rec_eem_pi_offset(u8 val)
 	LAST_RR_SET(eem_pi_offset, val);
 }
 
+void aee_rr_rec_etc_status(u8 val)
+{
+	if (!ram_console_init_done)
+		return;
+	LAST_RR_SET(etc_status, val);
+}
+
+void aee_rr_rec_etc_mode(u8 val)
+{
+	if (!ram_console_init_done)
+		return;
+	LAST_RR_SET(etc_mode, val);
+}
+
 int aee_rr_init_thermal_temp(int num)
 {
 	if (num < 0 || num >= THERMAL_RESERVED_TZS) {
@@ -1795,26 +1729,6 @@ void aee_rr_rec_ocp_enable(u8 val)
 	if (!ram_console_init_done || !ram_console_buffer)
 		return;
 	LAST_RR_SET(ocp_enable, val);
-}
-
-u32 aee_rr_curr_drcc_0(void)
-{
-	return LAST_RR_VAL(drcc_0);
-}
-
-u32 aee_rr_curr_drcc_1(void)
-{
-	return LAST_RR_VAL(drcc_1);
-}
-
-u32 aee_rr_curr_drcc_2(void)
-{
-	return LAST_RR_VAL(drcc_2);
-}
-
-u32 aee_rr_curr_drcc_3(void)
-{
-	return LAST_RR_VAL(drcc_3);
 }
 
 u32 aee_rr_curr_ptp_devinfo_0(void)
@@ -2037,6 +1951,16 @@ u8 aee_rr_curr_eem_pi_offset(void)
 	return LAST_RR_VAL(eem_pi_offset);
 }
 
+u8 aee_rr_curr_etc_status(void)
+{
+	return LAST_RR_VAL(etc_status);
+}
+
+u8 aee_rr_curr_etc_mode(void)
+{
+	return LAST_RR_VAL(etc_mode);
+}
+
 s8 aee_rr_curr_thermal_temp(int index)
 {
 	if (index < 0 || index >= thermal_num)
@@ -2196,24 +2120,6 @@ void aee_rr_rec_hang_detect_timeout_count(unsigned int val)
 	LAST_RR_SET(hang_detect_timeout_count, val);
 }
 
-unsigned long *aee_rr_rec_gz_irq_pa(void)
-{
-	if (ram_console_buffer_pa)
-		return (unsigned long *)&RR_LINUX_PA->gz_irq;
-	else
-		return NULL;
-}
-
-void aee_rr_rec_drcc_dbg_info(uint32_t ret, uint32_t off, uint64_t ts)
-{
-	if (!ram_console_init_done || !ram_console_buffer)
-		return;
-	LAST_RR_SET(drcc_dbg_ret, ret);
-	LAST_RR_SET(drcc_dbg_off, off);
-	LAST_RR_SET(drcc_dbg_ts, ts);
-}
-
-
 void aee_rr_rec_suspend_debug_flag(u32 val)
 {
 	if (!ram_console_init_done || !ram_console_buffer)
@@ -2254,20 +2160,6 @@ void aee_rr_show_exp_type(struct seq_file *m)
 
 	seq_printf(m, " exception type: %u\n",
 		   (exp_type ^ 0xaeedead0) < 16 ? exp_type ^ 0xaeedead0 : exp_type);
-}
-
-void aee_rr_show_kaslr_offset(struct seq_file *m)
-{
-	uint64_t kaslr_offset = LAST_RRR_VAL(kaslr_offset);
-
-	seq_printf(m, "Kernel Offset: 0x%llx\n", kaslr_offset);
-}
-
-void aee_rr_show_ram_console_buffer_addr(struct seq_file *m)
-{
-	uint64_t ram_console_buffer_addr = LAST_RRR_VAL(ram_console_buffer_addr);
-
-	seq_printf(m, "&ram_console_buffer: 0x%llx\n", ram_console_buffer_addr);
 }
 
 void aee_rr_show_last_irq_enter(struct seq_file *m, int cpu)
@@ -2520,26 +2412,6 @@ void aee_rr_show_gpu_dvfs_oppidx(struct seq_file *m)
 void aee_rr_show_gpu_dvfs_status(struct seq_file *m)
 {
 	seq_printf(m, "gpu_dvfs_status: 0x%x\n", LAST_RRR_VAL(gpu_dvfs_status));
-}
-
-void aee_rr_show_drcc_0(struct seq_file *m)
-{
-	seq_printf(m, "drcc_0 = 0x%X\n", LAST_RRR_VAL(drcc_0));
-}
-
-void aee_rr_show_drcc_1(struct seq_file *m)
-{
-	seq_printf(m, "drcc_1 = 0x%X\n", LAST_RRR_VAL(drcc_1));
-}
-
-void aee_rr_show_drcc_2(struct seq_file *m)
-{
-	seq_printf(m, "drcc_2 = 0x%X\n", LAST_RRR_VAL(drcc_2));
-}
-
-void aee_rr_show_drcc_3(struct seq_file *m)
-{
-	seq_printf(m, "drcc_3 = 0x%X\n", LAST_RRR_VAL(drcc_3));
 }
 
 void aee_rr_show_ptp_devinfo_0(struct seq_file *m)
@@ -2856,6 +2728,16 @@ void aee_rr_show_eem_pi_offset(struct seq_file *m)
 	seq_printf(m, "eem_pi_offset : 0x%x\n", LAST_RRR_VAL(eem_pi_offset));
 }
 
+void aee_rr_show_etc_status(struct seq_file *m)
+{
+	seq_printf(m, "etc_status : 0x%x\n", LAST_RRR_VAL(etc_status));
+}
+
+void aee_rr_show_etc_mode(struct seq_file *m)
+{
+	seq_printf(m, "etc_mode : 0x%x\n", LAST_RRR_VAL(etc_mode));
+}
+
 void aee_rr_show_idvfs_ctrl_reg(struct seq_file *m)
 {
 	seq_printf(m, "idvfs_ctrl_reg = 0x%x\n", LAST_RRR_VAL(idvfs_ctrl_reg));
@@ -2997,18 +2879,6 @@ void aee_rr_show_hang_detect_timeout_count(struct seq_file *m)
 	seq_printf(m, "hang detect time out: 0x%x\n", LAST_RRR_VAL(hang_detect_timeout_count));
 }
 
-void aee_rr_show_gz_irq(struct seq_file *m)
-{
-	seq_printf(m, "GZ IRQ: 0x%x\n", LAST_RRR_VAL(gz_irq));
-}
-
-void aee_rr_show_drcc_dbg_info(struct seq_file *m)
-{
-	seq_printf(m, "DRCC dbg info result: 0x%x\n", LAST_RRR_VAL(drcc_dbg_ret));
-	seq_printf(m, "DRCC dbg info offset: 0x%x\n", LAST_RRR_VAL(drcc_dbg_off));
-	seq_printf(m, "DRCC dbg info timestamp: 0x%llx\n", LAST_RRR_VAL(drcc_dbg_ts));
-}
-
 void aee_rr_show_isr_el1(struct seq_file *m)
 {
 	seq_printf(m, "isr_el1: %d\n", LAST_RRR_VAL(isr_el1));
@@ -3111,8 +2981,6 @@ last_rr_show_t aee_rr_show[] = {
 	aee_rr_show_wdt_status,
 	aee_rr_show_fiq_step,
 	aee_rr_show_exp_type,
-	aee_rr_show_kaslr_offset,
-	aee_rr_show_ram_console_buffer_addr,
 	aee_rr_show_last_pc,
 	aee_rr_show_last_bus,
 	aee_rr_show_mcdi,
@@ -3149,11 +3017,6 @@ last_rr_show_t aee_rr_show[] = {
 	aee_rr_show_gpu_dvfs_vgpu,
 	aee_rr_show_gpu_dvfs_oppidx,
 	aee_rr_show_gpu_dvfs_status,
-	aee_rr_show_drcc_0,
-	aee_rr_show_drcc_1,
-	aee_rr_show_drcc_2,
-	aee_rr_show_drcc_3,
-	aee_rr_show_drcc_dbg_info,
 	aee_rr_show_ptp_devinfo_0,
 	aee_rr_show_ptp_devinfo_1,
 	aee_rr_show_ptp_devinfo_2,
@@ -3197,6 +3060,8 @@ last_rr_show_t aee_rr_show[] = {
 	aee_rr_show_ptp_temp,
 	aee_rr_show_ptp_status,
 	aee_rr_show_eem_pi_offset,
+	aee_rr_show_etc_status,
+	aee_rr_show_etc_mode,
 	aee_rr_show_thermal_temp,
 	aee_rr_show_thermal_status,
 	aee_rr_show_thermal_ATM_status,
@@ -3216,7 +3081,6 @@ last_rr_show_t aee_rr_show[] = {
 	aee_rr_show_scp_pc,
 	aee_rr_show_scp_lr,
 	aee_rr_show_hang_detect_timeout_count,
-	aee_rr_show_gz_irq,
 	aee_rr_show_last_init_func,
 	aee_rr_show_pmic_ext_buck,
 	aee_rr_show_hps_status,

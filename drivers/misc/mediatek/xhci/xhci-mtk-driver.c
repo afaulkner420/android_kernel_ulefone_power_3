@@ -34,12 +34,10 @@
 #include <mtk-phy-asic.h>
 #endif
 
-#ifndef CONFIG_USB_VBUS_GPIO
 #if CONFIG_MTK_GAUGE_VERSION == 30
 #include <mt-plat/mtk_battery.h>
 #else
 #include <mt-plat/battery_meter.h>
-#endif
 #endif
 
 #include <mt-plat/charger_class.h>
@@ -50,10 +48,9 @@
 #define RET_SUCCESS 0
 #define RET_FAIL 1
 
-#ifndef CONFIG_USB_VBUS_GPIO
+
 #if CONFIG_MTK_GAUGE_VERSION == 30
 static struct charger_device *primary_charger;
-#endif
 #endif
 
 static struct wake_lock mtk_xhci_wakelock;
@@ -67,12 +64,13 @@ static enum dualrole_state mtk_dualrole_stat = DUALROLE_DEVICE;
 static struct switch_dev mtk_otg_state;
 static bool boost_on;
 
-int xhci_debug_level = K_ALET | K_CRIT | K_ERR | K_WARNIN;
-module_param(xhci_debug_level, int, 0400);
+u32 xhci_debug_level = K_ALET | K_CRIT | K_ERR | K_WARNIN;
+
+module_param(xhci_debug_level, int, 0644);
 
 bool mtk_is_charger_4_vol(void)
 {
-#if defined(CONFIG_USBIF_COMPLIANCE) || defined(CONFIG_POWER_EXT) || defined(CONFIG_USB_VBUS_GPIO)
+#if defined(CONFIG_USBIF_COMPLIANCE) || defined(CONFIG_POWER_EXT)
 	return false;
 #else
 	int vol =  battery_meter_get_charger_voltage();
@@ -85,68 +83,23 @@ bool mtk_is_charger_4_vol(void)
 
 static void mtk_enable_otg_mode(void)
 {
-#ifdef CONFIG_USB_VBUS_GPIO
-	struct pinctrl *pinctrl_drvvbus;
-	struct pinctrl_state *pinctrl_drvvbus_high;
-
-	boost_on = true;
-	if (g_pdev == NULL) {
-		pr_notice("g_pdev is not ready\n");
-		return;
-	}
-	pinctrl_drvvbus = devm_pinctrl_get(&g_pdev->dev);
-	if (IS_ERR(pinctrl_drvvbus)) {
-		pr_notice("Cannot find usb pinctrl!\n");
-		return;
-	}
-	pinctrl_drvvbus_high = pinctrl_lookup_state(pinctrl_drvvbus, "drvvbus_high");
-	if (IS_ERR(pinctrl_drvvbus_high)) {
-		pr_notice("Cannot find usb pinctrl drvvbus_high\n");
-		return;
-	}
-	pinctrl_select_state(pinctrl_drvvbus, pinctrl_drvvbus_high);
-#else
 	boost_on = true;
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	charger_dev_enable_otg(primary_charger, true);
 	charger_dev_set_boost_current_limit(primary_charger, 1500000);
 	charger_dev_kick_wdt(primary_charger);
-	enable_boost_polling(true);
 #else
 	set_chr_enable_otg(0x1);
 	set_chr_boost_current_limit(1500);
-#endif
 #endif
 }
 
 static void mtk_disable_otg_mode(void)
 {
-#ifdef CONFIG_USB_VBUS_GPIO
-	struct pinctrl *pinctrl_drvvbus;
-	struct pinctrl_state *pinctrl_drvvbus_low;
-
-	if (g_pdev == NULL) {
-		pr_notice("g_pdev is not ready\n");
-		return;
-	}
-	pinctrl_drvvbus = devm_pinctrl_get(&g_pdev->dev);
-	if (IS_ERR(pinctrl_drvvbus)) {
-		pr_notice("Cannot find usb pinctrl!\n");
-		return;
-	}
-	pinctrl_drvvbus_low = pinctrl_lookup_state(pinctrl_drvvbus, "drvvbus_low");
-	if (IS_ERR(pinctrl_drvvbus_low)) {
-		pr_notice("Cannot find usb pinctrl drvvbus_low\n");
-		return;
-	}
-	pinctrl_select_state(pinctrl_drvvbus, pinctrl_drvvbus_low);
-#else
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	charger_dev_enable_otg(primary_charger, false);
-	enable_boost_polling(false);
 #else
 	set_chr_enable_otg(0x0);
-#endif
 #endif
 	boost_on = false;
 }
@@ -163,111 +116,6 @@ static int mtk_xhci_hcd_init(void)
 
 	return 0;
 }
-#ifndef CONFIG_USB_VBUS_GPIO
-
-#if CONFIG_MTK_GAUGE_VERSION == 30
-
-struct usbotg_boost_manager {
-	struct platform_device *pdev;
-	struct gtimer otg_kthread_gtimer;
-	struct workqueue_struct *otg_boost_workq;
-	struct work_struct kick_work;
-	struct charger_device *primary_charger;
-	unsigned int polling_interval;
-	bool polling_enabled;
-};
-static struct usbotg_boost_manager *g_info;
-
-
-void enable_boost_polling(bool poll_en)
-{
-	if (g_info) {
-		if (poll_en) {
-			gtimer_start(&g_info->otg_kthread_gtimer, g_info->polling_interval);
-			g_info->polling_enabled = true;
-		} else {
-			g_info->polling_enabled = false;
-			gtimer_stop(&g_info->otg_kthread_gtimer);
-		}
-	}
-}
-
-static void usbotg_boost_kick_work(struct work_struct *work)
-{
-
-	struct usbotg_boost_manager *usb_boost_manager =
-		container_of(work, struct usbotg_boost_manager, kick_work);
-
-	mtk_xhci_mtk_printk(K_ALET, "usbotg_boost_kick_work\n");
-
-	charger_dev_kick_wdt(usb_boost_manager->primary_charger);
-
-	if (usb_boost_manager->polling_enabled == true)
-		gtimer_start(&usb_boost_manager->otg_kthread_gtimer, usb_boost_manager->polling_interval);
-}
-
-static int usbotg_gtimer_func(struct gtimer *data)
-{
-	struct usbotg_boost_manager *usb_boost_manager =
-		container_of(data, struct usbotg_boost_manager, otg_kthread_gtimer);
-
-	queue_work(usb_boost_manager->otg_boost_workq, &usb_boost_manager->kick_work);
-	return 0;
-}
-
-static int usbotg_boost_manager_probe(struct platform_device *pdev)
-{
-	struct usbotg_boost_manager *info = NULL;
-	struct device *dev = &pdev->dev;
-	struct device_node *node = dev->of_node;
-
-	info = devm_kzalloc(&pdev->dev, sizeof(struct usbotg_boost_manager), GFP_KERNEL);
-	if (!info)
-		return -ENOMEM;
-
-	if (of_property_read_u32(node, "boost_period", (u32 *) &info->polling_interval))
-		info->polling_interval = 30;
-
-	platform_set_drvdata(pdev, info);
-	info->pdev = pdev;
-
-	info->primary_charger = get_charger_by_name("primary_chg");
-	if (!info->primary_charger) {
-		pr_info("%s: get primary charger device failed\n", __func__);
-		return -ENODEV;
-	}
-
-	gtimer_init(&info->otg_kthread_gtimer, &info->pdev->dev, "otg_boost");
-	info->otg_kthread_gtimer.callback = usbotg_gtimer_func;
-
-	info->otg_boost_workq = create_singlethread_workqueue("otg_boost_workq");
-	INIT_WORK(&info->kick_work, usbotg_boost_kick_work);
-	g_info = info;
-	return 0;
-}
-
-static int usbotg_boost_manager_remove(struct platform_device *pdev)
-{
-	return 0;
-}
-
-static const struct of_device_id usbotg_boost_manager_of_match[] = {
-	{.compatible = "mediatek,usb_boost_manager"},
-	{},
-};
-MODULE_DEVICE_TABLE(of, usbotg_boost_manager_of_match);
-static struct platform_driver boost_manager_driver = {
-	.remove = usbotg_boost_manager_remove,
-	.probe = usbotg_boost_manager_probe,
-	.driver = {
-		   .name = "usb_boost_manager",
-		   .of_match_table = usbotg_boost_manager_of_match,
-		   },
-};
-
-#endif
-
-#endif
 
 #ifdef CONFIG_USBIF_COMPLIANCE
 
@@ -296,56 +144,17 @@ static void mtk_xhci_hcd_cleanup(void)
 {
 	xhci_mtk_unregister_plat();
 }
-
-static int option;
-static int set_option(const char *val, const struct kernel_param *kp)
-{
-	int local_option;
-	int rv;
-
-	/* update module parameter */
-	rv = param_set_int(val, kp);
-	if (rv)
-		return rv;
-
-	/* update local_option */
-	rv = kstrtoint(val, 10, &local_option);
-	if (rv != 0)
-		return rv;
-
-	pr_info("option:%d, local_option:%d\n", option, local_option);
-
-	switch (local_option) {
-	case 0:
-		pr_info("mtk_enable_otg_mode %d\n", local_option);
-		mtk_enable_otg_mode();
-		break;
-	case 1:
-		pr_info("mtk_disable_otg_mode %d\n", local_option);
-		mtk_disable_otg_mode();
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-static struct kernel_param_ops option_param_ops = {
-	.set = set_option,
-	.get = param_get_int,
-};
-module_param_cb(option, &option_param_ops, &option, 0644);
-
 static struct delayed_work host_plug_test_work;
 static int host_plug_test_enable; /* default disable */
-module_param(host_plug_test_enable, int, 0400);
+module_param(host_plug_test_enable, int, 0644);
 static int host_plug_in_test_period_ms = 5000;
-module_param(host_plug_in_test_period_ms, int, 0400);
+module_param(host_plug_in_test_period_ms, int, 0644);
 static int host_plug_out_test_period_ms = 5000;
-module_param(host_plug_out_test_period_ms, int, 0400);
+module_param(host_plug_out_test_period_ms, int, 0644);
 static int host_test_vbus_off_time_us = 3000;
-module_param(host_test_vbus_off_time_us, int, 0400);
+module_param(host_test_vbus_off_time_us, int, 0644);
 static int host_test_vbus_only = 1;
-module_param(host_test_vbus_only, int, 0400);
+module_param(host_test_vbus_only, int, 0644);
 static int host_plug_test_triggered;
 static int host_req;
 static struct wake_lock host_test_wakelock;
@@ -548,15 +357,12 @@ static int __init xhci_hcd_init(void)
 	mtk_xhci_wakelock_init();
 	mtk_xhci_switch_init();
 
-#ifndef CONFIG_USB_VBUS_GPIO
 #if CONFIG_MTK_GAUGE_VERSION == 30
 	primary_charger = get_charger_by_name("primary_chg");
 	if (!primary_charger) {
 		pr_err("%s: get primary charger device failed\n", __func__);
 		return -ENODEV;
 	}
-	platform_driver_register(&boost_manager_driver);
-#endif
 #endif
 
 	return 0;

@@ -42,7 +42,7 @@ int ged_bridge_log_buf_write(
 		GED_BRIDGE_OUT_LOGBUFWRITE *psLogBufWriteOUT)
 {
 	psLogBufWriteOUT->eError = 
-		ged_log_buf_print2(psLogBufWriteIN->hLogBuf, psLogBufWriteIN->attrs, "%s", psLogBufWriteIN->acLogBuf);
+		ged_log_buf_print2(psLogBufWriteIN->hLogBuf, psLogBufWriteIN->attrs, psLogBufWriteIN->acLogBuf);
 	return 0;
 }
 //-----------------------------------------------------------------------------
@@ -140,7 +140,6 @@ int ged_bridge_event_notify(
 
 	return 0;
 }
-
 /* ----------------------------------------------------------------------------- */
 int ged_bridge_gpu_timestamp(
 	GED_BRIDGE_IN_GPU_TIMESTAMP * psGpuBeginINT,
@@ -166,22 +165,25 @@ int ged_bridge_gpu_timestamp(
 				ged_kpi_acquire_buffer_ts(psGpuBeginINT->pid,
 										psGpuBeginINT->ullWnd,
 										psGpuBeginINT->i32FrameID);
-		psGpuBeginOUT->is_ged_kpi_enabled = 1;
 	} else {
-		psGpuBeginOUT->is_ged_kpi_enabled = 0;
 		psGpuBeginOUT->eError = GED_OK;
 	}
 	return 0;
 }
-
 /* ----------------------------------------------------------------------------- */
-#ifdef MTK_FRR20
+int ged_bridge_target_fps(
+	GED_BRIDGE_IN_TARGET_FPS * in,
+	GED_BRIDGE_OUT_TARGET_FPS *out)
+{
+	ged_set_target_fps(in->fps, 0x1);
+	return 0;
+}
+/* ----------------------------------------------------------------------------- */
 int ged_bridge_wait_hw_vsync(void)
 {
 	ged_frr_wait_hw_vsync();
 	return 0;
 }
-
 /* ----------------------------------------------------------------------------- */
 int ged_bridge_query_target_fps(
 	GED_BRIDGE_IN_QUERY_TARGET_FPS * in,
@@ -191,6 +193,4 @@ int ged_bridge_query_target_fps(
 	out->fps = ged_frr_get_fps(in->pid, in->cid);
 	return 0;
 }
-#endif
-
 module_param(ged_boost_enable, uint, 0644);

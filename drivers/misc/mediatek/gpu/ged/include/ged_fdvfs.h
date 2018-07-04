@@ -33,6 +33,7 @@
 
 #include "ged_type.h"
 #include "ged_base.h"
+#include "ged_error.h"
 #include "ged_log.h"
 
 /* #include "ged_dvfs.h" */

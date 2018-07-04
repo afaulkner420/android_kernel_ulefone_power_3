@@ -143,6 +143,8 @@ static struct cpuidle_driver mt81xx_v2_cpuidle_driver = {
 	.safe_state_index = 0,
 };
 
+#ifdef CONFIG_ARM64
+
 static const struct of_device_id mt81xx_v2_idle_state_match[] __initconst = {
 	{ .compatible = "arm,idle-state" },
 	{ },
@@ -211,5 +213,11 @@ out_fail:
 
 	return ret;
 }
+#else
+int __init mt81xx_v2_cpuidle_init(void)
+{
+	return cpuidle_register(&mt81xx_v2_cpuidle_driver, NULL);
+}
+#endif
 
 device_initcall(mt81xx_v2_cpuidle_init);

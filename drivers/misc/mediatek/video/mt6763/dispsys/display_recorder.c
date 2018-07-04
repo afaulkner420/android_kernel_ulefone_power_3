@@ -53,19 +53,8 @@
 #include "disp_session.h"
 #include "ddp_mmp.h"
 #include <linux/trace_events.h>
-#include "ddp_ovl.h"
-#include "ddp_rdma.h"
-#include "ion_drv.h"
-#include "ddp_log.h"
 
-
-enum DPREC_DEBUG_BIT_ENUM {
-	DPREC_DEBUG_BIT_OVERALL_SWITCH = 0,
-	DPREC_DEBUG_BIT_CMM_DUMP_SWITCH,
-	DPREC_DEBUG_BIT_CMM_DUMP_VA,
-	DPREC_DEBUG_BIT_SYSTRACE,
-};
-static struct dprec_debug_control _control = { 0 };
+#if defined(CONFIG_MTK_ENG_BUILD) || !defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 unsigned int gCapturePriLayerEnable;
 unsigned int gCaptureWdmaLayerEnable;
 unsigned int gCaptureRdmaLayerEnable;
@@ -73,8 +62,9 @@ unsigned int gCapturePriLayerDownX = 20;
 unsigned int gCapturePriLayerDownY = 20;
 unsigned int gCapturePriLayerNum = 4;
 
-#if defined(CONFIG_MTK_ENG_BUILD) || !defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 static DEFINE_SPINLOCK(gdprec_logger_spinlock);
+
+static struct dprec_debug_control _control = { 0 };
 
 static struct reg_base_map reg_map[] = {
 	{"MMSYS", (0xf4000000)},
@@ -204,8 +194,6 @@ static unsigned char dprec_string_buffer[dprec_string_max_length] = { 0 };
 struct dprec_logger logger[DPREC_LOGGER_NUM] = { { 0 } };
 struct dprec_logger old_logger[DPREC_LOGGER_NUM] = { { 0 } };
 
-struct dprec_logger_fps logger_fps = { 0 };
-
 #define dprec_dump_max_length (1024*8*4)
 static unsigned char dprec_string_buffer_analysize[dprec_dump_max_length] = { 0 };
 
@@ -227,7 +215,9 @@ int dprec_init(void)
 	memset((void *)dprec_error_log_buffer, 0, DPREC_ERROR_LOG_BUFFER_LENGTH);
 	ddp_mmp_init();
 
-	dprec_logger_event_init(&dprec_vsync_irq_event, "VSYNC_IRQ", 0,	NULL);
+	dprec_logger_event_init(&dprec_vsync_irq_event, "VSYNC_IRQ", DPREC_LOGGER_LEVEL_SYSTRACE,
+				NULL);
+
 	return 0;
 }
 
@@ -411,152 +401,6 @@ unsigned long long dprec_logger_get_current_hold_period(unsigned int type_logsrc
 	spin_unlock_irqrestore(&gdprec_logger_spinlock, flags);
 
 	return period;
-}
-
-
-DECLARE_WAIT_QUEUE_HEAD(fps_update_thread_wq);
-static int debug_layer_update_flag;
-
-/* the thread clean fps value to 0 when idle */
-int _primary_monitor_fps_thread(void *data)
-{
-
-	while (1) {
-		msleep_interruptible(200);
-		if (dbg_disp.show_fps_en) {
-			/* already idle ,should clean fps value*/
-			if (!debug_layer_update_flag) {
-				memset(&logger_fps, 0, sizeof(logger_fps));
-				memset(&dbg_disp.fps_info_dbg, 0, sizeof(struct fps_debug));
-				primary_display_frame_cfg(&dbg_disp.dbg_cfg);
-				dbg_disp.create_thread_flg = 0;
-				break;
-			}
-			debug_layer_update_flag = 0;
-		}
-		/* stop monitor fps */
-		if (!dbg_disp.show_fps_en)
-			break;
-	}
-	return 0;
-}
-
-/* debug: record fps info for show */
-int update_layer[SHOW_LAYER_FPS];
-int old_update_layer[SHOW_LAYER_FPS];
-void fps_update_statistic(unsigned long long *time,
-		struct dprec_logger_fps *logger)
-{
-
-	static struct OVL_BASIC_STRUCT old_ovlInfo[TOTAL_OVL_LAYER_NUM];
-	static struct OVL_BASIC_STRUCT ovlInfo[TOTAL_OVL_LAYER_NUM];
-	int layer_idx = -1;
-	int layer_pos = 0;
-	int b_layer_changed = 0;
-	int i, j;
-	int ovl_index = 0;
-	int layer_num = 0;
-	int layer_max_idx = 0;
-	unsigned long long trigger_time;
-
-	*time = 500 * 1000 * 1000;
-	trigger_time = get_current_time_us();
-
-	/*Traversal layers and get layer info*/
-	memset(ovlInfo, 0, sizeof(ovlInfo));/*essential for structure comparision*/
-	memset(update_layer, 0, sizeof(update_layer));
-
-	for (i = 0; i < OVL_NUM; i++) {
-		if (layer_max_idx >= SHOW_LAYER_FPS) {
-			DISP_LOG_W("over max layer4 %d\n", layer_max_idx);
-			break;
-		}
-
-		ovl_index = _ovl_index_to_mod(i);
-		layer_pos += layer_num;
-		layer_num = _ovl_get_info(ovl_index, &(ovlInfo[layer_pos]), &layer_max_idx);
-		for (j = 0; j < layer_num; j++) {
-			layer_idx++;
-			if (memcmp(&(ovlInfo[layer_idx]), &(old_ovlInfo[layer_idx]),
-					sizeof(struct OVL_BASIC_STRUCT)) == 0)
-				continue;
-
-			if (ovlInfo[layer_idx].layer_en) {
-				logger->layer_fps[layer_idx]++;
-				b_layer_changed = 1;
-				debug_layer_update_flag++;
-				update_layer[layer_idx] = 1;
-			}
-		}
-		/*store old value*/
-		memcpy(&(old_ovlInfo[layer_pos]),
-			&(ovlInfo[layer_pos]), layer_num * sizeof(struct OVL_BASIC_STRUCT));
-	}
-
-	if (b_layer_changed)
-		logger->total_fps++;
-
-	if (logger->total_fps == 1 && b_layer_changed == 1)
-		logger->ts_start_update = trigger_time;
-
-	if (b_layer_changed == 1)
-		logger->ts_end_update = trigger_time;
-
-}
-
-/* debug: caculate fps to fow show */
-void dprec_logger_start_fps(void)
-{
-	unsigned long flags = 0;
-	struct dprec_logger_fps *l;
-	unsigned long long rec_period = 0;
-	unsigned long long period_time = 0;
-
-	spin_lock_irqsave(&gdprec_logger_spinlock, flags);
-	l = &logger_fps;
-
-	fps_update_statistic(&period_time, l);
-	rec_period = l->ts_end_update - l->ts_start_update;
-	if (rec_period > period_time) {
-		char fps_log[] = "[DISP] FPS OUTPUT ";
-		int i;
-
-		pr_info("%sfps:%2lld.%01lld, L0:%2lld.%01lld, L1:%2lld.%01lld\n",
-		fps_log,
-		dbg_disp.fps_info_dbg.total_fps_high,
-		dbg_disp.fps_info_dbg.total_fps_low,
-		dbg_disp.fps_info_dbg.layer_fps_high[0],
-		dbg_disp.fps_info_dbg.layer_fps_low[0],
-		dbg_disp.fps_info_dbg.layer_fps_high[1],
-		dbg_disp.fps_info_dbg.layer_fps_low[1]);
-		pr_info("%sL2:%2lld.%01lld, L3:%2lld.%01lld, L4:%2lld.%01lld\n",
-		fps_log,
-		dbg_disp.fps_info_dbg.layer_fps_high[2],
-		dbg_disp.fps_info_dbg.layer_fps_low[2],
-		dbg_disp.fps_info_dbg.layer_fps_high[3],
-		dbg_disp.fps_info_dbg.layer_fps_low[3],
-		dbg_disp.fps_info_dbg.layer_fps_high[4],
-		dbg_disp.fps_info_dbg.layer_fps_low[4]);
-		pr_info("%sL5:%2lld.%01lld, L6:%2lld.%01lld, L7:%2lld.%01lld\n",
-		fps_log,
-		dbg_disp.fps_info_dbg.layer_fps_high[5],
-		dbg_disp.fps_info_dbg.layer_fps_low[5],
-		dbg_disp.fps_info_dbg.layer_fps_high[6],
-		dbg_disp.fps_info_dbg.layer_fps_low[6],
-		dbg_disp.fps_info_dbg.layer_fps_high[7],
-		dbg_disp.fps_info_dbg.layer_fps_low[7]);
-
-		for (i = 0; i < SHOW_LAYER_FPS; i++) {
-			if (update_layer[i] == 1)
-				old_update_layer[i] = 1;
-			else
-				old_update_layer[i] = 0;
-		}
-		caculate_fps();
-		memset(l, 0, sizeof(logger_fps));
-	}
-
-	spin_unlock_irqrestore(&gdprec_logger_spinlock, flags);
 }
 
 void dprec_logger_start(unsigned int type_logsrc, unsigned int val1, unsigned int val2)
@@ -1017,42 +861,6 @@ int dprec_logger_get_result_string_all(char *stringbuf, int strlen)
 	return n;
 }
 
-void caculate_fps(void)
-{
-	struct dprec_logger_fps *l = &logger_fps;
-	int i;
-	unsigned long long fps_high_tmp = 0;
-	unsigned long fps_low_tmp = 0;
-	unsigned long long total = 0;
-
-	total = l->ts_end_update - l->ts_start_update;
-	if (total == 0)
-		total = 1;
-	if (l->total_fps >= 1)
-		fps_high_tmp = (l->total_fps - 1) * 1000 * 1000 * 1000;
-	else
-		fps_high_tmp = l->total_fps * 1000 * 1000 * 1000;
-	fps_low_tmp = do_div(fps_high_tmp, total);
-	fps_low_tmp *= 10;
-	do_div(fps_low_tmp, total);
-	dbg_disp.fps_info_dbg.total_fps_high = fps_high_tmp;
-	dbg_disp.fps_info_dbg.total_fps_low = fps_low_tmp;
-
-	for (i = 0; i < 8; i++) {
-		if (l->layer_fps[i] >= 1 && old_update_layer[i] == 1)
-			fps_high_tmp = (l->layer_fps[i] - 1) * 1000 * 1000 * 1000;
-		else
-			fps_high_tmp = l->layer_fps[i] * 1000 * 1000 * 1000;
-		fps_low_tmp = do_div(fps_high_tmp, total);
-		fps_low_tmp *= 10;
-		do_div(fps_low_tmp, total);
-		dbg_disp.fps_info_dbg.layer_fps_high[i] = fps_high_tmp;
-		dbg_disp.fps_info_dbg.layer_fps_low[i] = fps_low_tmp;
-		fps_high_tmp = 0;
-		fps_low_tmp = 0;
-	}
-
-}
 
 int dprec_logger_get_result_value(enum DPREC_LOGGER_ENUM source, struct fpsEx *fps)
 {
@@ -1148,14 +956,12 @@ struct dprec_record {
 static int rdma0_done_cnt;
 #endif
 
-static void _dprec_stub_irq(unsigned int irq_bit)
+void dprec_stub_irq(unsigned int irq_bit)
 {
 	/* DISP_REG_SET(NULL,DISP_REG_CONFIG_MUTEX_INTEN,0xffffffff); */
 	if (irq_bit == DDP_IRQ_DSI0_EXT_TE) {
 		dprec_logger_trigger(DPREC_LOGGER_DSI_EXT_TE, irq_bit, 0);
 	} else if (irq_bit == DDP_IRQ_RDMA0_START) {
-		if (dbg_disp.show_fps_en)
-			dprec_logger_start_fps();
 		dprec_logger_start(DPREC_LOGGER_RDMA0_TRANSFER, irq_bit, 0);
 		dprec_logger_start(DPREC_LOGGER_RDMA0_TRANSFER_1SECOND, irq_bit, 0);
 	} else if (irq_bit == DDP_IRQ_RDMA0_DONE) {
@@ -1285,6 +1091,32 @@ unsigned int dprec_logger_get_dump_len(void)
 	pr_debug("dump_len %d\n", analysize_length);
 
 	return analysize_length;
+}
+
+enum DPREC_DEBUG_BIT_ENUM {
+	DPREC_DEBUG_BIT_OVERALL_SWITCH = 0,
+	DPREC_DEBUG_BIT_CMM_DUMP_SWITCH,
+	DPREC_DEBUG_BIT_CMM_DUMP_VA,
+	DPREC_DEBUG_BIT_SYSTRACE,
+};
+
+int dprec_handle_option(unsigned int option)
+{
+	_control.overall_switch = (option & (1 << DPREC_DEBUG_BIT_OVERALL_SWITCH));
+	_control.cmm_dump = (option & (1 << DPREC_DEBUG_BIT_CMM_DUMP_SWITCH));
+	_control.cmm_dump_use_va = (option & (1 << DPREC_DEBUG_BIT_CMM_DUMP_VA));
+	_control.systrace = (option & (1 << DPREC_DEBUG_BIT_SYSTRACE));
+	DISPMSG("dprec control=%p\n", &_control);
+
+	return 0;
+}
+
+/* return true if overall_switch is set. this will dump all register setting by default. */
+/* other functions outside of this display_recorder.c*/
+/* could use this api to determine whether to enable debug funciton */
+int dprec_option_enabled(void)
+{
+	return _control.overall_switch;
 }
 
 #if 0 /* defined but not used */
@@ -1557,6 +1389,13 @@ int dprec_logger_get_buf(enum DPREC_LOGGER_PR_TYPE type, char *stringbuf, int le
 
 #else
 
+unsigned int gCapturePriLayerEnable;
+unsigned int gCaptureWdmaLayerEnable;
+unsigned int gCapturePriLayerDownX = 20;
+unsigned int gCapturePriLayerDownY = 20;
+unsigned int gCapturePriLayerNum = 4;
+
+
 struct dprec_logger logger[DPREC_LOGGER_NUM] = { { 0 } };
 
 unsigned int dprec_error_log_len;
@@ -1659,7 +1498,7 @@ int dprec_logger_get_result_string_all(char *stringbuf, int strlen)
 	return 0;
 }
 
-static void _dprec_stub_irq(unsigned int irq_bit)
+void dprec_stub_irq(unsigned int irq_bit)
 {
 }
 
@@ -1694,6 +1533,16 @@ char *dprec_logger_get_dump_addr()
 }
 
 unsigned int dprec_logger_get_dump_len(void)
+{
+	return 0;
+}
+
+int dprec_handle_option(unsigned int option)
+{
+	return 0;
+}
+
+int dprec_option_enabled(void)
 {
 	return 0;
 }
@@ -1740,50 +1589,3 @@ void init_log_buffer(void)
 
 }
 #endif
-
-
-void disp_irq_trace(unsigned int irq_bit)
-{
-#ifndef CONFIG_TRACING
-	return;
-#endif
-	if (!_control.systrace)
-		return;
-
-	if (irq_bit == DDP_IRQ_RDMA0_START) {
-		static int cnt;
-
-		cnt ^= 1;
-		_DISP_TRACE_CNT(0, cnt, "rdma0-start");
-	} else if (irq_bit == DDP_IRQ_WDMA0_FRAME_COMPLETE) {
-		static int cnt;
-
-		cnt ^= 1;
-		_DISP_TRACE_CNT(0, cnt, "wdma0-done");
-	}
-}
-
-void dprec_stub_irq(unsigned int irq_bit)
-{
-	disp_irq_trace(irq_bit);
-	_dprec_stub_irq(irq_bit);
-}
-
-int dprec_handle_option(unsigned int option)
-{
-	_control.overall_switch = (option & (1 << DPREC_DEBUG_BIT_OVERALL_SWITCH));
-	_control.cmm_dump = (option & (1 << DPREC_DEBUG_BIT_CMM_DUMP_SWITCH));
-	_control.cmm_dump_use_va = (option & (1 << DPREC_DEBUG_BIT_CMM_DUMP_VA));
-	_control.systrace = (option & (1 << DPREC_DEBUG_BIT_SYSTRACE));
-
-	return 0;
-}
-
-/* return true if overall_switch is set. this will dump all register setting by default. */
-/* other functions outside of this display_recorder.c*/
-/* could use this api to determine whether to enable debug funciton */
-int dprec_option_enabled(void)
-{
-	return _control.overall_switch;
-}
-

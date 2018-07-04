@@ -21,8 +21,6 @@
  */
 #if defined(CONFIG_MACH_MT6799)
 #include "mtk_idle_mt6799.h"
-#elif defined(CONFIG_MACH_MT6775)
-#include "mtk_idle_mt6775.h"
 #elif defined(CONFIG_MACH_MT6759)
 #include "mtk_idle_mt6759.h"
 #elif defined(CONFIG_MACH_MT6758)
@@ -73,6 +71,7 @@ enum {
 
 #define idle_readl(addr)	    __raw_readl(addr)
 
+extern unsigned int dpidle_blocking_stat[NR_GRPS][32];
 extern int idle_switch[NR_TYPES];
 
 extern unsigned int idle_condition_mask[NR_TYPES][NR_GRPS];

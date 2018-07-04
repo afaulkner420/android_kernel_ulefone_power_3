@@ -462,8 +462,7 @@ void ANX7625_config(void)
 
 BYTE ANX7625_Chip_Located(void)
 {
-	BYTE c1 = 0;
-	BYTE c2 = 0;
+	BYTE c1, c2;
 
 	MI2_power_on();
 	Read_Reg(TCPC_INTERFACE, PRODUCT_ID_L, &c1);
@@ -1480,7 +1479,7 @@ static struct i2c_driver anx7625_driver = {
 	.id_table = anx7625_id,
 };
 
-static void anx7625_init_async(
+static void __init anx7625_init_async(
 	void *data, async_cookie_t cookie)
 {
 	int ret = 0;
@@ -1493,6 +1492,9 @@ static void anx7625_init_async(
 
 	TRACE("%s:\n", __func__);
 
+#ifdef ANX7625_MTK_PLATFORM
+	slimport_platform_init();
+#endif
 	ret = i2c_add_driver(&anx7625_driver);
 	if (ret < 0)
 		pr_err("%s: failed to register anx7625 i2c drivern",
@@ -1518,7 +1520,6 @@ int slimport_anx7625_init(void)
 	TRACE("%s:\n", __func__);
 
 #ifdef ANX7625_MTK_PLATFORM
-	slimport_platform_init();
 	async_schedule(anx7625_init_async, NULL);
 #endif
 	return 0;

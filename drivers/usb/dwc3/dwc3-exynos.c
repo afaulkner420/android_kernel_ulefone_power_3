@@ -148,8 +148,7 @@ static int dwc3_exynos_probe(struct platform_device *pdev)
 		exynos->axius_clk = devm_clk_get(dev, "usbdrd30_axius_clk");
 		if (IS_ERR(exynos->axius_clk)) {
 			dev_err(dev, "no AXI UpScaler clk specified\n");
-			ret = -ENODEV;
-			goto axius_clk_err;
+			return -ENODEV;
 		}
 		clk_prepare_enable(exynos->axius_clk);
 	} else {
@@ -207,7 +206,6 @@ err3:
 	regulator_disable(exynos->vdd33);
 err2:
 	clk_disable_unprepare(exynos->axius_clk);
-axius_clk_err:
 	clk_disable_unprepare(exynos->susp_clk);
 	clk_disable_unprepare(exynos->clk);
 	return ret;

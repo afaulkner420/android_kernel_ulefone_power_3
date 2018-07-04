@@ -15,15 +15,9 @@
 #include "kd_imgsensor.h"
 
 /*Common EEPRom Driver*/
-//modify otp by ming.liao 20171129 start
-#if defined (TRAN_X604) || defined (TRAN_X605)
-
-#else
 #include "common/BRCB032GWZ_3/BRCB032GWZ_3.h"
 #include "common/cat24c16/cat24c16.h"
 #include "common/GT24c32a/GT24c32a.h"
-#endif
-//modify otp by ming.liao 20171129 end
 
 
 #define CAM_CAL_DEBUG
@@ -51,57 +45,32 @@ unsigned int mtkCidList[MTK_MAX_CID_NUM] = {
 };
 
 struct stCAM_CAL_FUNC_STRUCT g_camCalCMDFunc[] = {
-//modify otp by ming.liao 20171129 start
-#if defined (TRAN_X604) || defined (TRAN_X605)
-
-#else
 	{CMD_BRCB032GWZ, brcb032gwz_selective_read_region},
 	{CMD_CAT24C16, cat24c16_selective_read_region},
 	{CMD_GT24C32A, gt24c32a_selective_read_region},
-#endif
-//modify otp by ming.liao 20171129 end
 
 	/*      ADD before this line */
 	{0, 0} /*end of list*/
 };
 
 struct stCAM_CAL_LIST_STRUCT g_camCalList[] = {
-/*Below is commom sensor */
-	{IMX338_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K4E6_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX386_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K3M3_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K2L7_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX398_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_double_eeprom},
-	{IMX318_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{OV8858_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX350_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K3P8SX_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_double_eeprom},
-	{IMX386_MONO_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX576_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_double_eeprom},
-/*99 */
+/*Below is sensor on 63*/
 	{IMX258_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
 	{IMX258_MONO_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-/*97*/
-	{OV23850_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{OV23850_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K3M2_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-/*39*/
-	{OV13870_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
-	{OV8856_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-/*55*/
-	{S5K2P8_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_mtk_cid},
-	{S5K2P8_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{IMX386_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{S5K2L7_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{S5K3M3_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{S5K3M3_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
+	{S5K4E6_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},
+	{IMX338_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{IMX398_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_double_eeprom},
+	{IMX318_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{S5K3P8_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
 	{OV8858_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_mtk_cid},
-/* Others */
-	{S5K2X8_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX376_SENSOR_ID, 0xA2, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX214_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
-	{IMX214_MONO_SENSOR_ID, 0xA0, CMD_AUTO, cam_cal_check_mtk_cid},
+	{OV8858_SENSOR_ID, 0xA8, CMD_AUTO, cam_cal_check_mtk_cid},/* sub cam*/
 	/*  ADD before this line */
 	{0, 0, CMD_NONE, 0} /*end of list*/
 };
-
 
 unsigned int cam_cal_get_sensor_list(struct stCAM_CAL_LIST_STRUCT **ppCamcalList)
 

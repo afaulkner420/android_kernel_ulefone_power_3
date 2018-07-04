@@ -35,9 +35,6 @@
 #define LOG_INF(format, args...)
 #endif
 
-#if defined(CONFIG_MACH_MT6771) || defined(CONFIG_MACH_MT6775)
-#define USE_ISRC_MODE_S5K3P8_SENSOR
-#endif
 
 static struct i2c_client *g_pstAF_I2Cclient;
 static int *g_pAF_Opened;
@@ -105,9 +102,9 @@ static int s4AF_WriteReg(u16 a_u2Data)
 	return 0;
 }
 
-static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
+static inline int getAFInfo(__user stAF_MotorInfo * pstMotorInfo)
 {
-	struct stAF_MotorInfo stMotorInfo;
+	stAF_MotorInfo stMotorInfo;
 
 	stMotorInfo.u4MacroPosition = g_u4AF_MACRO;
 	stMotorInfo.u4InfPosition = g_u4AF_INF;
@@ -121,31 +118,19 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 	else
 		stMotorInfo.bIsMotorOpen = 0;
 
-	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(struct stAF_MotorInfo)))
+	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(stAF_MotorInfo)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	return 0;
 }
 
-static int initdrv(void)
+static void initdrv(void)
 {
-	int i4RetValue = 0;
-#if defined(USE_ISRC_MODE_S5K3P8_SENSOR)
-	char puSendCmd2[2] = { 0x01, 0x39 };
-	char puSendCmd3[2] = { 0x05, 0x6f };
-#else
 	char puSendCmd2[2] = { 0x01, 0x39 };
 	char puSendCmd3[2] = { 0x05, 0x07 };
-#endif
 
-	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
-
-	if (i4RetValue < 0)
-		return -1;
-
-	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
-
-	return i4RetValue;
+	i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
+	i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
 }
 
 
@@ -161,15 +146,8 @@ static inline int moveAF(unsigned long a_u4Position)
 	if (*g_pAF_Opened == 1) {
 		unsigned short InitPos;
 
+		initdrv();
 		ret = s4DW9718SAF_ReadReg(&InitPos);
-
-		if (initdrv() == 0) {
-			spin_lock(g_pAF_SpinLock);
-			*g_pAF_Opened = 2;
-			spin_unlock(g_pAF_SpinLock);
-		} else {
-			LOG_INF("VCM driver init fail\n");
-		}
 
 		if (ret == 0) {
 			LOG_INF("Init Pos %6d\n", InitPos);
@@ -183,6 +161,10 @@ static inline int moveAF(unsigned long a_u4Position)
 			g_u4CurrPosition = 0;
 			spin_unlock(g_pAF_SpinLock);
 		}
+
+		spin_lock(g_pAF_SpinLock);
+		*g_pAF_Opened = 2;
+		spin_unlock(g_pAF_SpinLock);
 	}
 
 	if (g_u4CurrPosition == a_u4Position)
@@ -201,10 +183,9 @@ static inline int moveAF(unsigned long a_u4Position)
 		spin_unlock(g_pAF_SpinLock);
 	} else {
 		LOG_INF("set I2C failed when moving the motor\n");
-		ret = -1;
 	}
 
-	return ret;
+	return 0;
 }
 
 static inline int setAFInf(unsigned long a_u4Position)
@@ -230,7 +211,7 @@ long DW9718SAF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned 
 
 	switch (a_u4Command) {
 	case AFIOC_G_MOTORINFO:
-		i4RetValue = getAFInfo((__user struct stAF_MotorInfo *) (a_u4Param));
+		i4RetValue = getAFInfo((__user stAF_MotorInfo *) (a_u4Param));
 		break;
 
 	case AFIOC_T_MOVETO:
@@ -263,31 +244,9 @@ int DW9718SAF_Release(struct inode *a_pstInode, struct file *a_pstFile)
 {
 	LOG_INF("Start\n");
 
-	if (*g_pAF_Opened == 2) {
-		unsigned long af_step = 25;
-
-		if (g_u4CurrPosition > g_u4AF_INF && g_u4CurrPosition <= g_u4AF_MACRO) {
-			while (g_u4CurrPosition > 50) {
-				if (g_u4CurrPosition > 400)
-					af_step = 70;
-				else if (g_u4CurrPosition > 180)
-					af_step = 40;
-				else
-					af_step = 25;
-
-				s4AF_WriteReg(g_u4CurrPosition - af_step);
-
-				g_u4CurrPosition = g_u4CurrPosition - af_step;
-				mdelay(10);
-				if (g_u4CurrPosition <= 0 || g_u4CurrPosition > 1023)
-					break;
-			}
-		}
-
-		g_u4CurrPosition = 0;
-
+	if (*g_pAF_Opened == 2)
 		LOG_INF("Wait\n");
-	}
+
 	if (*g_pAF_Opened) {
 		LOG_INF("Free\n");
 

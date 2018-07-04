@@ -42,7 +42,6 @@
 #include "ccci_modem.h"
 #include "ccci_bm.h"
 #include "ccci_platform.h"
-#if (MD_GENERATION <= 6292)
 #include "ccif_c2k_platform.h"
 #include "ccci_hif.h"
 #include "hif/ccci_hif_ccif.h"
@@ -351,24 +350,9 @@ static int md_ccif_op_force_assert(struct ccci_modem *md, MD_COMM_TYPE type)
 
 }
 
-static inline void clear_md1_md3_smem(struct ccci_modem *md)
-{
-	struct ccci_smem_region *region;
-
-	CCCI_NORMAL_LOG(md->index, TAG, "clear_md1_md3_smem start\n");
-	region = ccci_md_get_smem_by_user_id(md->index, SMEM_USER_RAW_MD2MD);
-
-	if (!region) {
-		CCCI_NORMAL_LOG(md->index, TAG, "clear_md1_md3_smem error\n");
-		return;
-	}
-	memset_io(region->base_ap_view_vir, 0, region->size);
-}
-
 static int md_ccif_op_reset_pccif(struct ccci_modem *md)
 {
 	reset_md1_md3_pccif(md);
-	clear_md1_md3_smem(md);
 	return 0;
 }
 
@@ -606,4 +590,3 @@ module_init(md_ccif_init);
 MODULE_AUTHOR("Yanbin Ren <Yanbin.Ren@mediatek.com>");
 MODULE_DESCRIPTION("CCIF modem driver v0.1");
 MODULE_LICENSE("GPL");
-#endif

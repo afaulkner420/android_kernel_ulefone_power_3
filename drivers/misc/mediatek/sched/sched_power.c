@@ -46,7 +46,11 @@ struct eas_data eas_info;
 static int ver_major = 1;
 static int ver_minor = 8;
 
-static char module_name[128];
+#ifdef CONFIG_CPU_FREQ_SCHED_ASSIST
+static const char module_name[64] = "arctic, sched-assist dvfs,hps";
+#else
+static const char module_name[64] = "arctic";
+#endif
 
 /* To define limit of SODI */
 int sodi_limit = DEFAULT_SODI_LIMIT;
@@ -101,7 +105,7 @@ bool is_hybrid_enabled(void)
 	return (sched_type == SCHED_HYBRID_LB) ? true : false;
 }
 
-#if defined(CONFIG_MACH_MT6763) || defined(CONFIG_MACH_MT6758)
+#if defined(CONFIG_MACH_MT6763)
 /* MT6763: 2 gears. cluster 0 & 1 is buck shared. */
 static int share_buck[3] = {1, 0, 2};
 /* cpu7 is L+ */
@@ -179,10 +183,7 @@ int mtk_cluster_capacity_idx(int cid, struct energy_env *eenv)
 	} else
 		return -1;
 
-	/* default is max_cap if we don't find a match */
-	sel_idx = sge->nr_cap_states - 1;
-
-#ifdef CONFIG_CPU_FREQ_GOV_SCHEDPLUS
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 	/* OPP idx to refer capacity margin */
 	new_capacity = util * capacity_margin_dvfs >> SCHED_CAPACITY_SHIFT;
 #endif
@@ -480,7 +481,7 @@ int show_cpu_capacity(char *buf, int buf_size)
 	int len = 0;
 
 	for_each_possible_cpu(cpu) {
-#if defined(CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 		struct sched_capacity_reqs *scr;
 
 		scr = &per_cpu(cpu_sched_capacity_reqs, cpu);
@@ -506,7 +507,7 @@ int show_cpu_capacity(char *buf, int buf_size)
 
 				/* cpu utilization */
 				cpu_online(cpu)?cpu_util(cpu):0,
-#if defined(CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 				scr->cfs,
 				scr->rt,
 #else
@@ -677,7 +678,7 @@ __ATTR(info, S_IRUSR, show_eas_info_attr, NULL);
 static ssize_t store_cap_margin_knob(struct kobject *kobj,
 		struct kobj_attribute *attr, const char *buf, size_t count)
 {
-#if defined(CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 	int val = 0;
 
 	if (sscanf(buf, "%iu", &val) != 0)
@@ -691,7 +692,7 @@ static ssize_t show_cap_margin_knob(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	unsigned int len = 0;
-#if defined(CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 	unsigned int max_len = 4096;
 
 	len += snprintf(buf, max_len, "capacity_margin_dvfs=%d\n", capacity_margin_dvfs);
@@ -845,22 +846,6 @@ static int __init eas_stats_init(void)
 	int ret = 0;
 
 	eas_info.init = 0;
-
-
-	snprintf(module_name, sizeof(module_name), "%s %s%d %s",
-		"arctic",
-#if (defined CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
-		"sched-dvfs:", sched_dvfs_type,
-#else
-		"unknown:", 0,
-#endif
-
-#ifdef CONFIG_MTK_ACAO_SUPPORT
-		"acao"
-#else
-		"hps"
-#endif
-	);
 
 	ret = init_eas_attribs();
 

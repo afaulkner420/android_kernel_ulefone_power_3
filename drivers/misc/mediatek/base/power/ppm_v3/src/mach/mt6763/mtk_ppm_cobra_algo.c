@@ -27,7 +27,7 @@ struct ppm_cobra_data cobra_tbl;
 struct ppm_cobra_lookup cobra_lookup_data;
 
 static int Core_limit[NR_PPM_CLUSTERS] = {CORE_NUM_LL, CORE_NUM_L};
-int cobra_init_done;
+static int cobra_init_done;
 
 #define ACT_CORE(cluster)	(active_core[PPM_CLUSTER_##cluster])
 #define CORE_LIMIT(cluster)	(core_limit_tmp[PPM_CLUSTER_##cluster])
@@ -48,7 +48,6 @@ static int get_delta_pwr_LxLL(unsigned int L_core, unsigned int LL_core, unsigne
 		ppm_err("%s: Invalid input: L_core=%d, LL_core=%d, opp=%d\n",
 			__func__, L_core, LL_core, opp);
 		WARN_ON(1);
-		return 0;
 	}
 
 #if PPM_COBRA_RUNTIME_CALC_DELTA
@@ -93,13 +92,11 @@ void ppm_cobra_update_core_limit(unsigned int cluster, int limit)
 	if (cluster >= NR_PPM_CLUSTERS) {
 		ppm_err("%s: Invalid cluster id = %d\n", __func__, cluster);
 		WARN_ON(1);
-		return;
 	}
 
 	if (limit < 0 || limit > get_cluster_max_cpu_core(cluster)) {
 		ppm_err("%s: Invalid core limit for cluster%d = %d\n", __func__, cluster, limit);
 		WARN_ON(1);
-		return;
 	}
 
 	Core_limit[cluster] = limit;

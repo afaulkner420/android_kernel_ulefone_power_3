@@ -35,7 +35,7 @@
 
 static __read_mostly unsigned int walt_ravg_hist_size = 5;
 static __read_mostly unsigned int walt_window_stats_policy =
-	WINDOW_STATS_MAX_RECENT_AVG;
+	WINDOW_STATS_AVG;
 static __read_mostly unsigned int walt_account_wait_time = 1;
 static __read_mostly unsigned int walt_freq_account_wait_time = 0;
 static __read_mostly unsigned int walt_io_is_busy = 0;
@@ -72,15 +72,7 @@ static cpumask_t mpc_mask = CPU_MASK_ALL;
 __read_mostly unsigned int walt_ravg_window = 20000000;
 
 /* Min window size (in ns) = 10ms */
-#ifdef CONFIG_HZ_300
-/*
- * Tick interval becomes to 3333333 due to
- * rounding error when HZ=300.
- */
-#define MIN_SCHED_RAVG_WINDOW (3333333 * 6)
-#else
 #define MIN_SCHED_RAVG_WINDOW 10000000
-#endif
 
 /* Max window size (in ns) = 1s */
 #define MAX_SCHED_RAVG_WINDOW 1000000000
@@ -211,10 +203,6 @@ static u64 scale_exec_time(u64 delta, struct rq *rq)
 
 	if (unlikely(cur_freq > rq->max_possible_freq))
 		cur_freq = rq->max_possible_freq;
-
-	/* platform driver may be not ready */
-	if (!rq->max_possible_freq)
-		return 0;
 
 	/* round up div64 */
 	delta = div64_u64(delta * cur_freq + rq->max_possible_freq - 1,
@@ -735,7 +723,7 @@ void walt_update_task_ravg(struct task_struct *p, struct rq *rq,
 	if (walt_disabled || !rq->window_start)
 		return;
 
-	/* lockdep_assert_held(&rq->lock); */
+	lockdep_assert_held(&rq->lock);
 
 	update_window_start(rq, wallclock);
 
@@ -927,10 +915,7 @@ static unsigned long load_scale_cpu_efficiency(int cpu)
  */
 static unsigned long load_scale_cpu_freq(int cpu)
 {
-	if (cpu_rq(cpu)->max_freq)
-		return DIV_ROUND_UP(1024 * max_possible_freq, cpu_rq(cpu)->max_freq);
-	else
-		return 1024;
+	return DIV_ROUND_UP(1024 * max_possible_freq, cpu_rq(cpu)->max_freq);
 }
 
 static int compute_capacity(int cpu)
@@ -1045,10 +1030,6 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 
 		if (update_max) {
 			u64 mpc, mplsf;
-
-			/* paltform driver may be delayed */
-			if (!rq->max_freq)
-				return 0;
 
 			mpc = div_u64(((u64) rq->capacity) *
 				rq->max_possible_freq, rq->max_freq);

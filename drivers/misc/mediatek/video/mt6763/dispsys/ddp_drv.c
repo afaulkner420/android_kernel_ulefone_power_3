@@ -90,11 +90,6 @@ struct disp_node_struct {
 
 static struct platform_device mydev;
 
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-unsigned int lcm_bias_vol = 5400000;//5.4v
-extern int tran_display_bias_enable(int vol);
-#endif
-
 #if 0 /* defined but not used */
 static unsigned int ddp_ms2jiffies(unsigned long ms)
 {
@@ -145,7 +140,7 @@ static const struct mc_uuid_t MC_UUID_TPLAY = {
 	};
 
 static struct mc_session_handle tplaySessionHandle;
-static struct tplay_tciMessage_t *pTplayTci;
+static tplay_tciMessage_t *pTplayTci;
 
 static unsigned int opened_device;
 static enum mc_result late_open_mobicore_device(void)
@@ -184,7 +179,7 @@ static int open_tplay_driver_connection(void)
 
 		/* Allocating WSM for DCI */
 		mcRet =
-		    mc_malloc_wsm(mc_deviceId, 0, sizeof(struct tplay_tciMessage_t),
+		    mc_malloc_wsm(mc_deviceId, 0, sizeof(tplay_tciMessage_t),
 				  (uint8_t **) &pTplayTci, 0);
 		if (mcRet != MC_DRV_OK) {
 			DDPERR("mc_malloc_wsm failed: %d @%s line %d\n", mcRet, __func__, __LINE__);
@@ -197,7 +192,7 @@ static int open_tplay_driver_connection(void)
 		mcRet = mc_open_session(&tplaySessionHandle,
 					&MC_UUID_TPLAY,
 					(uint8_t *) pTplayTci,
-					(uint32_t) sizeof(struct tplay_tciMessage_t));
+					(uint32_t) sizeof(tplay_tciMessage_t));
 		if (mcRet != MC_DRV_OK) {
 			DDPERR("mc_open_session failed: %d @%s line %d\n", mcRet, __func__,
 			       __LINE__);
@@ -617,6 +612,8 @@ static int __init disp_probe_1(void)
 			ddp_set_module_va(i, va);
 		}
 
+		DPI_REG = (struct DPI_REGS *)ddp_get_module_va(DISP_MODULE_DPI);
+
 		status = of_address_to_resource(node, 0, &res);
 		if (status < 0) {
 			DDPERR("[ERR]DT, i=%d, module=%s, unable to get PA\n",
@@ -673,8 +670,6 @@ static int __init disp_probe_1(void)
 		}
 
 	}
-
-	DPI_REG = (struct DPI_REGS *)ddp_get_module_va(DISP_MODULE_DPI);
 
 	if (disp_helper_get_stage() != DISP_HELPER_STAGE_NORMAL) {
 #if 0
@@ -796,13 +791,7 @@ static int __init disp_late(void)
 	if (ret < 0)
 		pr_err("get dsv_pos fail, ret = %d\n", ret);
 
-/* add XLLSHLSS-3 by tao.wang start */
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-	tran_display_bias_enable(lcm_bias_vol);
-#else
 	display_bias_enable();
-#endif
-/* add XLLSHLSS-3 by tao.wang end */
 
 	DDPMSG("disp driver(1) disp_late end\n");
 	return 0;

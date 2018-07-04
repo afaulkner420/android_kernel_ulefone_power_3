@@ -397,11 +397,8 @@ static const struct file_operations static_power_operations = {
 static unsigned int mtSpowerInited;
 int mt_spower_init(void)
 {
-#ifndef WITHOUT_LKG_EFUSE
-	int devinfo = 0;
+	int i, devinfo = 0;
 	unsigned int temp_lkg;
-#endif
-	int i;
 	unsigned int v_of_fuse;
 	int t_of_fuse;
 	unsigned int idx = 0;
@@ -409,11 +406,6 @@ int mt_spower_init(void)
 
 	/* Group FF,TT,SS tables of all the banks together */
 	struct sptab_list *tab[MTK_SPOWER_MAX];
-
-#ifdef SPOWER_NOT_READY
-	/* FIX ME */
-	return 0;
-#endif
 
 	for (i = 0; i < MTK_SPOWER_MAX; i++)
 		tab[i] = kmalloc(sizeof(struct sptab_list), GFP_KERNEL);
@@ -425,14 +417,12 @@ int mt_spower_init(void)
 	if (tab_validate(&sptab[0]))
 		return 0;
 
-#ifndef WITHOUT_LKG_EFUSE
 	for (i = 0; i < MTK_LEAKAGE_MAX; i++) {
 		devinfo = (int)get_devinfo_with_index(spower_lkg_info[i].devinfo_idx);
 		temp_lkg = (devinfo >> spower_lkg_info[i].devinfo_offset) & 0xff;
 		SPOWER_INFO("[Efuse] %s => 0x%x\n", spower_lkg_info[i].name, temp_lkg);
 		/* if has leakage info in efuse, get the final leakage */
 		/* if no leakage info in efuse, spower_lkg_info[i].value will use default lkg */
-
 		if (temp_lkg != 0) {
 			temp_lkg = (int) devinfo_table[temp_lkg];
 			spower_lkg_info[i].value = (int) (temp_lkg * spower_lkg_info[i].v_of_fuse / 1000);
@@ -440,7 +430,6 @@ int mt_spower_init(void)
 		SPOWER_INFO("[Efuse Leakage] %s => 0x%x\n", spower_lkg_info[i].name, temp_lkg);
 		SPOWER_INFO("[Final Leakage] %s => %d\n", spower_lkg_info[i].name, spower_lkg_info[i].value);
 	}
-#endif
 	SPOWER_INFO("spower table construct\n");
 	/** structurize the raw data **/
 	for (i = 0; i < MTK_SPOWER_MAX; i++) {

@@ -35,7 +35,7 @@
 #define BUFSIZE 128
 static int test_case;
 static int test_cpu;
-static struct task_struct *wk_tsk[AEE_MTK_CPU_NUMS];
+static struct task_struct *wk_tsk[NR_CPUS];
 
 static int force_panic_hang(struct notifier_block *this, unsigned long event, void *ptr)
 {
@@ -458,8 +458,9 @@ static ssize_t proc_generate_ee_read(struct file *file,
 	if ((*ppos)++)
 		return 0;
 	ptr = kmalloc(TEST_EE_PHY_SIZE, GFP_KERNEL);
-	if (ptr == NULL)
+	if (ptr == NULL) {
 		return sprintf(buffer, "kmalloc fail\n");
+	}
 	log = kmalloc(TEST_EE_LOG_SIZE, GFP_KERNEL);
 	if (log == NULL) {
 		kfree(ptr);
@@ -494,8 +495,9 @@ static ssize_t proc_generate_combo_read(struct file *file,
 	if ((*ppos)++)
 		return 0;
 	ptr = kmalloc(TEST_COMBO_PHY_SIZE, GFP_KERNEL);
-	if (ptr == NULL)
+	if (ptr == NULL) {
 		return sprintf(buffer, "kmalloc fail\n");
+	}
 	for (i = 0; i < TEST_COMBO_PHY_SIZE; i++)
 		ptr[i] = (i % 26) + 'A';
 
@@ -523,8 +525,9 @@ static ssize_t proc_generate_md32_read(struct file *file,
 	if ((*ppos)++)
 		return 0;
 	ptr = kmalloc(TEST_MD32_PHY_SIZE, GFP_KERNEL);
-	if (ptr == NULL)
+	if (ptr == NULL) {
 		return sprintf(buffer, "kmalloc fail\n");
+	}
 	for (i = 0; i < TEST_MD32_PHY_SIZE; i++)
 		ptr[i] = (i % 26) + 'a';
 
@@ -553,8 +556,9 @@ static ssize_t proc_generate_scp_read(struct file *file,
 	if ((*ppos)++)
 		return 0;
 	ptr = kmalloc(TEST_SCP_PHY_SIZE, GFP_KERNEL);
-	if (ptr == NULL)
+	if (ptr == NULL) {
 		return sprintf(buffer, "kmalloc fail\n");
+	}
 	for (i = 0; i < TEST_SCP_PHY_SIZE; i++)
 		ptr[i] = (i % 26) + 'a';
 

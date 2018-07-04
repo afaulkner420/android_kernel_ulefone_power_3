@@ -29,7 +29,6 @@
 #include "mtk_gadget.h"
 #endif
 
-#include "rndis.h"
 
 /*
  * This component encapsulates the Ethernet link glue needed to provide
@@ -61,6 +60,7 @@
 
 static struct workqueue_struct	*uether_wq;
 static struct workqueue_struct	*uether_wq1;
+
 
 /*-------------------------------------------------------------------------*/
 
@@ -409,24 +409,6 @@ extra:
 	return 0;
 }
 
-#define MAX_ROW 8192
-static int chksum_table[MAX_ROW];
-static int chksum_windex;
-static unsigned chksum_wvalue;
-static int chksum_rindex;
-static unsigned chksum_rvalue;
-static bool tx_out_of_order_audit;
-module_param(tx_out_of_order_audit, bool, 0644);
-static bool tx_out_of_order;
-module_param(tx_out_of_order, bool, 0400);
-/* TX OUT OF ORDER FIX */
-static bool sending_aggregation;
-static int sending_aggregation_cnt;
-module_param(sending_aggregation_cnt, int, 0400);
-static long max_diff_ns;
-module_param(max_diff_ns, long, 0400);
-static long total_diff_ns;
-module_param(total_diff_ns, long, 0400);
 static int alloc_requests(struct eth_dev *dev, struct gether *link, unsigned n)
 {
 	int	status;
@@ -438,9 +420,6 @@ static int alloc_requests(struct eth_dev *dev, struct gether *link, unsigned n)
 		U_ETHER_DBG("can't alloc tx requests\n");
 		return status;
 	}
-	tx_out_of_order = false;
-	chksum_windex = chksum_wvalue = chksum_rindex = chksum_rvalue = 0;
-	sending_aggregation_cnt = max_diff_ns = total_diff_ns = 0;
 	spin_unlock(&dev->req_lock);
 
 	spin_lock(&dev->reqrx_lock);
@@ -606,82 +585,68 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 	spin_lock(&dev->req_lock);
 	list_add_tail(&req->list, &dev->tx_reqs);
 
-	if (tx_out_of_order_audit) {
-		chksum_rindex += req->num_sgs;
-		chksum_rindex %= MAX_ROW;
-		chksum_rvalue += req->num_mapped_sgs;
-		req->num_sgs = req->num_mapped_sgs = 0;
-		tx_out_of_order = (chksum_rvalue != chksum_table[chksum_rindex]) ? true : false;
-	}
-
 	if (dev->port_usb->multi_pkt_xfer && !req->context) {
 		dev->no_tx_req_used--;
 		req->length = 0;
 		in = dev->port_usb->in_ep;
 
-		new_req = container_of(dev->tx_reqs.next,
-				struct usb_request, list);
-		list_del(&new_req->list);
-		if (new_req->length > 0) {
-			/* TX OUT OF ORDER FIX */
-			dev->tx_skb_hold_count = 0;
-			dev->no_tx_req_used++;
-			sending_aggregation = true;
-		} else {
-			/*
-			 * Put the idle request at the back of the
-			 * queue. The xmit function will put the
-			 * unfinished request at the beginning of the
-			 * queue.
-			 */
-			list_add_tail(&new_req->list, &dev->tx_reqs);
-		}
-		spin_unlock(&dev->req_lock);
-		if (sending_aggregation) {
-			length = new_req->length;
+		if (!list_empty(&dev->tx_reqs)) {
+			new_req = container_of(dev->tx_reqs.next,
+					struct usb_request, list);
+			list_del(&new_req->list);
+			spin_unlock(&dev->req_lock);
+			if (new_req->length > 0) {
+				length = new_req->length;
 
-			/* NCM requires no zlp if transfer is dwNtbInMaxSize */
-			if (dev->port_usb->is_fixed &&
+				/* NCM requires no zlp if transfer is
+				 * dwNtbInMaxSize */
+				if (dev->port_usb->is_fixed &&
 					length == dev->port_usb->fixed_in_len &&
 					(length % in->maxpacket) == 0)
-				new_req->zero = 0;
-			else
-				new_req->zero = 1;
+					new_req->zero = 0;
+				else
+					new_req->zero = 1;
 
-			/* use zlp framing on tx for strict CDC-Ether
-			 * conformance, though any robust network rx
-			 * path ignores extra padding. and some hardware
-			 * doesn't like to write zlps.
-			 */
-			if (new_req->zero && !dev->zlp &&
-					(length % in->maxpacket) == 0) {
-				new_req->zero = 0;
-				length++;
-			}
+				/* use zlp framing on tx for strict CDC-Ether
+				 * conformance, though any robust network rx
+				 * path ignores extra padding. and some hardware
+				 * doesn't like to write zlps.
+				 */
+				if (new_req->zero && !dev->zlp &&
+						(length % in->maxpacket) == 0) {
+					new_req->zero = 0;
+					length++;
+				}
 
-			new_req->length = length;
-			retval = usb_ep_queue(in, new_req, GFP_ATOMIC);
-			sending_aggregation = false;
-			switch (retval) {
+				new_req->length = length;
+				retval = usb_ep_queue(in, new_req, GFP_ATOMIC);
+				switch (retval) {
 				default:
 					DBG(dev, "tx queue err %d\n", retval);
 					new_req->length = 0;
 					spin_lock(&dev->req_lock);
-					/* TX OUT OF ORDER FIX */
-					dev->no_tx_req_used--;
 					list_add_tail(&new_req->list, &dev->tx_reqs);
 					spin_unlock(&dev->req_lock);
 					break;
 				case 0:
-
-					/* TX OUT OF ORDER FIX */
-					/*
 					spin_lock(&dev->req_lock);
 					dev->no_tx_req_used++;
 					spin_unlock(&dev->req_lock);
-					*/
 					net->trans_start = jiffies;
+				}
+			} else {
+				spin_lock(&dev->req_lock);
+				/*
+				 * Put the idle request at the back of the
+				 * queue. The xmit function will put the
+				 * unfinished request at the beginning of the
+				 * queue.
+				 */
+				list_add_tail(&new_req->list, &dev->tx_reqs);
+				spin_unlock(&dev->req_lock);
 			}
+		} else {
+			spin_unlock(&dev->req_lock);
 		}
 	} else {
 					skb = req->context;
@@ -700,11 +665,11 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 		spin_unlock(&dev->req_lock);
 		dev_kfree_skb_any(skb);
 	}
-	atomic_dec(&dev->tx_qlen);
+
 	if (netif_carrier_ok(dev->net)) {
 		spin_lock(&dev->req_lock);
 		if (dev->no_tx_req_used < tx_wakeup_threshold)
-			netif_wake_queue(dev->net);
+		netif_wake_queue(dev->net);
 		spin_unlock(&dev->req_lock);
 	}
 
@@ -890,15 +855,6 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 		rndis_test_tx_stop++;
 		netif_stop_queue(net);
 	}
-
-	if (tx_out_of_order_audit) {
-		chksum_wvalue += (unsigned)(uintptr_t)skb;
-		chksum_windex++;
-		chksum_windex %= MAX_ROW;
-		chksum_table[chksum_windex] = chksum_wvalue;
-		req->num_sgs++;
-		req->num_mapped_sgs += (unsigned)(uintptr_t)skb;
-	}
 	spin_unlock_irqrestore(&dev->req_lock, flags);
 
 	if (dev->port_usb == NULL) {
@@ -940,25 +896,6 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 
 		dev->no_tx_req_used++;
 		dev->tx_skb_hold_count = 0;
-
-		/* TX OUT OF ORDER FIX */
-		if (unlikely(sending_aggregation)) {
-			struct timeval tv_before, tv_after;
-			u64 diff_ns = 0;
-
-			do_gettimeofday(&tv_before);
-			sending_aggregation_cnt++;
-			while (sending_aggregation) {
-				do_gettimeofday(&tv_after);
-				diff_ns = timeval_to_ns(&tv_after) - timeval_to_ns(&tv_before);
-				/* 3us for timeout */
-				if (diff_ns >= (3000))
-					break;
-			}
-			total_diff_ns += diff_ns;
-			if (max_diff_ns < diff_ns)
-				max_diff_ns = diff_ns;
-		}
 		spin_unlock_irqrestore(&dev->req_lock, flags);
 
 	} else {
@@ -988,12 +925,18 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	req->length = length;
 
 	/* throttle high/super speed IRQ rate back slightly */
-	if (gadget_is_dualspeed(dev->gadget))
-		req->no_interrupt = (((dev->gadget->speed == USB_SPEED_HIGH ||
-				       dev->gadget->speed == USB_SPEED_SUPER)) &&
-					!list_empty(&dev->tx_reqs))
-			? ((atomic_read(&dev->tx_qlen) % dev->qmult) != 0)
-			: 0;
+	if (gadget_is_dualspeed(dev->gadget) &&
+			 (dev->gadget->speed == USB_SPEED_HIGH)) {
+		dev->tx_qlen++;
+		if (dev->tx_qlen == (dev->qmult/2)) {
+			req->no_interrupt = 0;
+			dev->tx_qlen = 0;
+		} else {
+			req->no_interrupt = 1;
+		}
+	} else {
+		req->no_interrupt = 0;
+	}
 
 	retval = usb_ep_queue(in, req, GFP_ATOMIC);
 	switch (retval) {
@@ -1003,7 +946,6 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	case 0:
 		rndis_test_tx_usb_out++;
 		net->trans_start = jiffies;
-		atomic_inc(&dev->tx_qlen);
 	}
 
 	if (retval) {
@@ -1034,7 +976,7 @@ static void eth_start(struct eth_dev *dev, gfp_t gfp_flags)
 	rx_fill(dev, gfp_flags);
 
 	/* and open the tx floodgates */
-	atomic_set(&dev->tx_qlen, 0);
+	dev->tx_qlen = 0;
 	netif_wake_queue(dev->net);
 }
 
@@ -1275,10 +1217,8 @@ struct net_device *gether_setup_name_default(const char *netname)
 	dev = netdev_priv(net);
 	spin_lock_init(&dev->lock);
 	spin_lock_init(&dev->req_lock);
-	spin_lock_init(&dev->reqrx_lock);
 	INIT_WORK(&dev->work, eth_work);
 	INIT_WORK(&dev->rx_work, process_rx_w);
-	INIT_WORK(&dev->rx_work1, process_rx_w1);
 	INIT_LIST_HEAD(&dev->tx_reqs);
 	INIT_LIST_HEAD(&dev->rx_reqs);
 

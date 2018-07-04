@@ -123,7 +123,7 @@ static void VOW32KCK_Enable(bool enable);
 #endif
 
 static struct codec_data_private *mCodec_data;
-static unsigned int mBlockSampleRate[AUDIO_DAI_INTERFACE_MAX] = { 48000, 48000, 48000, 48000};
+static uint32 mBlockSampleRate[AUDIO_DAI_INTERFACE_MAX] = { 48000, 48000, 48000, 48000};
 
 static DEFINE_MUTEX(Ana_Ctrl_Mutex);
 static DEFINE_MUTEX(Ana_buf_Ctrl_Mutex);
@@ -246,7 +246,7 @@ static bool mSpeaker_Ocflag;
 static unsigned int dAuxAdcChannel = 16;
 static const int mDcOffsetTrimChannel = 9;
 static bool mInitCodec;
-static unsigned int MicbiasRef, GetMicbias;
+static uint32 MicbiasRef, GetMicbias;
 
 static int reg_AFE_VOW_CFG0;			/* VOW AMPREF Setting */
 static int reg_AFE_VOW_CFG1;			/* VOW A,B timeout initial value (timer) */
@@ -299,7 +299,7 @@ enum audio_vow_mic_type {
 
 /* AUDIO_VOW_MIC_TYPE_Handset_AMIC_DCC */
 /* AUDIO_VOW_MIC_TYPE_Handset_AMIC_DCCECM */
-static const unsigned short Handset_AMIC_DCC_PeriodicOnOff[7][22] = {
+static const uint16 Handset_AMIC_DCC_PeriodicOnOff[7][22] = {
 	/*  PGA,  PreCG,    ADC,  glblp,   dmic, mbias0, mbias1,    pll,  pwrdm,    vow,   dmic, period */
 	{0x8000, 0x8000, 0x81AA, 0x0000, 0x0000, 0x0000, 0x0000, 0x8000, 0x0000, 0x81EC, 0x0000,
 	 0x1917, 0x8021, 0x1917, 0x0000, 0x0000, 0x0000, 0x0000, 0x1917, 0x0000, 0x18F6, 0x0000},/* 90% */
@@ -319,7 +319,7 @@ static const unsigned short Handset_AMIC_DCC_PeriodicOnOff[7][22] = {
 
 /* AUDIO_VOW_MIC_TYPE_Headset_MIC_DCC */
 /* AUDIO_VOW_MIC_TYPE_Headset_MIC_DCCECM */
-static const unsigned short Headset_MIC_DCC_PeriodicOnOff[7][22] = {
+static const uint16 Headset_MIC_DCC_PeriodicOnOff[7][22] = {
 	/*  PGA,  PreCG,    ADC,  glblp,   dmic, mbias0, mbias1,    pll,  pwrdm,    vow,   dmic, period */
 	{0x8000, 0x8000, 0x81AA, 0x0000, 0x0000, 0x0000, 0x0000, 0x8000, 0xC000, 0x81EC, 0x0000,
 	 0x1917, 0x8021, 0x1917, 0x0000, 0x0000, 0x0000, 0x0000, 0x1917, 0x1917, 0x18F6, 0x0000},/* 90% */
@@ -1592,10 +1592,10 @@ static void SetDcCompenSation(bool enable)
 		for (i = times; i >= 0; i--) {
 			tmp_ramp = i << 10;
 			if (tmp_ramp < abs_lch)
-				set_lch_dc_compensation_reg(sign_lch * tmp_ramp);
+				set_lch_dc_compensation_reg(tmp_ramp);
 
 			if (tmp_ramp < abs_rch)
-				set_rch_dc_compensation_reg(sign_rch * tmp_ramp);
+				set_rch_dc_compensation_reg(tmp_ramp);
 			udelay(100);
 		}
 		enable_dc_compensation(false);
@@ -1642,9 +1642,9 @@ static void SetDCcoupleNP(int MicBias, int mode)
 	}
 }
 #endif
-unsigned int GetULFrequency(unsigned int frequency)
+uint32 GetULFrequency(uint32 frequency)
 {
-	unsigned int Reg_value = 0;
+	uint32 Reg_value = 0;
 
 	pr_aud("%s frequency =%d\n", __func__, frequency);
 	switch (frequency) {
@@ -1663,7 +1663,7 @@ unsigned int GetULFrequency(unsigned int frequency)
 }
 
 
-unsigned int ULSampleRateTransform(unsigned int SampleRate)
+uint32 ULSampleRateTransform(uint32 SampleRate)
 {
 	switch (SampleRate) {
 	case 8000:
@@ -1773,19 +1773,6 @@ static struct snd_soc_dai_driver mtk_6331_dai_codecs[] = {
 	 .ops = &mtk_codec_dai_1_ops,
 	 .playback = {
 		      .stream_name = MT_SOC_I2SDL1_STREAM_NAME,
-		      .channels_min = 1,
-		      .channels_max = 2,
-		      .rate_min = 8000,
-		      .rate_max = 192000,
-		      .rates = SNDRV_PCM_RATE_8000_192000,
-		      .formats = SND_SOC_ADV_MT_FMTS,
-		      }
-	 },
-	 {
-	  .name = MT_SOC_CODEC_DEEPBUFFER_TX_DAI_NAME,
-	  .ops = &mtk_codec_dai_1_ops,
-	  .playback = {
-		      .stream_name = MT_SOC_DEEP_BUFFER_DL_STREAM_NAME,
 		      .channels_min = 1,
 		      .channels_max = 2,
 		      .rate_min = 8000,
@@ -2041,9 +2028,9 @@ static struct snd_soc_dai_driver mtk_6331_dai_codecs[] = {
 	}
 };
 
-unsigned int GetDLNewIFFrequency(unsigned int frequency)
+uint32 GetDLNewIFFrequency(unsigned int frequency)
 {
-	unsigned int Reg_value = 0;
+	uint32 Reg_value = 0;
 
 	switch (frequency) {
 	case 8000:
@@ -3835,11 +3822,11 @@ static const struct snd_kcontrol_new mt6331_snd_controls[] = {
 	SOC_ENUM_EXT("Audio_Power_Mode", Audio_DL_Enum[5], audio_power_mode_get, audio_power_mode_set),
 	SOC_ENUM_EXT("Audio_Hp_Differential_Mode", Audio_DL_Enum[0],
 		     audio_hp_differential_mode_get, audio_hp_differential_mode_set),
-	SOC_SINGLE_EXT("Codec_ADC_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_ul_rate_get,
+	SOC_SINGLE_EXT("Codec_UL_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_ul_rate_get,
 		       audio_ul_rate_set),
-	SOC_SINGLE_EXT("Codec_ADC2_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_ul2_rate_get,
+	SOC_SINGLE_EXT("Codec_UL2_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_ul2_rate_get,
 		       audio_ul2_rate_set),
-	SOC_SINGLE_EXT("Codec_DAC_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_dl_rate_get,
+	SOC_SINGLE_EXT("Codec_DL_SampleRate", SND_SOC_NOPM, 0, 0x80000, 0, audio_dl_rate_get,
 		       audio_dl_rate_set),
 };
 
@@ -4247,7 +4234,7 @@ static bool TurnOnVOWDigitalHW(bool enable)
 static void TurnOnVOWPeriodicOnOff(int MicType, int On_period, int enable)
 {
 	int i = 0;
-	const unsigned short (*pBuf)[22];
+	const uint16 (*pBuf)[22];
 
 	/* give a default value */
 	pBuf = Handset_AMIC_DCC_PeriodicOnOff;
@@ -4295,7 +4282,7 @@ static void TurnOnVOWPeriodicOnOff(int MicType, int On_period, int enable)
 			break;
 		}
 		if (On_period > 0) {
-			unsigned short value;
+			uint16 value;
 
 			/* send ipi to SCP */
 			VowDrv_SetPeriodicEnable(true);
@@ -4377,9 +4364,9 @@ static void VOW_Pwr_Enable(int MicType, bool enable)
 		/* 0x984C PLL low power */
 		Ana_Set_Reg(AUDENC_ANA_CON23, 0x8180, 0x8000);
 		/* 0x984A PLL devider ratio, Enable fbdiv relatch, Set DCKO = 1/4 F_PLL, Enable VOWPLL CLK */
-		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06D8, 0x07FC);
+		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06F8, 0x07FC);
 		/* 0x984A PLL devider ratio, Enable fbdiv relatch, Set DCKO = 1/4 F_PLL, Enable VOWPLL CLK */
-		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06D9, 0x0001);
+		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06F9, 0x0001);
 
 		if ((MicType != AUDIO_VOW_MIC_TYPE_Handset_DMIC)
 		 && (MicType != AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K)) {
@@ -4394,7 +4381,7 @@ static void VOW_Pwr_Enable(int MicType, bool enable)
 			Ana_Set_Reg(AUDENC_ANA_CON6, 0x0000, 0x000D);
 		}
 		/* 0x984A Disable PLL */
-		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06D8, 0x0001);
+		Ana_Set_Reg(AUDENC_ANA_CON22, 0x06F8, 0x0001);
 		/* 0x984A Disable PLL */
 		Ana_Set_Reg(AUDENC_ANA_CON22, 0x0310, 0x07FC);
 		/* 0x984C Disable PLL */
@@ -4676,19 +4663,18 @@ static bool TurnOnVOWADcPower(int MicType, bool enable)
 			Ana_Set_Reg(AFE_VOW_CFG6, reg_AFE_VOW_CFG6, 0x0700);   /* FLR value setting 0x0000 */
 
 		if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_VENDOR01) {
-			Ana_Set_Reg(AFE_VOW_CFG4, 0x024E, 0xfff0);  /* 16k */
-			Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C0A, 0xffff);  /* 770k */
-			/* Ana_Set_Reg(AFE_VOW_CFG4, 0x022E, 0xfff0);*/  /*32K*/
-			/* Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x2C0A, 0xffff);*/  /* 32K*/
-		} else if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K) {
-			Ana_Set_Reg(AFE_VOW_CFG4, 0x024E, 0xfff0);  /* 16k */
-			Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C0A, 0xffff);  /* 770k */
-		} else if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC) {
-			Ana_Set_Reg(AFE_VOW_CFG4, 0x029E, 0xfff0);  /* 16k */
-			Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C00, 0xffff);  /* 1540k */
+			/* 16K */
+			Ana_Set_Reg(AFE_VOW_CFG4, 0x024E, 0xfff0); /* 16k */
+			Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C0A, 0xffff);
+			/* Ana_Set_Reg(AFE_VOW_CFG4, 0x022E, 0xfff0);*/ /*32K*/
+			/* Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x2C0A, 0xffff);*/ /* 32K*/
 		} else {
-			Ana_Set_Reg(AFE_VOW_CFG4, 0x029E, 0xfff0);  /* 16k */
-			Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C00, 0xffff);
+		/* 16K */
+			Ana_Set_Reg(AFE_VOW_CFG4, 0x029E, 0xfff0); /* 16k */
+			if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K)
+				Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C08, 0xffff); /* 800k */
+			else
+				Ana_Set_Reg(AFE_VOW_POSDIV_CFG0, 0x0C00, 0xffff); /* 1.6m */
 		}
 		TurnOnVOWPeriodicOnOff(MicType, reg_AFE_VOW_PERIODIC, true);
 
@@ -4696,22 +4682,17 @@ static bool TurnOnVOWADcPower(int MicType, bool enable)
 		if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC) {
 			/*digital MIC need to config bit13 and bit6, (bit7 need to check)  0x6840*/
 
-			/* VowDrv_SetDmicLowPower(false); */
-			VowDrv_SetMtkifType(2);  /* 2: DMIC */
+			VowDrv_SetDmicLowPower(false);
 
 			Ana_Set_Reg(AFE_VOW_TOP, 0x20C0, 0x20C0);   /*VOW enable, with bit7*/
 		} else if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K) {
-			/* VowDrv_SetDmicLowPower(true); */
-			VowDrv_SetMtkifType(3);  /* 3: DMIC_LP */
+
+			VowDrv_SetDmicLowPower(true);
 
 			Ana_Set_Reg(AFE_VOW_TOP, 0x20C0, 0x20C0);   /*VOW enable, with bit7*/
-		} else if (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_VENDOR01) {
-			/* same as AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K */
-			VowDrv_SetMtkifType(3);  /* 3: DMIC_LP */
 		} else {
 			/* Normal */
-			/* VowDrv_SetDmicLowPower(false); */
-			VowDrv_SetMtkifType(1);  /* 1: AMIC */
+			VowDrv_SetDmicLowPower(false);
 		}
 #endif /* #ifndef VOW_STANDALONE_CONTROL */
 
@@ -4734,12 +4715,6 @@ static bool TurnOnVOWADcPower(int MicType, bool enable)
 
 		VOW_GPIO_Enable(false);
 
-		VowDrv_SetMtkifType(0);  /* 0: NONE */
-		if ((MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC)
-		 || (MicType == AUDIO_VOW_MIC_TYPE_Handset_DMIC_800K)) {
-			/* VowDrv_SetDmicLowPower(false); */
-			Ana_Set_Reg(AFE_VOW_TOP, 0x0000, 0x20C0);   /*VOW disable, with bit7*/
-		}
 		switch (MicType) {
 		/* for ACC Mic */
 		case AUDIO_VOW_MIC_TYPE_Handset_AMIC:
@@ -6360,7 +6335,7 @@ static int SineTable_UL2_Get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_
 	return 0;
 }
 
-static int Pmic_Loopback_Type;
+static int32 Pmic_Loopback_Type;
 
 static int Pmic_Loopback_Get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
@@ -6797,9 +6772,9 @@ static const struct snd_soc_dapm_route mtk_audio_map[] = {
 #define NLE_DELAY_ANA_OUTPUT_T (0x0D) /* User could change it by setting Audio_HyBridNLE_TurnOn or Off */
 
 
-static int Audio_HyBridNLE_getAnalogIdx(int Db, unsigned int *pAnalogIdx)
+static int Audio_HyBridNLE_getAnalogIdx(int32 Db, uint32 *pAnalogIdx)
 {
-	unsigned int mAnalogIdx;
+	uint32 mAnalogIdx;
 
 	if (pAnalogIdx == NULL) {
 		pr_err("[Err] %s -1", __func__);
@@ -6814,16 +6789,16 @@ static int Audio_HyBridNLE_getAnalogIdx(int Db, unsigned int *pAnalogIdx)
 	if (Db == NLE_ANA_GAIN_MUTE_DB)
 		mAnalogIdx = NLE_ANA_GAIN_MUTE_VALUE;
 	else
-		mAnalogIdx = (unsigned int) (NLE_ANA_GAIN_MAX_DB - Db);
+		mAnalogIdx = (uint32) (NLE_ANA_GAIN_MAX_DB - Db);
 
 	*pAnalogIdx = mAnalogIdx;
 
 	return 0;
 }
 
-static int Audio_HyBridNLE_getDbFromDigitalIdx(unsigned int DigitalIdx, int *pDb)
+static int Audio_HyBridNLE_getDbFromDigitalIdx(uint32 DigitalIdx, int32 *pDb)
 {
-	int mDb;
+	int32 mDb;
 
 	if (pDb == NULL) {
 		pr_err("[Err] %s -1", __func__);
@@ -6835,16 +6810,16 @@ static int Audio_HyBridNLE_getDbFromDigitalIdx(unsigned int DigitalIdx, int *pDb
 		return -2;
 	}
 
-	mDb =  (int) DigitalIdx;
+	mDb =  (int32) DigitalIdx;
 
 	*pDb = mDb;
 
 	return 0;
 }
 
-static int Audio_HyBridNLE_getDigitalIdx(int Db, unsigned int *pDigitalIdx)
+static int Audio_HyBridNLE_getDigitalIdx(int32 Db, uint32 *pDigitalIdx)
 {
-	unsigned int mDigitalIdx;
+	uint32 mDigitalIdx;
 
 	if (pDigitalIdx == NULL) {
 		pr_err("[Err] %s -1", __func__);
@@ -6856,7 +6831,7 @@ static int Audio_HyBridNLE_getDigitalIdx(int Db, unsigned int *pDigitalIdx)
 		return -2;
 	}
 
-	mDigitalIdx = (unsigned int) Db;
+	mDigitalIdx = (uint32) Db;
 
 	*pDigitalIdx = mDigitalIdx;
 
@@ -6892,19 +6867,19 @@ static int Audio_HyBridNLE_TurnOn_Get(struct snd_kcontrol *kcontrol, struct snd_
 
 static int Audio_HyBridNLE_TurnOn_Set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
-	unsigned int rg_nle_l_gain_dig_tar, rg_nle_r_gain_dig_tar;
-	unsigned int rg_nle_l_initiate, rg_nle_r_initiate;
-	unsigned int rg_temp_value;
-	int para_temp_value;
-	unsigned int rg_nle_gain_ana_tar_idx;
+	uint32 rg_nle_l_gain_dig_tar, rg_nle_r_gain_dig_tar;
+	uint32 rg_nle_l_initiate, rg_nle_r_initiate;
+	uint32 rg_temp_value;
+	int32 para_temp_value;
+	uint32 rg_nle_gain_ana_tar_idx;
 	unsigned char rg_nle_delay_ana = ucontrol->value.bytes.data[0];
-	unsigned int rg_nle_delay_ana_idx;
+	uint32 rg_nle_delay_ana_idx;
 	int oldindex = mCodec_data->mAudio_Ana_Volume[AUDIO_ANALOG_VOLUME_HPOUTL];
 
 	if (ucontrol->value.bytes.data[1] == 1)
-		para_temp_value = ((int) ucontrol->value.bytes.data[2]) * (-1);
+		para_temp_value = ((int32) ucontrol->value.bytes.data[2]) * (-1);
 	else
-		para_temp_value = (int) ucontrol->value.bytes.data[2];
+		para_temp_value = (int32) ucontrol->value.bytes.data[2];
 
 	if (rg_nle_delay_ana == 0 || para_temp_value > NLE_ANA_GAIN_MAX_DB ||
 		(para_temp_value < NLE_ANA_GAIN_MIN_DB && para_temp_value != NLE_ANA_GAIN_MUTE_DB)) {
@@ -6912,7 +6887,7 @@ static int Audio_HyBridNLE_TurnOn_Set(struct snd_kcontrol *kcontrol, struct snd_
 		pr_err("ana_delay [%d] ana_db [%d]\n", rg_nle_delay_ana, para_temp_value);
 		return -10;
 	}
-	rg_nle_delay_ana_idx = ((unsigned int) rg_nle_delay_ana) - 1;
+	rg_nle_delay_ana_idx = ((uint32) rg_nle_delay_ana) - 1;
 	if (Audio_HyBridNLE_getAnalogIdx(para_temp_value, &rg_nle_gain_ana_tar_idx) < 0) {
 		pr_err("%s -1\n", __func__);
 		return -1;
@@ -6940,8 +6915,8 @@ static int Audio_HyBridNLE_TurnOn_Set(struct snd_kcontrol *kcontrol, struct snd_
 		Audio_NLE_RegDump();
 	}
 	headset_volume_ramp(oldindex, rg_nle_gain_ana_tar_idx);
-	mCodec_data->mAudio_Ana_Volume[AUDIO_ANALOG_VOLUME_HPOUTL] = (int) rg_nle_gain_ana_tar_idx;
-	mCodec_data->mAudio_Ana_Volume[AUDIO_ANALOG_VOLUME_HPOUTR] = (int) rg_nle_gain_ana_tar_idx;
+	mCodec_data->mAudio_Ana_Volume[AUDIO_ANALOG_VOLUME_HPOUTL] = (int32) rg_nle_gain_ana_tar_idx;
+	mCodec_data->mAudio_Ana_Volume[AUDIO_ANALOG_VOLUME_HPOUTR] = (int32) rg_nle_gain_ana_tar_idx;
 	Ana_Set_Reg(AFE_DL_NLE_R_CFG0, rg_nle_gain_ana_tar_idx, 0x3f3f);
 	Ana_Set_Reg(AFE_DL_NLE_L_CFG0, rg_nle_gain_ana_tar_idx, 0x3f3f);
 	Ana_Set_Reg(AFE_DL_NLE_R_CFG3, (0 << 6) | rg_nle_delay_ana_idx, 0x7f);
@@ -6965,27 +6940,27 @@ static int Audio_HyBridNLE_TurnOff_Get(struct snd_kcontrol *kcontrol, struct snd
 static int Audio_HyBridNLE_TurnOff_Set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
 	unsigned char rg_nle_delay_ana = ucontrol->value.bytes.data[0];
-	int para_temp_value;
-	unsigned int rg_nle_gain_ana_tar_idx;
-	unsigned int rg_temp_value;
-	unsigned int rg_nle_r_gain_dig_tar, rg_nle_r_gain_ana_tar;
-	unsigned int nle_r_gain_dig_cur, nle_r_gain_ana_cur;
-	unsigned int nle_r_dig_gain_targeted, nle_r_ana_gain_targeted;
-	unsigned int rg_nle_l_gain_dig_tar, rg_nle_l_gain_ana_tar;
-	unsigned int nle_l_gain_dig_cur, nle_l_gain_ana_cur;
-	unsigned int nle_l_dig_gain_targeted, nle_l_ana_gain_targeted;
+	int32 para_temp_value;
+	uint32 rg_nle_gain_ana_tar_idx;
+	uint32 rg_temp_value;
+	uint32 rg_nle_r_gain_dig_tar, rg_nle_r_gain_ana_tar;
+	uint32 nle_r_gain_dig_cur, nle_r_gain_ana_cur;
+	uint32 nle_r_dig_gain_targeted, nle_r_ana_gain_targeted;
+	uint32 rg_nle_l_gain_dig_tar, rg_nle_l_gain_ana_tar;
+	uint32 nle_l_gain_dig_cur, nle_l_gain_ana_cur;
+	uint32 nle_l_dig_gain_targeted, nle_l_ana_gain_targeted;
 	bool bLNoZCEEnable = false;
 	bool bRNoZCEEnable = false;
 	bool bSleepFlg = false;
-	unsigned int dCount = 0;
-	unsigned int rg_nle_delay_ana_idx;
+	uint32 dCount = 0;
+	uint32 rg_nle_delay_ana_idx;
 	bool bLTargeted = false;
 	bool bRTargeted = false;
 
 	if (ucontrol->value.bytes.data[1] == 1)
-		para_temp_value = ((int) ucontrol->value.bytes.data[2]) * (-1);
+		para_temp_value = ((int32) ucontrol->value.bytes.data[2]) * (-1);
 	else
-		para_temp_value = (int) ucontrol->value.bytes.data[2];
+		para_temp_value = (int32) ucontrol->value.bytes.data[2];
 
 	if (rg_nle_delay_ana == 0 || para_temp_value > NLE_ANA_GAIN_MAX_DB ||
 		(para_temp_value < NLE_ANA_GAIN_MIN_DB && para_temp_value != NLE_ANA_GAIN_MUTE_DB)) {
@@ -6993,7 +6968,7 @@ static int Audio_HyBridNLE_TurnOff_Set(struct snd_kcontrol *kcontrol, struct snd
 		pr_err("ana_delay [%d] ana_db [%d]\n", rg_nle_delay_ana, para_temp_value);
 		return -10;
 	}
-	rg_nle_delay_ana_idx = ((unsigned int)rg_nle_delay_ana) - 1;
+	rg_nle_delay_ana_idx = ((uint32)rg_nle_delay_ana) - 1;
 
 	if (Audio_HyBridNLE_getAnalogIdx(para_temp_value, &rg_nle_gain_ana_tar_idx) < 0) {
 		pr_err("%s -1\n", __func__);
@@ -7123,7 +7098,7 @@ static int Audio_HyBridNLE_TurnOff_Set(struct snd_kcontrol *kcontrol, struct snd
 			} else if (nle_l_gain_dig_cur == rg_nle_l_gain_dig_tar &&
 					nle_l_gain_ana_cur == rg_nle_l_gain_ana_tar) {
 				pr_warn("%s L successfully(NotTargeted)\n", __func__);
-				bLTargeted = true;
+				bRTargeted = true;
 				Audio_NLE_RegDump();
 				/* break; */
 			} else {
@@ -7156,7 +7131,7 @@ static int Audio_HyBridNLE_TurnOff_Set(struct snd_kcontrol *kcontrol, struct snd
 
 static int Audio_HyBridNLE_Info_Get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
-	unsigned int rg_temp_value;
+	uint32 rg_temp_value;
 
 	pr_aud("%s enter\n", __func__);
 	rg_temp_value = Ana_Get_Reg(AFE_DL_NLE_R_CFG0);
@@ -7235,9 +7210,9 @@ static int Audio_HyBridNLE_Info_Set(struct snd_kcontrol *kcontrol, struct snd_ct
 static int Audio_HyBridNLE_Targeted_Get(struct snd_kcontrol *kcontrol,
 				    struct snd_ctl_elem_value *ucontrol)
 {
-	unsigned int rg_temp_value;
-	unsigned int nle_r_dig_gain_targeted, nle_r_ana_gain_targeted;
-	unsigned int nle_l_dig_gain_targeted, nle_l_ana_gain_targeted;
+	uint32 rg_temp_value;
+	uint32 nle_r_dig_gain_targeted, nle_r_ana_gain_targeted;
+	uint32 nle_l_dig_gain_targeted, nle_l_ana_gain_targeted;
 
 	rg_temp_value = Ana_Get_Reg(AFE_RGS_NLE_R_CFG3);
 	nle_r_dig_gain_targeted = (rg_temp_value & 0x8000) >> 15;
@@ -7272,21 +7247,21 @@ static int Audio_HyBridNLE_SetGain_Get(struct snd_kcontrol *kcontrol, struct snd
 
 static int Audio_HyBridNLE_SetGain_Set(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontrol)
 {
-	int nle_channel = (int) ucontrol->value.bytes.data[0];
-	unsigned int zerocount;
-	unsigned int maxdbPerStep = (unsigned int) ucontrol->value.bytes.data[5];
-	int gainNleDb = (int) ucontrol->value.bytes.data[6];
-	int gainHPDb;
-	unsigned int rg_temp_value;
-	unsigned int nle_dig_gain_targeted, nle_ana_gain_targeted;
-	unsigned int gainNleIndex, gainHPIndex, dGainStepIndex;
-	int srcGainNleDb, srcCurGainNleDb;
-	unsigned int absSPL_diff, dGainStep, dToogleNum, dTempdGainStep, dTempToogleNum;
+	int32 nle_channel = (int32) ucontrol->value.bytes.data[0];
+	uint32 zerocount;
+	uint32 maxdbPerStep = (uint32) ucontrol->value.bytes.data[5];
+	int32 gainNleDb = (int32) ucontrol->value.bytes.data[6];
+	int32 gainHPDb;
+	uint32 rg_temp_value;
+	uint32 nle_dig_gain_targeted, nle_ana_gain_targeted;
+	uint32 gainNleIndex, gainHPIndex, dGainStepIndex;
+	int32 srcGainNleDb, srcCurGainNleDb;
+	uint32 absSPL_diff, dGainStep, dToogleNum, dTempdGainStep, dTempToogleNum;
 
 	if (ucontrol->value.bytes.data[7] > 0)
-		gainHPDb = ((int) ucontrol->value.bytes.data[8]) * (-1);
+		gainHPDb = ((int32) ucontrol->value.bytes.data[8]) * (-1);
 	else
-		gainHPDb = (int) ucontrol->value.bytes.data[8];
+		gainHPDb = (int32) ucontrol->value.bytes.data[8];
 
 	if ((maxdbPerStep > 8) || (maxdbPerStep == 0) || (nle_channel > AUDIO_NLE_CHANNEL_R) ||
 		(gainNleDb > NLE_DIG_GAIN_MAX_DB) || (gainHPDb > NLE_ANA_GAIN_MAX_DB) ||
@@ -7306,10 +7281,10 @@ static int Audio_HyBridNLE_SetGain_Set(struct snd_kcontrol *kcontrol, struct snd
 		return -2;
 	}
 
-	zerocount = (unsigned int) ucontrol->value.bytes.data[4];
-	zerocount = (zerocount << 8) | ((unsigned int) ucontrol->value.bytes.data[3]);
-	zerocount = (zerocount << 8) | ((unsigned int) ucontrol->value.bytes.data[2]);
-	zerocount = (zerocount << 8) | ((unsigned int) ucontrol->value.bytes.data[1]);
+	zerocount = (uint32) ucontrol->value.bytes.data[4];
+	zerocount = (zerocount << 8) | ((uint32) ucontrol->value.bytes.data[3]);
+	zerocount = (zerocount << 8) | ((uint32) ucontrol->value.bytes.data[2]);
+	zerocount = (zerocount << 8) | ((uint32) ucontrol->value.bytes.data[1]);
 	pr_aud("%d AlgIdx %d(%d dB) dgtIdx %d(%d dB)\n", nle_channel, gainHPIndex, gainHPDb, gainNleIndex, gainNleDb);
 	if (nle_channel == AUDIO_NLE_CHANNEL_R) {
 		rg_temp_value = Ana_Get_Reg(AFE_RGS_NLE_R_CFG3);

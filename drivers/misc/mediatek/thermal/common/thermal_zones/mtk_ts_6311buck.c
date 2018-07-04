@@ -84,10 +84,10 @@ do {									\
 
 #define PMIC6333_INT_TEMP_CUNT 0xF
 /* static __u32 tempsetting_count=0; */
-struct pmic6333_TEMPERATURE {
+typedef struct {
 	__s32 regsetting;
 	__s32 Temperature;
-};
+} pmic6333_TEMPERATURE;
 
 #define mtkts6311_dprintk(fmt, args...)   \
 do {									\
@@ -446,8 +446,8 @@ static ssize_t mtkts6311_write(struct file *file, const char __user *buffer, siz
 
 		mtkts6311_dprintk("[mtkts6311_write] mtkts6311_register_thermal\n");
 		mtkts6311_register_thermal();
-		up(&sem_mutex);
 
+		up(&sem_mutex);
 		kfree(ptr_mtkts6311_data);
 		return count;
 	}

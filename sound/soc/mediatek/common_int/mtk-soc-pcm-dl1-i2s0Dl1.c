@@ -62,8 +62,11 @@
 #include "mtk-soc-afe-control.h"
 #include "mtk-soc-pcm-platform.h"
 
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+#include "mtk_mcdi_governor_hint.h"
+#endif
 
-static struct afe_mem_control_t *pI2S0dl1MemControl;
+static AFE_MEM_CONTROL_T *pI2S0dl1MemControl;
 static struct snd_dma_buffer Dl1I2S0_Playback_dma_buf;
 static unsigned int mPlaybackDramState;
 
@@ -82,7 +85,7 @@ static int mI2S0dl1_hdoutput_control;
 static bool mPrepareDone;
 
 static const void *irq_user_id;
-static unsigned int irq1_cnt;
+static uint32 irq1_cnt;
 
 static struct device *mDev;
 
@@ -104,7 +107,7 @@ static int Audio_I2S0dl1_hdoutput_Get(struct snd_kcontrol *kcontrol,
 static int Audio_I2S0dl1_hdoutput_Set(struct snd_kcontrol *kcontrol,
 				      struct snd_ctl_elem_value *ucontrol)
 {
-	/* pr_debug("%s()\n", __func__); */
+	pr_warn("%s()\n", __func__);
 	if (ucontrol->value.enumerated.item[0] > ARRAY_SIZE(I2S0dl1_HD_output)) {
 		pr_warn("return -EINVAL\n");
 		return -EINVAL;
@@ -163,8 +166,10 @@ static const struct snd_kcontrol_new Audio_snd_I2S0dl1_controls[] = {
 };
 
 static struct snd_pcm_hardware mtk_I2S0dl1_hardware = {
-	.info = (SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_NO_PERIOD_WAKEUP |
-		 SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_RESUME | SNDRV_PCM_INFO_MMAP_VALID),
+	.info = (SNDRV_PCM_INFO_MMAP |
+	SNDRV_PCM_INFO_INTERLEAVED |
+	SNDRV_PCM_INFO_RESUME |
+	SNDRV_PCM_INFO_MMAP_VALID),
 	.formats =   SND_SOC_ADV_MT_FMTS,
 	.rates =        SOC_HIGH_USE_RATE,
 	.rate_min =     SOC_HIGH_USE_RATE_MIN,
@@ -181,12 +186,12 @@ static struct snd_pcm_hardware mtk_I2S0dl1_hardware = {
 
 static int mtk_pcm_I2S0dl1_stop(struct snd_pcm_substream *substream)
 {
-	/* struct afe_block_t *Afe_Block = &(pI2S0dl1MemControl->rBlock); */
+	/* AFE_BLOCK_T *Afe_Block = &(pI2S0dl1MemControl->rBlock); */
 
 	pr_warn("%s\n", __func__);
 
 	irq_user_id = NULL;
-	irq_remove_substream_user(substream, irq_request_number(Soc_Aud_Digital_Block_MEM_DL1));
+	irq_remove_user(substream, irq_request_number(Soc_Aud_Digital_Block_MEM_DL1));
 
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_MEM_DL1, false);
 
@@ -209,7 +214,6 @@ static int mtk_pcm_I2S0dl1_hw_params(struct snd_pcm_substream *substream,
 
 	substream->runtime->dma_bytes = params_buffer_bytes(hw_params);
 	if (substream->runtime->dma_bytes <= GetPLaybackSramFullSize() &&
-	    !pI2S0dl1MemControl->mAssignDRAM &&
 	    AllocateAudioSram(&substream->runtime->dma_addr,
 			      &substream->runtime->dma_area,
 			      substream->runtime->dma_bytes,
@@ -217,7 +221,6 @@ static int mtk_pcm_I2S0dl1_hw_params(struct snd_pcm_substream *substream,
 			      params_format(hw_params), false) == 0) {
 		SetHighAddr(Soc_Aud_Digital_Block_MEM_DL1, false, substream->runtime->dma_addr);
 	} else {
-		pr_debug("%s(), use DRAM\n", __func__);
 		substream->runtime->dma_area = Dl1I2S0_Playback_dma_buf.area;
 		substream->runtime->dma_addr = Dl1I2S0_Playback_dma_buf.addr;
 		SetHighAddr(Soc_Aud_Digital_Block_MEM_DL1, true, substream->runtime->dma_addr);
@@ -268,6 +271,10 @@ static int mtk_pcm_I2S0dl1_open(struct snd_pcm_substream *substream)
 
 	AudDrv_Clk_On();
 
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+	system_idle_hint_request(SYSTEM_IDLE_HINT_USER_AUDIO, 1);
+#endif
+
 	memcpy((void *)(&(runtime->hw)), (void *)&mtk_I2S0dl1_hardware,
 	       sizeof(struct snd_pcm_hardware));
 	pI2S0dl1MemControl = Get_Mem_ControlT(Soc_Aud_Digital_Block_MEM_DL1);
@@ -315,22 +322,22 @@ static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 
 		RemoveMemifSubStream(Soc_Aud_Digital_Block_MEM_DL1, substream);
 
+		EnableAfe(false);
+
 		if (mI2S0dl1_hdoutput_control == true) {
 			pr_warn("%s mI2S0dl1_hdoutput_control == %d\n", __func__,
 			       mI2S0dl1_hdoutput_control);
-			/* here to close APLL */
-			if (!mtk_soc_always_hd) {
-				DisableAPLLTunerbySampleRate(substream->runtime->rate);
+			/* here to open APLL */
+			if (!mtk_soc_always_hd)
 				DisableALLbySampleRate(substream->runtime->rate);
-			}
 #if 0
-			/* EnableI2SDivPower(AUDIO_APLL12_DIV1, false); */
-			/* EnableI2SDivPower(AUDIO_APLL12_DIV3, false); */
+			EnableI2SDivPower(AUDIO_APLL12_DIV1, false);
+			EnableI2SDivPower(AUDIO_APLL12_DIV3, false);
+#else
 			EnableI2SCLKDiv(Soc_Aud_I2S1_MCKDIV, false);
 			EnableI2SCLKDiv(Soc_Aud_I2S3_MCKDIV, false);
 #endif
 		}
-		EnableAfe(false);
 		mPrepareDone = false;
 	}
 
@@ -340,13 +347,17 @@ static int mtk_pcm_I2S0dl1_close(struct snd_pcm_substream *substream)
 
 	vcore_dvfs(&vcore_dvfs_enable, true);
 
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+	system_idle_hint_request(SYSTEM_IDLE_HINT_USER_AUDIO, 0);
+#endif
+
 	return 0;
 }
 
 static int mtk_pcm_I2S0dl1_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned int u32AudioI2S = 0;
+	uint32 u32AudioI2S = 0;
 	bool mI2SWLen;
 
 	pr_warn("%s: mPrepareDone = %d, format = %d, SNDRV_PCM_FORMAT_S32_LE = %d, SNDRV_PCM_FORMAT_U32_LE = %d, sample rate = %d\n",
@@ -390,19 +401,15 @@ static int mtk_pcm_I2S0dl1_prepare(struct snd_pcm_substream *substream)
 		if (mI2S0dl1_hdoutput_control == true) {
 			pr_warn("%s mI2S0dl1_hdoutput_control == %d\n", __func__,
 			       mI2S0dl1_hdoutput_control);
-
 			/* here to open APLL */
-			if (!mtk_soc_always_hd) {
+			if (!mtk_soc_always_hd)
 				EnableALLbySampleRate(runtime->rate);
-				EnableAPLLTunerbySampleRate(runtime->rate);
-			}
-#if 0
 			SetCLkMclk(Soc_Aud_I2S1, runtime->rate); /* select I2S */
 			SetCLkMclk(Soc_Aud_I2S3, runtime->rate);
-
-			/* EnableI2SDivPower(AUDIO_APLL12_DIV1, true); */
-			/* EnableI2SDivPower(AUDIO_APLL12_DIV3, true); */
-
+#if 0
+			EnableI2SDivPower(AUDIO_APLL12_DIV1, true);
+			EnableI2SDivPower(AUDIO_APLL12_DIV3, true);
+#else
 			EnableI2SCLKDiv(Soc_Aud_I2S1_MCKDIV, true);
 			EnableI2SCLKDiv(Soc_Aud_I2S3_MCKDIV, true);
 #endif
@@ -442,10 +449,10 @@ static int mtk_pcm_I2S0dl1_start(struct snd_pcm_substream *substream)
 	pr_warn("%s\n", __func__);
 
 	/* here to set interrupt */
-	irq_add_substream_user(substream,
-			       irq_request_number(Soc_Aud_Digital_Block_MEM_DL1),
-			       substream->runtime->rate,
-			       irq1_cnt ? irq1_cnt : substream->runtime->period_size);
+	irq_add_user(substream,
+		     irq_request_number(Soc_Aud_Digital_Block_MEM_DL1),
+		     substream->runtime->rate,
+		     irq1_cnt ? irq1_cnt : substream->runtime->period_size);
 	irq_user_id = substream;
 
 	SetSampleRate(Soc_Aud_Digital_Block_MEM_DL1, runtime->rate);
@@ -509,7 +516,6 @@ static struct snd_pcm_ops mtk_I2S0dl1_ops = {
 	.copy =     mtk_pcm_I2S0dl1_copy,
 	.silence =  mtk_pcm_I2S0dl1_silence,
 	.page =     mtk_I2S0dl1_pcm_page,
-	.mmap =     mtk_pcm_mmap,
 };
 
 static struct snd_soc_platform_driver mtk_I2S0dl1_soc_platform = {

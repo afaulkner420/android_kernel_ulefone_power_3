@@ -19,9 +19,7 @@
 #define pr_fmt(fmt) "CPU features: " fmt
 
 #include <linux/bsearch.h>
-#include <linux/cpumask.h>
 #include <linux/sort.h>
-#include <linux/stop_machine.h>
 #include <linux/types.h>
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
@@ -586,10 +584,8 @@ void update_cpu_features(int cpu,
 	 * Mismatched CPU features are a recipe for disaster. Don't even
 	 * pretend to support them.
 	 */
-	if (taint) {
-		pr_warn_once("Unsupported CPU feature variation detected.\n");
-		add_taint(TAINT_CPU_OUT_OF_SPEC, LOCKDEP_STILL_OK);
-	}
+	WARN_TAINT_ONCE(taint, TAINT_CPU_OUT_OF_SPEC,
+			"Unsupported CPU feature variation.\n");
 }
 
 u64 read_system_reg(u32 id)
@@ -807,13 +803,7 @@ enable_cpu_capabilities(const struct arm64_cpu_capabilities *caps)
 
 	for (i = 0; caps[i].matches; i++)
 		if (caps[i].enable && cpus_have_cap(caps[i].capability))
-			/*
-			 * Use stop_machine() as it schedules the work allowing
-			 * us to modify PSTATE, instead of on_each_cpu() which
-			 * uses an IPI, giving us a PSTATE that disappears when
-			 * we return.
-			 */
-			stop_machine(caps[i].enable, NULL, cpu_online_mask);
+			on_each_cpu(caps[i].enable, NULL, true);
 }
 
 #ifdef CONFIG_HOTPLUG_CPU

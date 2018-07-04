@@ -47,6 +47,8 @@ int idle_switch[NR_TYPES] = {
 	1,	/* dpidle switch */
 	1,	/* soidle3 switch */
 	1,	/* soidle switch */
+	0,	/* mcidle switch */
+	0,	/* slidle switch */
 	1,	/* rgidle switch */
 };
 
@@ -86,6 +88,20 @@ unsigned int idle_condition_mask[NR_TYPES][NR_GRPS] = {
 		0x00000312,	/* MFG,    use SPM MTCMOS off as condition */
 		0x00000F12,	/* VCODEC, use SPM MTCMOS off as condition */
 	},
+	/* mcidle_condition_mask */
+	[IDLE_TYPE_MC] = {
+		0x00000000,	/* INFRA0 */
+		0x00000000,	/* INFRA1 */
+		0x00000000,	/* INFRA2 */
+		0x000FFFE0,	/* MMSYS0 */
+		0x00000170,	/* MMSYS1 */
+		0x00000000,	/* IMAGE,  use SPM MTCMOS off as condition */
+		0x00000000,	/* MFG,    use SPM MTCMOS off as condition */
+		0x00000000,	/* VCODEC, use SPM MTCMOS off as condition */
+	},
+	/* slidle_condition_mask */
+	[IDLE_TYPE_SL] = {
+		0, 0, 0, 0, 0, 0, 0, 0},
 	/* rgidle_condition_mask */
 	[IDLE_TYPE_RG] = {
 		0, 0, 0, 0, 0, 0, 0, 0},
@@ -103,21 +119,23 @@ static const char *idle_name[NR_TYPES] = {
 	"dpidle",
 	"soidle3",
 	"soidle",
+	"mcidle",
+	"slidle",
 	"rgidle",
 };
 
 static const char *reason_name[NR_REASONS] = {
-	"by_frm",
 	"by_cpu",
-	"by_srr",
-	"by_ufs",
-	"by_tee",
 	"by_clk",
-	"by_dcs",
-	"by_dis",
-	"by_pwm",
+	"by_tmr",
+	"by_oth",
+	"by_vtg",
+	"by_frm",
 	"by_pll",
-	"by_boot"
+	"by_pwm",
+	"by_dcs",
+	"by_ufs",
+	"by_gpu"
 };
 
 static const char *cg_group_name[NR_GRPS] = {
@@ -403,18 +421,3 @@ bool mtk_idle_disp_is_pwm_rosc(void)
 	return disp_pwm_is_osc();
 }
 
-u32 get_spm_idle_flags1(void)
-{
-	return 0;
-}
-
-bool mtk_idle_check_clkmux(
-	int idle_type, unsigned int block_mask[NR_TYPES][NF_CLK_CFG])
-{
-	return true;
-}
-
-bool mtk_idle_check_vcore_cond(void)
-{
-	return true;
-}

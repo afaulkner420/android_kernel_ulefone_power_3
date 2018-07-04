@@ -18,6 +18,12 @@
  *  Pulse Charging State
  ****************************************************************************/
 
+#define  CHR_CC                         (0x0001)
+#define  CHR_BATFULL                  (0x0002)
+#define  CHR_ERROR                      (0x0003)
+#define  CHR_PE30						(0x0004)
+
+
 struct switch_charging_alg_data {
 	int state;
 	bool disable_charging;
@@ -28,7 +34,6 @@ struct switch_charging_alg_data {
 	unsigned int cc_charging_time;
 	unsigned int cv_charging_time;
 	unsigned int full_charging_time;
-	struct timespec charging_begin_time;
 };
 
 

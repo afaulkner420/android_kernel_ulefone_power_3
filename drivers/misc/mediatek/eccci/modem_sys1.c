@@ -142,9 +142,6 @@ static void md_cd_ccif_delayed_work(struct ccci_modem *md)
 	/* stop CLDMA, we don't want to get CLDMA IRQ when MD is resetting CLDMA after it got cleaq_ack */
 	cldma_stop(CLDMA_HIF_ID);
 	CCCI_NORMAL_LOG(md->index, TAG, "md_cd_ccif_delayed_work: stop cldma done\n");
-	/*dump rxq after cldma stop to avoid race condition*/
-	ccci_hif_dump_status(1 << CLDMA_HIF_ID, DUMP_FLAG_QUEUE_0_1, 1 << IN);
-	CCCI_NORMAL_LOG(md->index, TAG, "md_cd_ccif_delayed_work: dump queue0-1 done\n");
 	md_cldma_hw_reset(md->index);
 	CCCI_NORMAL_LOG(md->index, TAG, "md_cd_ccif_delayed_work: hw reset done\n");
 	md_cd_clear_all_queue(CLDMA_HIF_ID, IN);
@@ -445,11 +442,6 @@ static int md_cd_soft_stop(struct ccci_modem *md, unsigned int mode)
 	return md_cd_soft_power_off(md, mode);
 }
 
-void __weak md1_sleep_timeout_proc(void)
-{
-	CCCI_DEBUG_LOG(-1, TAG, "No md1_sleep_timeout_proc\n");
-}
-
 static int md_cd_pre_stop(struct ccci_modem *md, unsigned int stop_type)
 {
 	int count = 0;
@@ -493,8 +485,7 @@ static int md_cd_pre_stop(struct ccci_modem *md, unsigned int stop_type)
 							 "After AP send EPOF, MD didn't go to sleep in 4 seconds.",
 							 DB_OPT_DEFAULT);
 #endif
-				} else
-					md1_sleep_timeout_proc();
+				}
 				break;
 			}
 			md_cd_lock_cldma_clock_src(1);
@@ -862,9 +853,8 @@ static int md_cd_dump_info(struct ccci_modem *md, MODEM_DUMP_FLAG flag, void *bu
 		ccci_util_mem_dump(md->index, CCCI_DUMP_MEM_DUMP, dest_buff, length);
 	}
 
-	/*HIF related dump flag*/
-	if (flag & (DUMP_FLAG_QUEUE_0_1 | DUMP_FLAG_QUEUE_0 | DUMP_FLAG_IRQ_STATUS | DUMP_FLAG_CLDMA))
-		ccci_hif_dump_status(md->hif_flag, flag, length);
+	if (flag & DUMP_FLAG_CLDMA)
+		ccci_hif_dump_status(md->hif_flag, DUMP_FLAG_CLDMA, 0);
 
 	if (flag & DUMP_FLAG_REG)
 		md_cd_dump_debug_register(md);
@@ -926,7 +916,7 @@ static int md_cd_dump_info(struct ccci_modem *md, MODEM_DUMP_FLAG flag, void *bu
 				}
 			}
 		}
-		if (dhl_raw && dhl_raw->size) {
+		if (dhl_raw) {
 			CCCI_MEM_LOG_TAG(md->index, TAG, "Dump DHL RAW share memory\n");
 			curr_ch_p = dhl_raw->base_ap_view_vir;
 			curr_p = (unsigned int *)curr_ch_p;
@@ -962,6 +952,11 @@ static int md_cd_dump_info(struct ccci_modem *md, MODEM_DUMP_FLAG flag, void *bu
 		md_cd_lock_modem_clock_src(0);
 		CCCI_MEM_LOG_TAG(md->index, TAG, "wdt_enabled=%d\n", atomic_read(&md->wdt_enabled));
 		mt_irq_dump_status(md->md_wdt_irq_id);
+	}
+
+	if (flag & DUMP_FLAG_IRQ_STATUS) {
+		CCCI_MEM_LOG_TAG(md->index, TAG, "Dump AP CCIF IRQ status\n");
+		mt_irq_dump_status(md_info->ap_ccif_irq_id);
 	}
 
 	if (flag & DUMP_MD_BOOTUP_STATUS)
@@ -1026,9 +1021,9 @@ static ssize_t md_cd_dump_store(struct ccci_modem *md, const char *buf, size_t c
 
 	/* echo will bring "xxx\n" here, so we eliminate the "\n" during comparing */
 	if (strncmp(buf, "ccif", count - 1) == 0)
-		ccci_hif_dump_status(1 << CCIF_HIF_ID, DUMP_FLAG_CCIF_REG | DUMP_FLAG_CCIF, 0);
+		ccci_hif_dump_status(CCIF_HIF_ID, DUMP_FLAG_CCIF_REG | DUMP_FLAG_CCIF, 0);
 	if (strncmp(buf, "cldma", count - 1) == 0)
-		ccci_hif_dump_status(1 << CLDMA_HIF_ID, DUMP_FLAG_CLDMA, -1);
+		ccci_hif_dump_status(CLDMA_HIF_ID, DUMP_FLAG_CLDMA, -1);
 	if (strncmp(buf, "register", count - 1) == 0)
 		md->ops->dump_info(md, DUMP_FLAG_REG, NULL, 0);
 	if (strncmp(buf, "smem_exp", count-1) == 0)
@@ -1122,6 +1117,58 @@ static ssize_t md_cd_control_store(struct ccci_modem *md, const char *buf, size_
 	return count;
 }
 
+#ifdef FEATURE_GARBAGE_FILTER_SUPPORT
+static ssize_t md_cd_filter_show(struct ccci_modem *md, char *buf)
+{
+	int count = 0;
+	int i;
+
+	count += snprintf(buf + count, 128, "register port:");
+	for (i = 0; i < GF_PORT_LIST_MAX; i++) {
+		if (gf_port_list_reg[i] != 0)
+			count += snprintf(buf + count, 128, "%d,", gf_port_list_reg[i]);
+		else
+			break;
+	}
+	count += snprintf(buf + count, 128, "\n");
+	count += snprintf(buf + count, 128, "unregister port:");
+	for (i = 0; i < GF_PORT_LIST_MAX; i++) {
+		if (gf_port_list_unreg[i] != 0)
+			count += snprintf(buf + count, 128, "%d,", gf_port_list_unreg[i]);
+		else
+			break;
+	}
+	count += snprintf(buf + count, 128, "\n");
+	return count;
+}
+
+static ssize_t md_cd_filter_store(struct ccci_modem *md, const char *buf, size_t count)
+{
+	char command[16];
+	int start_id = 0, end_id = 0, i, temp_valu;
+
+	temp_valu = sscanf(buf, "%s %d %d%*s", command, &start_id, &end_id);
+	if (temp_valu < 0)
+		CCCI_ERROR_LOG(md->index, TAG, "sscanf retrun fail: %d\n", temp_valu);
+	CCCI_NORMAL_LOG(md->index, TAG, "%s from %d to %d\n", command, start_id, end_id);
+	if (strncmp(command, "add", sizeof(command)) == 0) {
+		memset(gf_port_list_reg, 0, sizeof(gf_port_list_reg));
+		for (i = 0; i < GF_PORT_LIST_MAX && i <= (end_id - start_id); i++)
+			gf_port_list_reg[i] = start_id + i;
+		ccci_ipc_set_garbage_filter(md, 1);
+	}
+	if (strncmp(command, "remove", sizeof(command)) == 0) {
+		memset(gf_port_list_unreg, 0, sizeof(gf_port_list_unreg));
+		for (i = 0; i < GF_PORT_LIST_MAX && i <= (end_id - start_id); i++)
+			gf_port_list_unreg[i] = start_id + i;
+		ccci_ipc_set_garbage_filter(md, 0);
+	}
+	return count;
+}
+
+CCCI_MD_ATTR(NULL, filter, 0660, md_cd_filter_show, md_cd_filter_store);
+#endif
+
 static ssize_t md_cd_parameter_show(struct ccci_modem *md, char *buf)
 {
 	int count = 0;
@@ -1159,6 +1206,12 @@ static void md_cd_sysfs_init(struct ccci_modem *md)
 	ret = sysfs_create_file(&md->kobj, &ccci_md_attr_parameter.attr);
 	if (ret)
 		CCCI_ERROR_LOG(md->index, TAG, "fail to add sysfs node %s %d\n", ccci_md_attr_parameter.attr.name, ret);
+#ifdef FEATURE_GARBAGE_FILTER_SUPPORT
+	ccci_md_attr_filter.modem = md;
+	ret = sysfs_create_file(&md->kobj, &ccci_md_attr_filter.attr);
+	if (ret)
+		CCCI_ERROR_LOG(md->index, TAG, "fail to add sysfs node %s %d\n", ccci_md_attr_filter.attr.name, ret);
+#endif
 }
 
 static struct syscore_ops md_cldma_sysops = {
@@ -1172,9 +1225,10 @@ static int ccci_modem_probe(struct platform_device *plat_dev)
 {
 	struct ccci_modem *md;
 	struct md_sys1_info *md_info;
-	int md_id;
+	int md_id, i;
 	struct ccci_dev_cfg dev_cfg;
 	int ret;
+	int sram_size;
 	struct md_hw_info *md_hw;
 
 	/* Allocate modem hardware info structure memory */
@@ -1234,6 +1288,13 @@ static int ccci_modem_probe(struct platform_device *plat_dev)
 	md->md_wdt_irq_id = md_hw->md_wdt_irq_id;
 	atomic_set(&md->reset_on_going, 1);
 	atomic_set(&md->wdt_enabled, 1); /* IRQ is default enabled after request_irq */
+
+	/* init CCIF */
+	sram_size = md_hw->sram_size;
+	cldma_write32(md_info->ap_ccif_base, APCCIF_CON, 0x01); /* arbitration */
+	cldma_write32(md_info->ap_ccif_base, APCCIF_ACK, 0xFFFF);
+	for (i = 0; i < sram_size / sizeof(u32); i++)
+		cldma_write32(md_info->ap_ccif_base, APCCIF_CHDATA + i * sizeof(u32), 0);
 
 #if (MD_GENERATION <= 6292)
 	md->hif_flag = 1 << CLDMA_HIF_ID;

@@ -27,18 +27,15 @@
 #include "device.h"
 #include "session.h"
 
-/*
- * global API lock used to prevent concurent access during not atomic
- * communication read/write
- */
-struct mutex global_mutex;
-
 /* device list */
 LIST_HEAD(devices);
 /* lock used to prevent concurrent add/delete action on the device list */
 struct mutex device_mutex;
-/* protected by global_mutex */
 atomic_t device_usage = ATOMIC_INIT(0);
+
+/* global API lock used to prevent concurent access during not atomic
+ * communication read/write */
+struct mutex global_mutex;
 
 
 
@@ -99,7 +96,6 @@ enum mc_result mc_open_device(uint32_t device_id)
 	mutex_lock(&global_mutex);
 	do {
 		struct mcore_device_t *device = resolve_device_id(device_id);
-
 		if (device != NULL) {
 			MCDRV_DBG(mc_kapi,
 				  "Device %d already opened\n", device_id);
@@ -147,7 +143,6 @@ enum mc_result mc_open_device(uint32_t device_id)
 		}
 
 		struct mc_drv_response_header_t rsp_header;
-
 		memset(&rsp_header, 0, sizeof(rsp_header));
 		len = connection_read_datablock(
 					dev_con,
@@ -217,7 +212,6 @@ enum mc_result mc_close_device(uint32_t device_id)
 	mutex_lock(&global_mutex);
 	do {
 		struct mcore_device_t *device = resolve_device_id(device_id);
-
 		if (device == NULL) {
 			MCDRV_DBG_ERROR(mc_kapi, "Device not found");
 			mc_result = MC_DRV_ERR_UNKNOWN_DEVICE;
@@ -257,7 +251,6 @@ enum mc_result mc_close_device(uint32_t device_id)
 		}
 
 		struct mc_drv_response_header_t rsp_header;
-
 		memset(&rsp_header, 0, sizeof(rsp_header));
 		len = connection_read_datablock(
 					dev_con,
@@ -375,13 +368,10 @@ enum mc_result mc_open_session(struct mc_session_handle *session,
 
 		/* Read command response */
 		struct mc_drv_rsp_open_session_t rsp_open_session;
-
 		memset(&rsp_open_session, 0, sizeof(rsp_open_session));
 
-		/*
-		 * read whole response, to prevent being interrupted
-		 * between header and payload
-		 */
+		/* read whole response, to prevent being interrupted
+			between header and payload */
 		len = connection_read_datablock(dev_con,
 						&rsp_open_session,
 						sizeof(rsp_open_session));
@@ -428,7 +418,6 @@ enum mc_result mc_open_session(struct mc_session_handle *session,
 
 		/* Set up second channel for notifications */
 		struct connection *session_connection = connection_new();
-
 		if (session_connection == NULL) {
 			mc_result = MC_DRV_ERR_NO_FREE_MEMORY;
 			break;
@@ -462,7 +451,6 @@ enum mc_result mc_open_session(struct mc_session_handle *session,
 
 		/* Read command response, header first */
 		struct mc_drv_response_header_t rsp_header;
-
 		len = connection_read_datablock(session_connection,
 						&rsp_header,
 						sizeof(rsp_header));
@@ -550,7 +538,6 @@ enum mc_result mc_close_session(struct mc_session_handle *session)
 
 		/* Read command response */
 		struct mc_drv_response_header_t rsp_header;
-
 		memset(&rsp_header, 0, sizeof(rsp_header));
 		int len = connection_read_datablock(dev_con,
 						    &rsp_header,
@@ -671,7 +658,6 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 		/* Read notification queue till it's empty */
 		for (;;) {
 			struct notification notification;
-
 			memset(&notification, 0, sizeof(notification));
 			ssize_t num_read =
 				connection_read_data(nqconnection,
@@ -701,8 +687,9 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 					mc_result = MC_DRV_ERR_NOTIFICATION;
 					MCDRV_DBG_ERROR(
 					mc_kapi,
-					"read notification failed,\t"
+					"read notification failed, "
 					"%i bytes received", (int)num_read);
+					break;
 				} else {
 					/*
 					 * Read of the n-th notification
@@ -711,8 +698,8 @@ enum mc_result mc_wait_notification(struct mc_session_handle *session,
 					 * before.
 					 */
 					mc_result = MC_DRV_OK;
+					break;
 				}
-				break;
 			}
 
 			count++;
@@ -748,7 +735,6 @@ enum mc_result mc_malloc_wsm(uint32_t device_id, uint32_t align, uint32_t len,
 	mutex_lock(&global_mutex);
 	do {
 		struct mcore_device_t *device = resolve_device_id(device_id);
-
 		if (device == NULL) {
 			MCDRV_DBG_ERROR(mc_kapi, "Device not found");
 			mc_result = MC_DRV_ERR_UNKNOWN_DEVICE;
@@ -761,7 +747,6 @@ enum mc_result mc_malloc_wsm(uint32_t device_id, uint32_t align, uint32_t len,
 
 		struct wsm *wsm_stack =
 			mcore_device_allocate_contiguous_wsm(device, len);
-
 		if (wsm_stack == NULL) {
 			MCDRV_DBG_ERROR(mc_kapi, "Allocation of WSM failed");
 			mc_result = MC_DRV_ERR_NO_FREE_MEMORY;
@@ -901,7 +886,6 @@ enum mc_result mc_map(struct mc_session_handle *session_handle, void *buf,
 
 		/* Read command response */
 		struct mc_drv_response_header_t rsp_header;
-
 		memset(&rsp_header, 0, sizeof(rsp_header));
 		int len = connection_read_datablock(dev_con,
 							&rsp_header,
@@ -1001,7 +985,6 @@ enum mc_result mc_unmap(struct mc_session_handle *session_handle, void *buf,
 		}
 
 		uint32_t handle = session_find_bulk_buf(session, buf);
-
 		if (handle == 0) {
 			MCDRV_DBG_ERROR(mc_kapi, "Buffer not found");
 			mc_result = MC_DRV_ERR_BULK_UNMAPPING;
@@ -1028,7 +1011,6 @@ enum mc_result mc_unmap(struct mc_session_handle *session_handle, void *buf,
 
 		/* Read command response */
 		struct mc_drv_response_header_t rsp_header;
-
 		memset(&rsp_header, 0, sizeof(rsp_header));
 		int len = connection_read_datablock(dev_con,
 						    &rsp_header,
@@ -1049,6 +1031,12 @@ enum mc_result mc_unmap(struct mc_session_handle *session_handle, void *buf,
 			mc_result = MC_DRV_ERR_DAEMON_UNREACHABLE;
 			break;
 		}
+
+		/*struct mc_drv_rsp_unmap_bulk_mem_payload_t
+						rsp_unmap_bulk_mem_payload;
+		connection_read_datablock(dev_con,
+					  &rsp_unmap_bulk_mem_payload,
+					  sizeof(rsp_unmap_bulk_mem_payload));*/
 
 		/*
 		 * Unregister mapped bulk buffer from Kernel Module and

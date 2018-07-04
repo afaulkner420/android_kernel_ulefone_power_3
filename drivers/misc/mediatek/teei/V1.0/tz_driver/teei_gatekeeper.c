@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -11,7 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/semaphore.h>
@@ -148,9 +147,9 @@ int send_gatekeeper_command(unsigned long share_memory_size)
 
 	down(&fdrv_lock);
 	ut_pm_mutex_lock(&pm_mutex);
-	//modify XLLSHLSS-819 by haiping.bai 20180122 start
-	IMSG_ERROR("send_gatekeeper_command start\n");
-	//modify XLLSHLSS-819 by haiping.bai 20180122 end
+
+	IMSG_DEBUG("send_gatekeeper_command start\n");
+
 	if (teei_config_flag == 1)
 		complete(&global_down_lock);
 
@@ -171,9 +170,7 @@ int send_gatekeeper_command(unsigned long share_memory_size)
 	}
 
 	down(&fdrv_sema);
-	//modify XLLSHLSS-819 by haiping.bai 20180122 start
-	IMSG_ERROR("send_gatekeeper_command end\n");
-	//modify XLLSHLSS-819 by haiping.bai 20180122 end
+	IMSG_DEBUG("send_gatekeeper_command end\n");
 	/*with a rmb*/
 	rmb();
 

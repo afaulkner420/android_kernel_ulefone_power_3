@@ -2,7 +2,7 @@
  *
  * Filename:
  * ---------
- *	 imx214mipi_Sensor.h
+ *	 s5k3p3sxmipi_Sensor.h
  *
  * Project:
  * --------

@@ -27,9 +27,6 @@
 #define DATA2_Q			5
 #define DATA2_RX_Q		5
 #define DATA_MDT_Q		7
-#define DATA_C2K_PPP_Q	1
-#define DATA_FSD_Q		1
-#define DATA_AT_CMD_Q	1
 #else
 #define	MD1_NET_HIF		CLDMA_HIF_ID
 #define MD1_NORMAL_HIF		CCIF_HIF_ID
@@ -42,9 +39,6 @@
 #define DATA2_Q			2
 #define DATA2_RX_Q		0
 #define DATA_MDT_Q		0
-#define DATA_C2K_PPP_Q	3
-#define DATA_FSD_Q		4
-#define DATA_AT_CMD_Q	5
 #endif
 
 #define SMEM_Q			AP_MD_CCB_WAKEUP
@@ -100,10 +94,10 @@ static struct port_t md1_ccci_ports[] = {
 		&char_port_ops, 1, "ccci_aud",},
 	{CCCI_UART1_TX, CCCI_UART1_RX, 1, 1, EXP_CTRL_Q, EXP_CTRL_Q, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 2, "ccci_md_log_ctrl",},
-	{CCCI_UART2_TX, CCCI_UART2_RX, DATA_AT_CMD_Q, DATA_AT_CMD_Q, 0xFF, 0xFF, MD1_NORMAL_HIF,
-		PORT_F_WITH_CHAR_NODE, &char_port_ops, 3, "ttyC0",},
-	{CCCI_FS_TX, CCCI_FS_RX, DATA_FSD_Q, DATA_FSD_Q, 1, 1, MD1_NORMAL_HIF,
-		PORT_F_USER_HEADER | PORT_F_WITH_CHAR_NODE, &char_port_ops, 4, "ccci_fs",},
+	{CCCI_UART2_TX, CCCI_UART2_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
+		&char_port_ops, 3, "ttyC0",},
+	{CCCI_FS_TX, CCCI_FS_RX, 1, 1, 1, 1, MD1_NORMAL_HIF, PORT_F_USER_HEADER | PORT_F_WITH_CHAR_NODE,
+		&char_port_ops, 4, "ccci_fs",},
 	{CCCI_IPC_UART_TX, CCCI_IPC_UART_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 5, "ttyC2",},
 	{CCCI_ICUSB_TX, CCCI_ICUSB_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
@@ -132,7 +126,7 @@ static struct port_t md1_ccci_ports[] = {
 		&char_port_ops, 17, "ccci_it",},
 	{CCCI_LB_IT_TX, CCCI_LB_IT_RX, 0, 0, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 18, "ccci_lb_it",},
-	{CCCI_MDL_MONITOR_UL, CCCI_MDL_MONITOR_DL, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
+	{CCCI_MDL_MONITOR_UL, CCCI_MDL_MONITOR_DL, 1, 1, 3, 3, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 19, "ccci_mdl_monitor",},
 	{CCCI_RPC_TX, CCCI_RPC_RX, 1, 1, 1, 1, MD1_NORMAL_HIF, PORT_F_USER_HEADER | PORT_F_WITH_CHAR_NODE,
 		&rpc_port_ops, 20, "ccci_rpc",},
@@ -143,14 +137,12 @@ static struct port_t md1_ccci_ports[] = {
 		&char_port_ops, 22, "ccci_imsm",},
 	{CCCI_WOA_TX, CCCI_WOA_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 23, "ccci_woa",},
-	{CCCI_C2K_PPP_TX, CCCI_C2K_PPP_RX, DATA_C2K_PPP_Q, DATA_C2K_PPP_Q, 0xFF, 0xFF,
-		MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE, &char_port_ops, 24, "ccci_c2k_ppp",},
+	{CCCI_C2K_PPP_TX, CCCI_C2K_PPP_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
+		&char_port_ops, 24, "ccci_c2k_ppp",},
 	{CCCI_C2K_AGPS_TX, CCCI_C2K_AGPS_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 25, "ccci_c2k_agps",},
 	{CCCI_XCAP_TX, CCCI_XCAP_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 26, "ccci_ss_xcap",},
-	{CCCI_BIP_TX, CCCI_BIP_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
-		&char_port_ops, 27, "ccci_bip",},
 
 /* IPC char port minor= minor idx + CCCI_IPC_MINOR_BASE(100) */
 	{CCCI_IPC_TX, CCCI_IPC_RX, 1, 1, 0xFF, 0xFF, MD1_NORMAL_HIF, PORT_F_WITH_CHAR_NODE,
@@ -178,10 +170,8 @@ static struct port_t md1_ccci_ports[] = {
 		&smem_port_ops, SMEM_USER_RAW_DBM, "ccci_raw_dbm",},
 	{CCCI_CCB_CTRL, CCCI_CCB_CTRL, 0xFF, 0xFF, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_RAW_CCB_CTRL, "ccci_ccb_ctrl",},
-#if (MD_GENERATION >= 6292)
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, SMEM_Q, SMEM_Q, SMEM_Q, SMEM_Q, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_CCB_DHL, "ccci_ccb_dhl",},
-#endif
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, 0xFF, 0xFF, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_RAW_DHL, "ccci_raw_dhl",},
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, 0xFF, 0xFF, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
@@ -194,12 +184,10 @@ static struct port_t md1_ccci_ports[] = {
 		&smem_port_ops, SMEM_USER_RAW_LWA, "ccci_raw_lwa",},
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, 0xFF, 0xFF, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_RAW_MDM, "ccci_raw_mdm",},
-#if (MD_GENERATION >= 6293)
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, SMEM_Q, SMEM_Q, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_CCB_MD_MONITOR, "ccci_ccb_md_monitor",},
 	{CCCI_SMEM_CH, CCCI_SMEM_CH, SMEM_Q, SMEM_Q, SMEM_Q, SMEM_Q, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&smem_port_ops, SMEM_USER_CCB_META, "ccci_ccb_meta",},
-#endif
 };
 
 #ifdef CONFIG_MTK_ECCCI_C2K
@@ -213,19 +201,6 @@ static struct port_t md3_ccci_ports[] = {
 	{CCCI_CCMNI6_TX, CCCI_CCMNI6_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 5, "cc3mni5",},
 	{CCCI_CCMNI7_TX, CCCI_CCMNI7_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 6, "cc3mni6",},
 	{CCCI_CCMNI8_TX, CCCI_CCMNI8_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 7, "cc3mni7",},
-	{CCCI_CCMNI10_TX, CCCI_CCMNI10_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 9, "cc3mni9",},
-	{CCCI_CCMNI11_TX, CCCI_CCMNI11_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 10, "cc3mni10",},
-	{CCCI_CCMNI12_TX, CCCI_CCMNI12_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 11, "cc3mni11",},
-	{CCCI_CCMNI13_TX, CCCI_CCMNI13_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 12, "cc3mni12",},
-	{CCCI_CCMNI14_TX, CCCI_CCMNI14_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 13, "cc3mni13",},
-	{CCCI_CCMNI15_TX, CCCI_CCMNI15_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 14, "cc3mni14",},
-	{CCCI_CCMNI16_TX, CCCI_CCMNI16_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 15, "cc3mni15",},
-	{CCCI_CCMNI17_TX, CCCI_CCMNI17_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 16, "cc3mni16",},
-	{CCCI_CCMNI18_TX, CCCI_CCMNI18_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 17, "cc3mni17",},
-	{CCCI_CCMNI19_TX, CCCI_CCMNI19_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 18, "cc3mni18",},
-	{CCCI_CCMNI20_TX, CCCI_CCMNI20_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 19, "cc3mni19",},
-	{CCCI_CCMNI21_TX, CCCI_CCMNI21_RX, 2, 2, 0xF2, 0xFF, CCIF_HIF_ID, 0,	&net_port_ops, 20, "cc3mni20",},
-
 /* char port, notes ccci_monitor must be first */
 	{CCCI_PCM_TX, CCCI_PCM_RX, C2K_PCM_TX_Q, C2K_PCM_RX_Q, 0xFF, 0xFF, CCIF_HIF_ID, PORT_F_WITH_CHAR_NODE,
 		&char_port_ops, 1, "ccci3_aud",},

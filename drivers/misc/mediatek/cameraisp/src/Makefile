@@ -32,6 +32,7 @@ endif
 ifeq ($(CONFIG_MACH_MT6763),y)
   ifeq ($(CONFIG_MTK_CAMERA_ISP),y)
   obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
+  obj-y += fdvt/
   endif
 endif
 
@@ -39,17 +40,6 @@ ifeq ($(CONFIG_MACH_MT6758),y)
   obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 endif
 
-ifeq ($(CONFIG_MACH_MT6775),y)
-  obj-y += isp_50/
-endif
-
-ifeq ($(CONFIG_MACH_MT6739),y)
-  obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
-endif
-
-ifeq ($(CONFIG_MACH_MT6771),y)
-  obj-y += isp_50/
-endif
 ifeq ($(CONFIG_MACH_MT8167),y)
   obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 endif

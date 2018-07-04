@@ -56,11 +56,6 @@
 #include <linux/of_fdt.h>
 #include <linux/delay.h>
 
-//add OSODEV-1176 by haiping.bai 20171123 start
-#include <linux/platform_device.h>
-#include <linux/of_gpio.h>
-//add OSODEV-1176 by haiping.bai 20171123 end
-
 #if 1
 struct pinctrl *pinctrlaud;
 
@@ -83,7 +78,6 @@ enum audio_system_gpio_type {
 	GPIO_VOW_CLK_MISO_ON,
 	GPIO_SMARTPA_RESET,
 	GPIO_SMARTPA_ON,
-	GPIO_SMARTPA_OFF,
 	GPIO_TDM_MODE0,
 	GPIO_TDM_MODE1,
 #if MT6755_PIN
@@ -130,7 +124,6 @@ static struct audio_gpio_attr aud_gpios[GPIO_NUM] = {
 
 	[GPIO_SMARTPA_RESET] = {"aud_smartpa_reset", false, NULL},
 	[GPIO_SMARTPA_ON] = {"aud_smartpa_on", false, NULL},
-	[GPIO_SMARTPA_OFF] = {"aud_smartpa_off", false, NULL},
 	[GPIO_TDM_MODE0] = {"aud_tdm_mode0", false, NULL},
 	[GPIO_TDM_MODE1] = {"aud_tdm_mode1", false, NULL},
 
@@ -157,11 +150,7 @@ static struct audio_gpio_attr aud_gpios[GPIO_NUM] = {
 
 static unsigned int extbuck_fan53526_exist;
 
-static DEFINE_MUTEX(gpio_request_mutex);
-
-//add OSODEV-1176 by haiping.bai 20171123 start
-static unsigned int g_extamp_gpio, g_extamp_mode, g_extamp_speech_mode;
-//add OSODEV-1176 by haiping.bai 20171123 end
+static DEFINE_MUTEX(gpio_aud_dat_miso_mutex);
 
 void AudDrv_GPIO_probe(void *dev)
 {
@@ -169,25 +158,7 @@ void AudDrv_GPIO_probe(void *dev)
 	int ret;
 	int i = 0;
 
-        //add OSODEV-1176 by haiping.bai 20171123 start
-        struct device_node *np = ((struct device *)dev)->of_node;
-
-        pr_warn("%s\n", __func__);
-        g_extamp_gpio = of_get_named_gpio(np, "extamp_gpio", 0);
-
-        if (of_property_read_u32(np, "extamp_mode", &g_extamp_mode)) {
-                pr_err("Cannot find extamp_mode!\n");
-        }
-
-        if (of_property_read_u32(np, "extamp_speech_mode", &g_extamp_speech_mode)) {
-                pr_err("Cannot find extamp_speech_mode!\n");
-        }
-
-        ret = devm_gpio_request_one(dev, g_extamp_gpio, GPIOF_OUT_INIT_LOW, "extamp_gpio");
-        if(ret) {
-                pr_err("g_extamp_gpio gpio_request error\n");
-        }
-        //add OSODEV-1176 by haiping.bai 20171123 end
+	pr_warn("%s\n", __func__);
 
 	pinctrlaud = devm_pinctrl_get(dev);
 	if (IS_ERR(pinctrlaud)) {
@@ -253,22 +224,6 @@ static int AudDrv_GPIO_Select(enum audio_system_gpio_type _type)
 #endif
 }
 
-static bool AudDrv_GPIO_IsValid(enum audio_system_gpio_type _type)
-{
-#ifndef CONFIG_FPGA_EARLY_PORTING
-	if (_type < 0 || _type >= GPIO_NUM)
-		return false;
-
-	if (!aud_gpios[_type].gpio_prepare)
-		return false;
-
-	return true;
-#else
-	return true;
-#endif
-}
-
-
 static int set_aud_clk_mosi(bool _enable)
 {
 /*
@@ -306,7 +261,7 @@ static int set_aud_dat_mosi(bool _enable)
 		return AudDrv_GPIO_Select(GPIO_AUD_DAT_MOSI_OFF);
 }
 
-static int set_aud_dat_miso(bool _enable, enum soc_aud_digital_block _usage)
+static int set_aud_dat_miso_l(bool _enable, Soc_Aud_Digital_Block _usage)
 {
 	static bool adda_enable;
 	static bool vow_enable;
@@ -328,7 +283,16 @@ static int set_aud_dat_miso(bool _enable, enum soc_aud_digital_block _usage)
 		return AudDrv_GPIO_Select(GPIO_AUD_DAT_MISO_ON);
 	else
 		return AudDrv_GPIO_Select(GPIO_AUD_DAT_MISO_OFF);
+}
 
+static int set_aud_dat_miso(bool _enable, Soc_Aud_Digital_Block _usage)
+{
+	int ret = 0;
+
+	mutex_lock(&gpio_aud_dat_miso_mutex);
+	ret = set_aud_dat_miso_l(_enable, _usage);
+	mutex_unlock(&gpio_aud_dat_miso_mutex);
+	return ret;
 }
 
 static int set_aud_dat_mosi2(bool _enable)
@@ -355,9 +319,8 @@ static int set_vow_clk_miso(bool _enable)
 		return AudDrv_GPIO_Select(GPIO_VOW_CLK_MISO_OFF);
 }
 
-int AudDrv_GPIO_Request(bool _enable, enum soc_aud_digital_block _usage)
+int AudDrv_GPIO_Request(bool _enable, Soc_Aud_Digital_Block _usage)
 {
-	mutex_lock(&gpio_request_mutex);
 	switch (_usage) {
 	case Soc_Aud_Digital_Block_ADDA_DL:
 		set_aud_clk_mosi(_enable);
@@ -388,38 +351,62 @@ int AudDrv_GPIO_Request(bool _enable, enum soc_aud_digital_block _usage)
 		set_aud_dat_miso2(_enable);
 		break;
 	default:
-		mutex_unlock(&gpio_request_mutex);
 		return -EINVAL;
 	}
-	mutex_unlock(&gpio_request_mutex);
 	return 0;
 }
 
 int AudDrv_GPIO_SMARTPA_Select(int mode)
 {
 	int retval = 0;
-	mutex_lock(&gpio_request_mutex);
+
+#if 0
 	switch (mode) {
 	case 0:
-		if (AudDrv_GPIO_IsValid(GPIO_SMARTPA_OFF))
-			retval = AudDrv_GPIO_Select(GPIO_SMARTPA_OFF);
+		mt_set_gpio_mode(69 | 0x80000000, GPIO_MODE_00);
+		mt_set_gpio_mode(70 | 0x80000000, GPIO_MODE_00);
+		mt_set_gpio_mode(71 | 0x80000000, GPIO_MODE_00);
+		mt_set_gpio_mode(72 | 0x80000000, GPIO_MODE_00);
+		mt_set_gpio_mode(73 | 0x80000000, GPIO_MODE_00);
 		break;
 	case 1:
-		if (AudDrv_GPIO_IsValid(GPIO_SMARTPA_ON))
-			retval = AudDrv_GPIO_Select(GPIO_SMARTPA_ON);
+		mt_set_gpio_mode(69 | 0x80000000, GPIO_MODE_01);
+		mt_set_gpio_mode(70 | 0x80000000, GPIO_MODE_01);
+		mt_set_gpio_mode(71 | 0x80000000, GPIO_MODE_01);
+		mt_set_gpio_mode(72 | 0x80000000, GPIO_MODE_01);
+		mt_set_gpio_mode(73 | 0x80000000, GPIO_MODE_01);
+		break;
+	case 3:
+		mt_set_gpio_mode(69 | 0x80000000, GPIO_MODE_03);
+		mt_set_gpio_mode(70 | 0x80000000, GPIO_MODE_03);
+		mt_set_gpio_mode(71 | 0x80000000, GPIO_MODE_03);
+		mt_set_gpio_mode(72 | 0x80000000, GPIO_MODE_03);
+		mt_set_gpio_mode(73 | 0x80000000, GPIO_MODE_03);
 		break;
 	default:
-		pr_debug("%s(), invalid mode = %d", __func__, mode);
+		pr_err("%s(), invalid mode = %d", __func__, mode);
 		retval = -1;
 	}
-	mutex_unlock(&gpio_request_mutex);
+#else
+	switch (mode) {
+	case 0:
+		AudDrv_GPIO_Select(GPIO_SMARTPA_RESET);
+		break;
+	case 1:
+		AudDrv_GPIO_Select(GPIO_SMARTPA_ON);
+		break;
+	default:
+		pr_err("%s(), invalid mode = %d", __func__, mode);
+		retval = -1;
+	}
+#endif
 	return retval;
 }
 
 int AudDrv_GPIO_TDM_Select(int mode)
 {
 	int retval = 0;
-	mutex_lock(&gpio_request_mutex);
+
 #if 0
 	switch (mode) {
 	case 0:
@@ -449,7 +436,6 @@ int AudDrv_GPIO_TDM_Select(int mode)
 		retval = -1;
 	}
 #endif
-	mutex_unlock(&gpio_request_mutex);
 	return retval;
 }
 
@@ -457,7 +443,6 @@ int AudDrv_GPIO_PMIC_Select(int bEnable)
 {
 	int retval = 0;
 #if MT6755_PIN
-	mutex_lock(&gpio_request_mutex);
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_PMIC_MODE1].gpio_prepare) {
 			retval =
@@ -474,7 +459,6 @@ int AudDrv_GPIO_PMIC_Select(int bEnable)
 		}
 
 	}
-	mutex_unlock(&gpio_request_mutex);
 #endif
 	return retval;
 }
@@ -482,7 +466,7 @@ int AudDrv_GPIO_PMIC_Select(int bEnable)
 int AudDrv_GPIO_I2S_Select(int bEnable)
 {
 	int retval = 0;
-	mutex_lock(&gpio_request_mutex);
+
 #if MT6755_PIN
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_I2S_MODE1].gpio_prepare) {
@@ -501,45 +485,17 @@ int AudDrv_GPIO_I2S_Select(int bEnable)
 
 	}
 #endif
-	mutex_unlock(&gpio_request_mutex);
 	return retval;
 }
-
-//add OSODEV-1176 by haiping.bai 20171123 start
-#define GAP (1)  /* unit: us */
-void Tran_AudDrv_GPIO_EXTAMP_Sel(bool enable, int mode)
-{
-        int i;
-
-        if (enable) {
-                if (mode) {
-                        for (i = 0; i < g_extamp_speech_mode; i++) {
-                                gpio_set_value(g_extamp_gpio, 0);
-                                udelay(GAP);
-                                gpio_set_value(g_extamp_gpio, 1);
-                                udelay(GAP);
-                        }
-                } else {
-                        for (i = 0; i < g_extamp_mode; i++) {
-                                gpio_set_value(g_extamp_gpio, 0);
-                                udelay(GAP);
-                                gpio_set_value(g_extamp_gpio, 1);
-                                udelay(GAP);
-                        }
-                }
-        } else {
-                gpio_set_value(g_extamp_gpio, 0);
-        }
-}
-//add OSODEV-1176 by haiping.bai 20171123 end
 
 int AudDrv_GPIO_EXTAMP_Select(int bEnable, int mode)
 {
 	int retval = 0;
+
 #if MT6755_PIN
 	int extamp_mode;
 	int i;
-	mutex_lock(&gpio_request_mutex);
+
 	if (bEnable == 1) {
 		if (mode == 1)
 			extamp_mode = 1;
@@ -571,7 +527,6 @@ int AudDrv_GPIO_EXTAMP_Select(int bEnable, int mode)
 		}
 
 	}
-	mutex_unlock(&gpio_request_mutex);
 #endif
 	return retval;
 }
@@ -579,10 +534,11 @@ int AudDrv_GPIO_EXTAMP_Select(int bEnable, int mode)
 int AudDrv_GPIO_EXTAMP2_Select(int bEnable, int mode)
 {
 	int retval = 0;
+
 #if MT6755_PIN
 	int extamp_mode;
 	int i;
-	mutex_lock(&gpio_request_mutex);
+
 	if (bEnable == 1) {
 		if (mode == 1)
 			extamp_mode = 1;
@@ -614,7 +570,6 @@ int AudDrv_GPIO_EXTAMP2_Select(int bEnable, int mode)
 		}
 
 	}
-	mutex_unlock(&gpio_request_mutex);
 #endif
 	return retval;
 }
@@ -622,8 +577,8 @@ int AudDrv_GPIO_EXTAMP2_Select(int bEnable, int mode)
 int AudDrv_GPIO_RCVSPK_Select(int bEnable)
 {
 	int retval = 0;
+
 #if MT6755_PIN
-	mutex_lock(&gpio_request_mutex);
 	if (bEnable == 1) {
 		if (aud_gpios[GPIO_RCVSPK_HIGH].gpio_prepare) {
 			retval =
@@ -640,7 +595,6 @@ int AudDrv_GPIO_RCVSPK_Select(int bEnable)
 		}
 
 	}
-	mutex_unlock(&gpio_request_mutex);
 #endif
 	return retval;
 }
@@ -648,26 +602,26 @@ int AudDrv_GPIO_RCVSPK_Select(int bEnable)
 int AudDrv_GPIO_HPDEPOP_Select(int bEnable)
 {
 	int retval = 0;
-	mutex_lock(&gpio_request_mutex);
+
 	if (bEnable == 1)
 		AudDrv_GPIO_Select(GPIO_HPDEPOP_LOW);
 	else
 		AudDrv_GPIO_Select(GPIO_HPDEPOP_HIGH);
-	mutex_unlock(&gpio_request_mutex);
+
 	return retval;
 }
 
 int audio_drv_gpio_aud_clk_pull(bool high)
 {
 	int retval = 0;
-	mutex_lock(&gpio_request_mutex);
+
 	pr_debug("%s, high = %d\n", __func__, high);
 
 	if (high == 1)
 		AudDrv_GPIO_Select(GPIO_AUD_CLK_MOSI_HIGH);
 	else
 		AudDrv_GPIO_Select(GPIO_AUD_CLK_MOSI_LOW);
-	mutex_unlock(&gpio_request_mutex);
+
 	return retval;
 }
 

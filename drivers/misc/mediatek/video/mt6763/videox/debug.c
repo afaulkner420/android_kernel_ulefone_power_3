@@ -21,11 +21,7 @@
 #include <linux/wait.h>
 #include <linux/time.h>
 #include <linux/delay.h>
-#include <linux/fs.h>
-#include <linux/file.h>
 #include <linux/sched.h>
-#include <linux/kthread.h>
-
 #include "m4u.h"
 #include "ddp_m4u.h"
 #include "disp_drv_log.h"
@@ -68,41 +64,10 @@ static struct dentry *mtkfb_dbgfs;
 unsigned int g_mobilelog;
 int bypass_blank;
 int lcm_mode_status;
-enum UNIFIED_COLOR_FMT force_dc_buf_fmt;
 int layer_layout_allow_non_continuous;
 /* Boundary of enter screen idle */
 unsigned idle_check_interval = 50;
-
-static struct task_struct *debugger_thread;
-static unsigned int debugger_buffer_size = 1920;
-static unsigned int debugger_sleep_ms;
-static unsigned int debugger_running;
-static DECLARE_WAIT_QUEUE_HEAD(debugger_running_wq);
-
-struct BMP_FILE_HEADER {
-	UINT16 bfType;
-	UINT32 bfSize;
-	UINT16 bfReserved1;
-	UINT16 bfReserved2;
-	UINT32 bfOffBits;
-};
-
-struct BMP_INFO_HEADER {
-	UINT32 biSize;
-	UINT32 biWidth;
-	UINT32 biHeight;
-	UINT16 biPlanes;
-	UINT16 biBitCount;
-	UINT32 biCompression;
-	UINT32 biSizeImage;
-	UINT32 biXPelsPerMeter;
-	UINT32 biYPelsPerMeter;
-	UINT32 biClrUsed;
-	UINT32 biClrImportant;
-};
-
-/* show disp info struct*/
-struct dbg_disp_info dbg_disp;
+int idle_fps_change = 1;
 
 /*********************** layer information statistic *********************/
 #define STATISTIC_MAX_LAYERS 20
@@ -113,36 +78,7 @@ struct layer_statistic {
 	unsigned long cnt_by_layers_with_arm_ext[STATISTIC_MAX_LAYERS];
 };
 static struct layer_statistic layer_stat;
-static int layer_statistic_enable = 1;
-
-int on_screen_en(void)
-{
-	if ((dbg_disp.show_hrt_en || dbg_disp.path_mode_en ||
-		dbg_disp.layer_num_en || dbg_disp.show_fps_en ||
-		dbg_disp.dsi_mode_en || dbg_disp.layer_size_en ||
-		dbg_disp.thermal_en) &&
-		(!is_DAL_Enabled()))
-		return 1;
-	else
-		return 0;
-}
-
-/* be used by other users*/
-void thermal_en(int value)
-{
-	static int pre_value;
-
-	dbg_disp.thermal_en = value;
-	dbg_disp.layer_off_dbg = 1;
-	dbg_disp.font_size = 4;
-	dbg_disp.fg_clo = 0x00FF00FF;
-	dbg_disp.bg_clo = 0xFF400000;
-
-	if (pre_value && !dbg_disp.thermal_en)
-		dbg_disp.dbg_cmd_update_flg = 1;
-	pre_value = value;
-}
-EXPORT_SYMBOL(thermal_en);
+static int layer_statistic_enable;
 
 static int _is_overlap(unsigned int x1, unsigned int y1, unsigned int w1, unsigned int h1,
 			unsigned int x2, unsigned int y2, unsigned int w2, unsigned int h2)
@@ -314,87 +250,6 @@ static int draw_buffer(char *va, int w, int h,
 	return 0;
 }
 
-void save_bmp(const char *file_name, void *buf, int w, int h)
-{
-	struct file *bmp;
-	mm_segment_t fs;
-	loff_t pos = 0;
-	int size = w * h * 3;
-	struct BMP_FILE_HEADER bfh;
-	struct BMP_INFO_HEADER bih;
-
-	bfh.bfType = 0x4d42;
-	bfh.bfSize = size + 14 + 40;
-	bfh.bfReserved1 = 0;
-	bfh.bfReserved2 = 0;
-	bfh.bfOffBits = 54;
-
-	bih.biSize = 40;
-	bih.biWidth = w;
-	bih.biHeight = h;
-	bih.biPlanes = 1;
-	bih.biBitCount = 24;
-	bih.biCompression = 0;
-	bih.biSizeImage = size;
-	bih.biXPelsPerMeter = 2835;
-	bih.biYPelsPerMeter = 2835;
-	bih.biClrUsed  = 0;
-	bih.biClrImportant = 0;
-
-	bmp = filp_open(file_name, O_CREAT | O_RDWR, 0);
-	if (IS_ERR(bmp)) {
-		DISPERR("open output bmp file failed!\n");
-		return;
-	}
-	fs = get_fs();
-	set_fs(KERNEL_DS);
-	vfs_write(bmp, (const char *)&bfh.bfType, sizeof(bfh.bfType), &pos);
-	vfs_write(bmp, (const char *)&bfh.bfSize, sizeof(bfh.bfSize), &pos);
-	vfs_write(bmp, (const char *)&bfh.bfReserved1, sizeof(bfh.bfReserved1), &pos);
-	vfs_write(bmp, (const char *)&bfh.bfReserved2, sizeof(bfh.bfReserved2), &pos);
-	vfs_write(bmp, (const char *)&bfh.bfOffBits, sizeof(bfh.bfOffBits), &pos);
-	vfs_write(bmp, (const char *)&bih.biSize, sizeof(bih.biSize), &pos);
-	vfs_write(bmp, (const char *)&bih.biWidth, sizeof(bih.biWidth), &pos);
-	vfs_write(bmp, (const char *)&bih.biHeight, sizeof(bih.biHeight), &pos);
-	vfs_write(bmp, (const char *)&bih.biPlanes, sizeof(bih.biPlanes), &pos);
-	vfs_write(bmp, (const char *)&bih.biBitCount, sizeof(bih.biBitCount), &pos);
-	vfs_write(bmp, (const char *)&bih.biCompression, sizeof(bih.biCompression), &pos);
-	vfs_write(bmp, (const char *)&bih.biSizeImage, sizeof(bih.biSizeImage), &pos);
-	vfs_write(bmp, (const char *)&bih.biXPelsPerMeter, sizeof(bih.biXPelsPerMeter), &pos);
-	vfs_write(bmp, (const char *)&bih.biYPelsPerMeter, sizeof(bih.biYPelsPerMeter), &pos);
-	vfs_write(bmp, (const char *)&bih.biClrUsed, sizeof(bih.biClrUsed), &pos);
-	vfs_write(bmp, (const char *)&bih.biClrImportant, sizeof(bih.biClrImportant), &pos);
-	vfs_write(bmp, (const char *)buf, size, &pos);
-	filp_close(bmp, NULL);
-	set_fs(fs);
-}
-
-static void bmp_adjust(void *buf, int size, int w, int h)
-{
-	int h_cursor, v_cursor;
-	void *temp;
-	int h_size = w * 3;
-	UINT8 temp_byte;
-
-	temp = vmalloc(h_size);
-	if (!temp)
-		return;
-
-	for (v_cursor = 0; v_cursor < h/2; v_cursor++) {
-		memcpy(temp, buf + (h-v_cursor - 1) * h_size, h_size);
-		memcpy(buf + (h-v_cursor - 1) * h_size, buf + v_cursor * h_size, h_size);
-		memcpy(buf + v_cursor * h_size, temp, h_size);
-	}
-	for (v_cursor = 0; v_cursor < h; v_cursor++) {
-		for (h_cursor = 0; h_cursor < w; h_cursor++) {
-			temp_byte = *(UINT8 *)(buf + (v_cursor * h_size) + h_cursor * 3);
-			*(UINT8 *)(buf + (v_cursor * h_size) + h_cursor * 3) =
-			*(UINT8 *)(buf + (v_cursor * h_size) + h_cursor * 3 + 2);
-			*(UINT8 *)(buf + (v_cursor * h_size) + h_cursor * 3 + 2) = temp_byte;
-		}
-	}
-	vfree(temp);
-}
 
 struct test_buf_info {
 	struct ion_client *ion_client;
@@ -569,7 +424,7 @@ static int __maybe_unused compare_dsi_checksum(unsigned long unused)
 	}
 
 	if (cksum_golden != cksum)
-		DISPERR("%s fail, cksum=0x%08x, golden=0x%08x\n", __func__, cksum, cksum_golden);
+		pr_err("%s fail, cksum=0x%08x, golden=0x%08x\n", __func__, cksum, cksum_golden);
 
 	return 0;
 }
@@ -710,7 +565,7 @@ static int primary_display_basic_test(int layer_num, unsigned int layer_en_mask,
 		check_dsi_checksum();
 
 		if (unlikely(basic_test_cancel)) {
-			DISPERR("%s stop because fatal signal\n", __func__);
+			pr_err("%s stop because fatal signal\n", __func__);
 			break;
 		}
 	}
@@ -762,13 +617,9 @@ static char STR_HELP[] =
 	"             Start/end to capture current enabled OVL layer every frame\n";
 #endif
 
-struct completion dump_buf_comp;
-
 static void process_dbg_opt(const char *opt)
 {
 	int ret;
-
-	DISPMSG("display debug cmd %s\n", opt);
 
 	if (strncmp(opt, "helper", 6) == 0) {
 		/*ex: echo helper:DISP_OPT_BYPASS_OVL,0 > /d/mtkfb */
@@ -786,74 +637,25 @@ static void process_dbg_opt(const char *opt)
 		tmp += i + 1;
 		ret = sscanf(tmp, "%d\n", &value);
 		if (ret != 1) {
-			DISPERR("error to parse cmd %s: %s %s ret=%d\n", opt, option, tmp, ret);
+			pr_err("error to parse cmd %s: %s %s ret=%d\n", opt, option, tmp, ret);
 			return;
 		}
 
 		DISPMSG("will set option %s to %d\n", option, value);
 		disp_helper_set_option_by_name(option, value);
-	} else if ((strncmp(opt, "disp_info:", 10) == 0)) {
-		unsigned int disp_adb_cmd;
-		int i;
-
-		ret = sscanf(opt, "disp_info:%x\n", &disp_adb_cmd);
-		if (ret != 1) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
-			return;
-		}
-
-		/*initialize background parameters*/
-		dbg_disp.layer_off_dbg = 1;
-		dbg_disp.font_size = 4;
-		dbg_disp.fg_clo = 0x00FF00FF;
-		dbg_disp.bg_clo = 0xFF400000;
-
-		/* fps info bit0~bit8 */
-		for (i = 0; i < ARRAY_SIZE(dbg_disp.layer_show); i++)
-			dbg_disp.layer_show[i] = ((disp_adb_cmd >> i) & 0x01);
-
-		dbg_disp.show_fps_en = (disp_adb_cmd & 0x1ff) ? 1 : 0;
-
-		/* hrt bit9 */
-		dbg_disp.show_hrt_en = ((disp_adb_cmd >> 9) & 0x1) ? 1 : 0;
-
-		/* layer_en_num bit10 */
-		dbg_disp.layer_num_en = ((disp_adb_cmd >> 10) & 0x1) ? 1 : 0;
-
-		/* layer_size bit11 */
-		dbg_disp.layer_size_en = ((disp_adb_cmd >> 11) & 0x1) ? 1 : 0;
-
-		/* path_mode bit12*/
-		dbg_disp.path_mode_en = ((disp_adb_cmd >> 12) & 0x1) ? 1 : 0;
-
-		/* dsi_mode bit13*/
-		dbg_disp.dsi_mode_en = ((disp_adb_cmd >> 13) & 0x1) ? 1 : 0;
-
-		dbg_disp.dbg_cmd_update_flg = 1;
-
-	} else if (strncmp(opt, "bg_set:", 7) == 0) {
-		ret = sscanf(opt, "bg_set:%u,%d\n", &dbg_disp.font_size, &dbg_disp.layer_off_dbg);
-		if (ret > 2) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
-			return;
-		}
-		dbg_disp.dbg_cmd_update_flg = 1;
-		if (dbg_disp.font_size > 8)
-			dbg_disp.font_size = 8;
-		else if (dbg_disp.font_size < 1)
-			dbg_disp.font_size = 1;
-
-		if (dbg_disp.layer_off_dbg > 500)
-			dbg_disp.layer_off_dbg = 500;
-		else if (dbg_disp.layer_off_dbg < 1)
-			dbg_disp.layer_off_dbg = 1;
+	} else if (strncmp(opt, "idle_fps_change:", 16) == 0) {
+		DISPMSG("off:change fps 45 -> 60 when screen idle of vdo mode!\n");
+		if (strncmp(opt + 16, "on", 2) == 0)
+			idle_fps_change = 1;
+		else if (strncmp(opt + 16, "off", 3) == 0)
+			idle_fps_change = 0;
 	} else if (strncmp(opt, "switch_mode:", 12) == 0) {
 		int session_id = MAKE_DISP_SESSION(DISP_SESSION_PRIMARY, 0);
 		int sess_mode;
 
 		ret = sscanf(opt, "switch_mode:%d\n", &sess_mode);
 		if (ret != 1) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 
@@ -873,7 +675,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &clk);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		DISPCHECK("clk_change:%d\n", clk);
@@ -884,7 +686,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &pattern);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 
@@ -909,7 +711,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &blank);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		if (blank)
@@ -923,7 +725,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = sscanf(opt, "force_fps:%d,%d\n", &keep, &skip);
 		if (ret != 2) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 
@@ -984,7 +786,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = sscanf(opt, "lfr_setting:%d,%d\n", &enable, &mode);
 		if (ret != 2) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		DDPMSG("--------------enable/disable lfr--------------\n");
@@ -1003,7 +805,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &method);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		primary_display_vsync_switch(method);
@@ -1014,7 +816,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &clk);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 	} else if (strncmp(opt, "dst_switch:", 11) == 0) {
@@ -1023,7 +825,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &mode);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		primary_display_switch_dst_mode(mode % 2);
@@ -1034,7 +836,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &mode);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		disp_helper_set_option(DISP_OPT_CV_BYSUSPEND, mode % 2);
@@ -1049,7 +851,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &option);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		dprec_handle_option(option);
@@ -1059,7 +861,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &maxlayer);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 
@@ -1075,7 +877,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &enable);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		primary_display_esd_check_enable(enable);
@@ -1087,7 +889,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &mode);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		set_esd_check_mode(mode);
@@ -1125,7 +927,7 @@ static void process_dbg_opt(const char *opt)
 			ret = sscanf(opt, "dump_layer:on,%d,%d,%d\n",
 				     &gCapturePriLayerDownX, &gCapturePriLayerDownY, &gCapturePriLayerNum);
 			if (ret != 3) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+				pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 				return;
 			}
 
@@ -1150,7 +952,7 @@ static void process_dbg_opt(const char *opt)
 			ret = sscanf(opt, "dump_wdma_layer:on,%d,%d\n",
 				     &gCapturePriLayerDownX, &gCapturePriLayerDownY);
 			if (ret != 2) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+				pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 				return;
 			}
 
@@ -1172,7 +974,7 @@ static void process_dbg_opt(const char *opt)
 			ret = sscanf(opt, "dump_rdma_layer:on,%d,%d\n",
 				     &gCapturePriLayerDownX, &gCapturePriLayerDownY);
 			if (ret != 2) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+				pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 				return;
 			}
 
@@ -1195,7 +997,7 @@ static void process_dbg_opt(const char *opt)
 
 		ret = kstrtouint(p, 0, &flg);
 		if (ret) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		enable_idlemgr(flg);
@@ -1213,19 +1015,9 @@ static void process_dbg_opt(const char *opt)
 		ret = kstrtoul(p, 10, &disp_mode);
 		gTriggerDispMode = (int)disp_mode;
 		if (ret)
-			DISPERR("DISP/%s: errno %d\n", __func__, ret);
+			pr_err("DISP/%s: errno %d\n", __func__, ret);
 
 		DISPMSG("DDP: gTriggerDispMode=%d\n", gTriggerDispMode);
-	} else if (strncmp(opt, "disp_force_idle:", 16) == 0) {
-		char *p = (char *)opt + 16;
-		unsigned int disp_idle = 0;
-
-		ret = kstrtouint(p, 0, &disp_idle);
-		DDPMSG("Display debug command: disp_force_idle start, input disp_idle=%d, idle_test_enable=%d\n",
-			disp_idle, idle_test_enable);
-		idle_test_enable = disp_idle;
-		DDPMSG("Display debug command: disp_force_idle done, input disp_idle=%d, idle_test_enable=%d\n",
-			disp_idle, idle_test_enable);
 	} else if (strncmp(opt, "disp_set_fps:", 13) == 0) {
 		char *p = (char *)opt + 13;
 		unsigned int disp_fps = 0;
@@ -1262,37 +1054,9 @@ static void process_dbg_opt(const char *opt)
 		DDPMSG("Display debug command: disp_get_fps start\n");
 		disp_fps = primary_display_force_get_vsync_fps();
 		DDPMSG("Display debug command: disp_get_fps done, disp_fps=%d\n", disp_fps);
-	} else if (strncmp(opt, "force_dc_buf_fmt:", 17) == 0) {
-		if (strncmp(opt + 17, "888", 3) == 0)
-			force_dc_buf_fmt = UFMT_RGB888;
-		else if (strncmp(opt + 17, "yuv", 3) == 0)
-			force_dc_buf_fmt = UFMT_YUYV;
-		else if (strncmp(opt + 17, "565", 3) == 0)
-			force_dc_buf_fmt = UFMT_RGB565;
-		else if (strncmp(opt + 17, "off", 3) == 0)
-			force_dc_buf_fmt = 0;
-	} else if (strncmp(opt, "set_emi_bound_tb:", 17) == 0) {
-		int num, i, idx;
-		int val[8] = {0};
-		char fmt[256] = "set_emi_bound_tb:%d";
+	}
 
-		for (i = 0; i < ARRAY_SIZE(val); i++) {
-			/* make fmt like: "set_dsi_cmd:%d,%d,%d\n" */
-			strncat(fmt, ",%d", sizeof(fmt) - strlen(fmt) - 1);
-		}
-		strncat(fmt, "\n", sizeof(fmt) - strlen(fmt) - 1);
-
-		num = sscanf(opt, fmt, &idx, &val[0], &val[1], &val[2],
-			&val[3], &val[4], &val[5], &val[6], &val[7]);
-
-		if (num < 2 || num > HRT_LEVEL_NUM + 1) {
-			pr_warn("%d error to parse cmd %s\n", __LINE__, opt);
-			return;
-		}
-		ret = set_emi_bound_tb(idx, num - 1, val);
-		if (ret)
-			pr_warn("%d error to parse cmd %s\n", __LINE__, opt);
-	} else if (strncmp(opt, "primary_basic_test:", 19) == 0) {
+	if (strncmp(opt, "primary_basic_test:", 19) == 0) {
 		unsigned int layer_num, w, h, fmt, frame_num, vsync_num, x, y, r, g, b, a;
 		unsigned int layer_en_mask, cksum;
 		int mode;
@@ -1301,7 +1065,7 @@ static void process_dbg_opt(const char *opt)
 			     &layer_num, &layer_en_mask, &w, &h, &fmt, &frame_num, &vsync_num,
 			     &x, &y, &r, &g, &b, &a, &mode, &cksum);
 		if (ret != 15 && ret != 1) {
-			DISPERR("error to parse cmd %s, ret=%d\n", opt, ret);
+			pr_err("error to parse cmd %s, ret=%d\n", opt, ret);
 			return;
 		}
 		if (ret == 1 && layer_num == 0) {
@@ -1322,23 +1086,29 @@ static void process_dbg_opt(const char *opt)
 
 		primary_display_basic_test(layer_num, layer_en_mask, w, h, fmt, frame_num,
 			vsync_num, x, y, r, g, b, a, mode, cksum);
-	} else if (strncmp(opt, "pan_disp_test:", 13) == 0) {
+	}
+
+	if (strncmp(opt, "pan_disp_test:", 13) == 0) {
 		int frame_num;
 		int bpp;
 
 		ret = sscanf(opt, "pan_disp_test:%d,%d\n", &frame_num, &bpp);
 		if (ret != 2) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 
 		pan_display_test(frame_num, bpp);
-	} else if (strncmp(opt, "dsi_ut:restart_vdo_mode", 23) == 0) {
+	}
+
+	if (strncmp(opt, "dsi_ut:restart_vdo_mode", 23) == 0) {
 		dpmgr_path_stop(primary_get_dpmgr_handle(), CMDQ_DISABLE);
 		primary_display_diagnose();
 		dpmgr_path_start(primary_get_dpmgr_handle(), CMDQ_DISABLE);
 		dpmgr_path_trigger(primary_get_dpmgr_handle(), NULL, CMDQ_DISABLE);
-	} else if (strncmp(opt, "dsi_ut:restart_cmd_mode", 23) == 0) {
+	}
+
+	if (strncmp(opt, "dsi_ut:restart_cmd_mode", 23) == 0) {
 		dpmgr_path_stop(primary_get_dpmgr_handle(), CMDQ_DISABLE);
 		primary_display_diagnose();
 
@@ -1349,22 +1119,26 @@ static void process_dbg_opt(const char *opt)
 
 		dpmgr_path_start(primary_get_dpmgr_handle(), CMDQ_DISABLE);
 		dpmgr_path_trigger(primary_get_dpmgr_handle(), NULL, CMDQ_DISABLE);
-	} else if (strncmp(opt, "scenario:", 8) == 0) {
+	}
+
+	if (strncmp(opt, "scenario:", 8) == 0) {
 		int scen;
 
 		ret = sscanf(opt, "scenario:%d\n", &scen);
 		if (ret != 1) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		primary_display_set_scenario(scen);
-	} else if (strncmp(opt, "layout_noncontinous:", 20) == 0) {
+	}
+	if (strncmp(opt, "layout_noncontinous:", 20) == 0) {
 		ret = sscanf(opt, "layout_noncontinuous:%d\n", &layer_layout_allow_non_continuous);
 		if (ret != 1) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
-	} else if (strncmp(opt, "idle_wait:", 10) == 0) {
+	}
+	if (strncmp(opt, "idle_wait:", 10) == 0) {
 		ret = sscanf(opt, "idle_wait:%d\n", &idle_check_interval);
 		if (ret != 1) {
 			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
@@ -1372,84 +1146,26 @@ static void process_dbg_opt(const char *opt)
 		}
 		idle_check_interval = idle_check_interval < 17 ? 17 : idle_check_interval;
 		DISPMSG("change idle interval to %dms\n", idle_check_interval);
-	} else if (strncmp(opt, "layer_statistic:", 16) == 0) {
+	}
+
+	if (strncmp(opt, "layer_statistic:", 16) == 0) {
 		ret = sscanf(opt, "layer_statistic:%d\n", &layer_statistic_enable);
 		if (ret != 1) {
-			DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
+			pr_err("%d error to parse cmd %s\n", __LINE__, opt);
 			return;
 		}
 		if (!layer_statistic_enable)
 			disp_layer_info_statistic_reset();
-	} else if (strncmp(opt, "check_clk", 9) == 0)
+	}
+
+	if (strncmp(opt, "check_clk", 9) == 0)
 		ddp_clk_check();
-	else if (strncmp(opt, "round_corner_offset_debug:", 26) == 0) {
+
+	if (strncmp(opt, "round_corner_offset_debug:", 26) == 0) {
 		if (strncmp(opt + 26, "on", 2) == 0)
 			round_corner_offset_enable = 1;
 		else if (strncmp(opt + 26, "off", 3) == 0)
 			round_corner_offset_enable = 0;
-	} else if (strncmp(opt, "dump_output:", 12) == 0) {
-		if (strncmp(opt + 12, "on", 2) == 0)
-			dump_output = 1;
-		else if (strncmp(opt + 12, "off", 3) == 0) {
-			if (composed_buf) {
-				vfree(composed_buf);
-				composed_buf = NULL;
-			}
-			dump_output = 0;
-		} else if (strncmp(opt + 12, "save", 4) == 0) {
-			int width, height, bytes;
-			struct file *bmp;
-
-			if (dump_output == 0)
-				dump_output = 1;
-			width = disp_helper_get_option(DISP_OPT_FAKE_LCM_WIDTH);
-			height = disp_helper_get_option(DISP_OPT_FAKE_LCM_HEIGHT);
-			bytes = width * height * 3;
-			if (composed_buf == NULL)
-				composed_buf = vmalloc(bytes);
-			init_completion(&dump_buf_comp);
-			dump_output_comp = 1;
-			wait_for_completion(&dump_buf_comp);
-			bmp = filp_open("/sdcard/dump_output.bmp", O_CREAT | O_RDWR, 0);
-			if (IS_ERR(bmp)) {
-				vfree(composed_buf);
-				composed_buf = NULL;
-				return;
-			}
-			filp_close(bmp, NULL);
-			bmp_adjust(composed_buf, bytes, width, height);
-			save_bmp("/sdcard/dump_output.bmp", composed_buf, width, height);
-		} else
-			DISPERR("error to parse cmd %s\n", opt);
-	} else if (strncmp(opt, "debugger", 8) == 0) {
-		if (strncmp(opt, "debugger_size:", 14) == 0) {
-			ret = sscanf(opt, "debugger_size:%d\n", &debugger_buffer_size);
-			if (ret != 1) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
-				return;
-			}
-		} else if (strncmp(opt, "debugger_time:", 14) == 0) {
-			ret = sscanf(opt, "debugger_time:%d\n", &debugger_sleep_ms);
-			if (ret != 1) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
-				return;
-			}
-		} else if (strncmp(opt, "debugger_run:", 13) == 0) {
-			ret = sscanf(opt, "debugger_run:%d\n", &debugger_running);
-			if (ret != 1) {
-				DISPERR("%d error to parse cmd %s\n", __LINE__, opt);
-				return;
-			}
-			if (debugger_running)
-				wake_up_interruptible(&debugger_running_wq);
-		}
-	}
-
-	if (strncmp(opt, "MIPI_CLK:", 9) == 0) {
-		if (strncmp(opt + 9, "on", 2) == 0)
-			mipi_clk_change(0, 1);
-		else if (strncmp(opt + 9, "off", 3) == 0)
-			mipi_clk_change(0, 0);
 	}
 }
 
@@ -1592,30 +1308,6 @@ static const struct file_operations partial_fops = {
 	.read = partial_read,
 };
 
-static int _debugger_worker_thread(void *data)
-{
-	char *pBuffer = NULL;
-	unsigned int buffer_size = 0;
-
-	while (1) {
-		wait_event_interruptible(debugger_running_wq, debugger_running);
-
-		if (buffer_size != debugger_buffer_size) {
-			if (pBuffer != NULL)
-				kfree(pBuffer);
-			buffer_size = debugger_buffer_size;
-			pBuffer = kmalloc(buffer_size, GFP_KERNEL);
-		}
-		if (pBuffer != NULL)
-			memset(pBuffer, 0, buffer_size);
-		/*void* buffer = const_cast<void*>(pBuffer);*/
-		/*ASSERT(pBuffer != NULL);*/
-		if (debugger_sleep_ms != 0)
-			msleep(debugger_sleep_ms);
-	}
-	return 0;
-}
-
 void DBG_Init(void)
 {
 	struct dentry *d_folder;
@@ -1627,11 +1319,6 @@ void DBG_Init(void)
 	if (d_folder) {
 		d_file = debugfs_create_file("kickdump", S_IFREG | S_IRUGO, d_folder, NULL, &kickidle_fops);
 		d_file = debugfs_create_file("partial", S_IFREG | S_IRUGO, d_folder, NULL, &partial_fops);
-	}
-
-	if (debugger_thread == NULL) {
-		debugger_thread = kthread_create(_debugger_worker_thread, NULL, "disp_dbg");
-		wake_up_process(debugger_thread);
 	}
 }
 

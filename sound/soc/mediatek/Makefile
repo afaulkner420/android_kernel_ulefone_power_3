@@ -12,7 +12,6 @@
 #
 obj-$(CONFIG_SND_SOC_MEDIATEK) += common/
 obj-$(CONFIG_SND_SOC_MT2701) += mt2701/
-obj-$(CONFIG_SND_SOC_MT3886) += mt3886/
 obj-$(CONFIG_SND_SOC_MT8173) += mt8173/
 
 # New architecture
@@ -31,7 +30,6 @@ subdir-ccflags-y += -DAUDIO_USING_WRAP_DRIVER
 subdir-ccflags-y += -D_MT_IDLE_HEADER
 
 # include path
-subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/accdet/$(MTK_PLATFORM)
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/include/mt-plat
@@ -39,9 +37,6 @@ subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/base/power/includ
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/base/power/$(MTK_PLATFORM)
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/scp/$(MTK_PLATFORM)/
 subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)/
-subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/audio_ipi/$(MTK_PLATFORM)/
-subdir-ccflags-y += -Werror -I$(srctree)/drivers/misc/mediatek/auxadc/
-subdir-ccflags-y += -Werror -I$(srctree)/sound/soc/codecs
 
 # Common include path
 subdir-ccflags-y += -Werror -I$(src)/common_int

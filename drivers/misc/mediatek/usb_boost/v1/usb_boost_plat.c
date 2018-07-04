@@ -15,9 +15,6 @@
 #include "mtk_ppm_api.h"
 #include "usb_boost.h"
 #include <mtk_vcorefs_manager.h>
-#ifdef CONFIG_MTK_QOS_SUPPORT
-#include <helio-dvfsrc-opp.h>
-#endif
 
 /* platform specific parameter here */
 #ifdef CONFIG_MACH_MT6799
@@ -50,44 +47,11 @@ struct act_arg_obj cpu_freq_test_arg = {2500000, -1, -1};
 struct act_arg_obj cpu_core_test_arg = {4, -1, -1};
 struct act_arg_obj dram_vcore_test_arg = {OPP_0, -1, -1};
 
-#elif defined(CONFIG_MACH_MT6739)
-static int cpu_freq_test_para[] = {1, 5, 500, 0};
-static int cpu_core_test_para[] = {1, 5, 500, 0};
-static int dram_vcore_test_para[] = {1, 5, 500, 0};
-
-/* -1 denote not used*/
-struct act_arg_obj cpu_freq_test_arg = {1500000, -1, -1};
-struct act_arg_obj cpu_core_test_arg = {4, -1, -1};
-struct act_arg_obj dram_vcore_test_arg = {OPP_0, -1, -1};
-
-#elif defined(CONFIG_MACH_MT6771)
-static int cpu_freq_test_para[] = {1, 5, 500, 0};
-static int cpu_core_test_para[] = {1, 5, 500, 0};
-static int dram_vcore_test_para[] = {1, 5, 500, 0};
-
-/* -1 denote not used*/
-struct act_arg_obj cpu_freq_test_arg = {2500000, -1, -1};
-struct act_arg_obj cpu_core_test_arg = {4, -1, -1};
-struct act_arg_obj dram_vcore_test_arg = {OPP_0, -1, -1};
-
-#elif defined(CONFIG_MACH_MT6775)
-static int cpu_freq_test_para[] = {1, 5, 500, 0};
-static int cpu_core_test_para[] = {1, 5, 500, 0};
-static int dram_vcore_test_para[] = {1, 5, 500, 0};
-
-/* -1 denote not used*/
-struct act_arg_obj cpu_freq_test_arg = {2500000, -1, -1};
-struct act_arg_obj cpu_core_test_arg = {4, -1, -1};
-struct act_arg_obj dram_vcore_test_arg = {OPP_0, -1, -1};
-
 #elif defined(CONFIG_ARCH_MT6XXX)
 /* add new here */
 #endif
 
 static struct pm_qos_request pm_qos_req;
-#ifdef CONFIG_MTK_QOS_SUPPORT
-static struct pm_qos_request pm_qos_emi_req;
-#endif
 
 static int freq_hold(struct act_arg_obj *arg)
 {
@@ -105,8 +69,6 @@ static int freq_release(struct act_arg_obj *arg)
 static int core_hold(struct act_arg_obj *arg)
 {
 	USB_BOOST_DBG("\n");
-
-	/*This API is deprecated*/
 	mt_ppm_sysboost_core(BOOST_BY_USB, arg->arg1);
 
 	/*Disable MCDI to save around 100us "Power ON CPU -> CPU context restore"*/
@@ -117,8 +79,6 @@ static int core_hold(struct act_arg_obj *arg)
 static int core_release(struct act_arg_obj *arg)
 {
 	USB_BOOST_DBG("\n");
-
-	/*This API is deprecated*/
 	mt_ppm_sysboost_core(BOOST_BY_USB, 0);
 
 	/*Enable MCDI*/
@@ -128,10 +88,6 @@ static int core_release(struct act_arg_obj *arg)
 
 static int vcorefs_hold(struct act_arg_obj *arg)
 {
-#ifdef CONFIG_MTK_QOS_SUPPORT
-	pm_qos_update_request(&pm_qos_emi_req, DDR_OPP_0);
-	return 0;
-#else
 	int vcore_ret;
 
 	vcore_ret = vcorefs_request_dvfs_opp(KIR_USB, arg->arg1);
@@ -141,15 +97,10 @@ static int vcorefs_hold(struct act_arg_obj *arg)
 		USB_BOOST_DBG("hold VCORE ok\n");
 
 	return 0;
-#endif
 }
 
 static int vcorefs_release(struct act_arg_obj *arg)
 {
-#ifdef CONFIG_MTK_QOS_SUPPORT
-	pm_qos_update_request(&pm_qos_emi_req, DDR_OPP_UNREQ);
-	return 0;
-#else
 	int vcore_ret;
 
 	vcore_ret = vcorefs_request_dvfs_opp(KIR_USB, OPP_UNREQ);
@@ -159,7 +110,6 @@ static int vcorefs_release(struct act_arg_obj *arg)
 		USB_BOOST_DBG("release VCORE ok\n");
 
 	return 0;
-#endif
 }
 
 static int __init init(void)
@@ -185,9 +135,6 @@ static int __init init(void)
 
 
 	pm_qos_add_request(&pm_qos_req, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
-#ifdef CONFIG_MTK_QOS_SUPPORT
-	pm_qos_add_request(&pm_qos_emi_req, PM_QOS_EMI_OPP, PM_QOS_EMI_OPP_DEFAULT_VALUE);
-#endif
 
 	return 0;
 }

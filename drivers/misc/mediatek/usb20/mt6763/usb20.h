@@ -32,12 +32,6 @@ extern bool upmu_is_chr_det(void);
 extern kal_bool upmu_is_chr_det(void);
 #endif
 
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-extern int get_ui_soc(void);
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
-
 extern CHARGER_TYPE mt_charger_type_detection(void);
 extern void BATTERY_SetUSBState(int usb_state);
 extern void upmu_interrupt_chrdet_int_en(unsigned int val);

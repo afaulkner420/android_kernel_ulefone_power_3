@@ -342,25 +342,26 @@ void auxadc_imp_int_handler_r(void)
 }
 
 /* General OC Int Handler */
-void oc_int_handler(enum PMIC_IRQ_ENUM intNo, const char *int_name)
+void oc_int_handler(PMIC_IRQ_ENUM intNo, const char *int_name)
 {
-	char oc_str[30] = "";
-
 	PMICLOG("[%s] int name=%s\n", __func__, int_name);
 	switch (intNo) {
-#if 0
-	case INT_VPA_OC:
+	/*
+	 *case INT_VCAMA1_OC:
+	 *case INT_VCAMA2_OC:
+	 *case INT_VCAMD1_OC:
+	 *case INT_VCAMD2_OC:
+	 *case INT_VCAMIO_OC:
+	 */
 		/* keep OC interrupt and keep tracking */
-		pr_notice(PMICTAG "[PMIC_INT] PMIC OC: %s\n", int_name);
-		break;
-#endif
+		/*pr_err(PMICTAG "[PMIC_INT] PMIC OC: %s\n", int_name);*/
+		/*break;*/
 	default:
 		/* issue AEE exception and disable OC interrupt */
 		/* TBD: dump_exception_reg */
-		snprintf(oc_str, 30, "PMIC OC:%s", int_name);
-		aee_kernel_warning(oc_str, "\nCRDISPATCH_KEY:PMIC OC\nOC Interrupt: %s", int_name);
+		aee_kernel_warning("PMIC OC", "\nCRDISPATCH_KEY:PMIC OC\nOC Interrupt: %s", int_name);
 		pmic_enable_interrupt(intNo, 0, "PMIC");
-		pr_notice(PMICTAG "[PMIC_INT] disable OC interrupt: %s\n", int_name);
+		pr_err(PMICTAG "[PMIC_INT] disable OC interrupt: %s\n", int_name);
 		break;
 	}
 }
@@ -397,7 +398,7 @@ irqreturn_t mt_pmic_eint_irq(int irq, void *desc)
 	return IRQ_HANDLED;
 }
 
-void pmic_enable_interrupt(enum PMIC_IRQ_ENUM intNo, unsigned int en, char *str)
+void pmic_enable_interrupt(PMIC_IRQ_ENUM intNo, unsigned int en, char *str)
 {
 	unsigned int shift, no;
 
@@ -424,7 +425,7 @@ void pmic_enable_interrupt(enum PMIC_IRQ_ENUM intNo, unsigned int en, char *str)
 		interrupts[shift].en, upmu_get_reg_value(interrupts[shift].en));
 }
 
-void pmic_mask_interrupt(enum PMIC_IRQ_ENUM intNo, char *str)
+void pmic_mask_interrupt(PMIC_IRQ_ENUM intNo, char *str)
 {
 	unsigned int shift, no;
 
@@ -445,7 +446,7 @@ void pmic_mask_interrupt(enum PMIC_IRQ_ENUM intNo, char *str)
 		interrupts[shift].mask_set, upmu_get_reg_value(interrupts[shift].mask));
 }
 
-void pmic_unmask_interrupt(enum PMIC_IRQ_ENUM intNo, char *str)
+void pmic_unmask_interrupt(PMIC_IRQ_ENUM intNo, char *str)
 {
 	unsigned int shift, no;
 
@@ -466,7 +467,7 @@ void pmic_unmask_interrupt(enum PMIC_IRQ_ENUM intNo, char *str)
 		interrupts[shift].mask_set, upmu_get_reg_value(interrupts[shift].mask));
 }
 
-void pmic_register_interrupt_callback(enum PMIC_IRQ_ENUM intNo, void (EINT_FUNC_PTR) (void))
+void pmic_register_interrupt_callback(PMIC_IRQ_ENUM intNo, void (EINT_FUNC_PTR) (void))
 {
 	unsigned int shift, no;
 
@@ -487,7 +488,7 @@ void pmic_register_interrupt_callback(enum PMIC_IRQ_ENUM intNo, void (EINT_FUNC_
 
 /*#define ENABLE_ALL_OC_IRQ 0*/
 /* register general oc interrupt handler */
-void pmic_register_oc_interrupt_callback(enum PMIC_IRQ_ENUM intNo)
+void pmic_register_oc_interrupt_callback(PMIC_IRQ_ENUM intNo)
 {
 	unsigned int shift, no;
 
@@ -506,17 +507,11 @@ void pmic_register_oc_interrupt_callback(enum PMIC_IRQ_ENUM intNo)
 /* register and enable all oc interrupt */
 void register_all_oc_interrupts(void)
 {
-	enum PMIC_IRQ_ENUM oc_interrupt = INT_VCORE_OC;
+	PMIC_IRQ_ENUM oc_interrupt = INT_VCORE_OC;
 
 	for (; oc_interrupt <= INT_VXO22_OC; oc_interrupt++) {
 		/* ignore pre_oc */
 		if (oc_interrupt == INT_VCORE_PREOC)
-			continue;
-		/* ignore SIM card oc */
-		if (oc_interrupt == INT_VSIM1_OC || oc_interrupt == INT_VSIM2_OC)
-			continue;
-		/* ignore VPA oc */
-		if (oc_interrupt == INT_VPA_OC)
 			continue;
 		pmic_register_oc_interrupt_callback(oc_interrupt);
 			if (oc_interrupt == INT_VCAMA1_OC || oc_interrupt == INT_VCAMA2_OC
@@ -679,7 +674,7 @@ void PMIC_EINT_SETTING(void)
 	register_irq_handlers();
 	enable_pmic_irqs();
 
-#if defined(CONFIG_MACH_MT6758) || defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6758)
 	node = of_find_compatible_node(NULL, NULL, "mediatek, mt6355_pmic");
 #else
 	node = of_find_compatible_node(NULL, NULL, "mediatek,mt6355-pmic");

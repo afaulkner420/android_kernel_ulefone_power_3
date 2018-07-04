@@ -391,11 +391,9 @@ static u64 start_seq;
 #define LOG_MUCH_PLUS_LEN	(1 << 17)
 
 static void log_much_do_check_and_delay(struct printk_log *msg);
-#endif
 
-void set_detect_count(int count)
+inline void set_detect_count(int count)
 {
-#if defined(CONFIG_MTK_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	if (count >= detect_count)
 		detect_count = count;
 	else {
@@ -406,37 +404,23 @@ void set_detect_count(int count)
 		detect_count_change = true;
 	}
 	pr_info("Printk too much criteria: %d  delay_flag: %d\n", detect_count, detect_count_change);
-#endif
 }
-EXPORT_SYMBOL(set_detect_count);
 
-int get_detect_count(void)
+inline int get_detect_count(void)
 {
-#if defined(CONFIG_MTK_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	return detect_count;
-#else
-	return 0;
-#endif
 }
-EXPORT_SYMBOL(get_detect_count);
 
-void set_logtoomuch_enable(int value)
+inline void set_logtoomuch_enable(int value)
 {
-#if defined(CONFIG_MTK_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	printk_too_much_enable = value;
-#endif
 }
-EXPORT_SYMBOL(set_logtoomuch_enable);
 
-int get_logtoomuch_enable(void)
+inline int get_logtoomuch_enable(void)
 {
-#if defined(CONFIG_MTK_ENG_BUILD) && defined(CONFIG_LOG_TOO_MUCH_WARNING)
 	return printk_too_much_enable;
-#else
-	return 0;
-#endif
 }
-EXPORT_SYMBOL(get_logtoomuch_enable);
+#endif
 
 /* Return log buffer address */
 char *log_buf_addr_get(void)
@@ -1735,7 +1719,7 @@ static void call_console_drivers(int level,
 	unsigned long interval_con_write = 0;
 #endif
 
-	trace_console_rcuidle(text, len);
+	trace_console(text, len);
 
 	if (level >= console_loglevel && !ignore_loglevel)
 		return;
@@ -1801,7 +1785,6 @@ static void zap_locks(void)
 	sema_init(&console_sem, 1);
 }
 
-#ifdef CONFIG_MTK_AEE_FEATURE
 /* if logbuf lock in aee_wdt flow, zap locks uncondationally  */
 void aee_wdt_zap_locks(void)
 {
@@ -1811,8 +1794,6 @@ void aee_wdt_zap_locks(void)
 	/* And make sure that we print immediately */
 	sema_init(&console_sem, 1);
 }
-
-#endif
 
 /*
  * Check if we have any console that is capable of printing while cpu is
@@ -3675,8 +3656,9 @@ void show_regs_print_info(const char *log_lvl)
 {
 	dump_stack_print_info(log_lvl);
 
-	printk("%stask: %p task.stack: %p\n",
-	       log_lvl, current, task_stack_page(current));
+	printk("%stask: %p ti: %p task.ti: %p\n",
+	       log_lvl, current, current_thread_info(),
+	       task_thread_info(current));
 }
 
 void get_kernel_log_buffer(unsigned long *addr, unsigned long *size, unsigned long *start)

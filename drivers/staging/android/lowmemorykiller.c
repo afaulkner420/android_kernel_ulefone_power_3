@@ -58,12 +58,6 @@ static u32 in_lowmem;
 #include <mt-plat/mtk_gpu_utility.h>
 #endif
 
-#ifdef CONFIG_64BIT
-#define ENABLE_AMR_RAMSIZE	(0x80000)	/* > 2GB */
-#else
-#define ENABLE_AMR_RAMSIZE	(0x40000)	/* > 1GB */
-#endif
-
 static short lowmem_debug_adj;	/* default: 0 */
 #ifdef CONFIG_MTK_ENG_BUILD
 #ifdef CONFIG_MTK_AEE_FEATURE
@@ -102,7 +96,7 @@ static int lowmem_minfree[9] = {
 
 static int lowmem_minfree_size = 9;
 
-#define LOWMEM_DEATHPENDING_TIMEOUT	(HZ)
+#define LOWMEM_DEATHPENDING_TIMEOUT	(HZ / 2)
 static unsigned long lowmem_deathpending_timeout;
 
 #define lowmem_print(level, x...)			\
@@ -142,6 +136,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 {
 	struct task_struct *tsk;
 	struct task_struct *selected = NULL;
+	static struct task_struct *prev_selected;
 	unsigned long rem = 0;
 	int tasksize;
 	int i;
@@ -153,18 +148,15 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages;
 	int other_file = global_page_state(NR_FILE_PAGES) -
 						global_page_state(NR_SHMEM) -
-						global_page_state(NR_UNEVICTABLE) -
 						total_swapcache_pages();
 
 	int print_extra_info = 0;
 	static unsigned long lowmem_print_extra_info_timeout;
 	enum zone_type high_zoneidx = gfp_zone(sc->gfp_mask);
-	int d_state_is_found = 0;
 	int unreclaimable_zones = 0;
-#ifdef CONFIG_SWAP
+#if defined(CONFIG_SWAP) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 	int to_be_aggressive = 0;
 	unsigned long swap_pages = 0;
-	short amr_adj = OOM_SCORE_ADJ_MAX + 1;
 #endif
 #ifdef CONFIG_MTK_ENG_BUILD
 	int pid_dump = -1; /* process to be dump */
@@ -253,7 +245,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	}
 #endif
 
-#ifdef CONFIG_SWAP
+#if defined(CONFIG_SWAP) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 	swap_pages = atomic_long_read(&nr_swap_pages);
 	/* More than 1/2 swap usage */
 	if (swap_pages * 2 < total_swap_pages)
@@ -261,17 +253,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	/* More than 3/4 swap usage */
 	if (swap_pages * 4 < total_swap_pages)
 		to_be_aggressive++;
-
-#ifndef CONFIG_MTK_GMO_RAM_OPTIMIZE
-	/* Try to enable AMR when we have enough memory */
-	if (totalram_pages < ENABLE_AMR_RAMSIZE) {
-		to_be_aggressive = 0;
-	} else {
-		i = lowmem_adj_size - 1 - to_be_aggressive;
-		if (to_be_aggressive > 0 && i >= 0)
-			amr_adj = lowmem_adj[i];
-	}
-#endif
 #endif
 
 	if (lowmem_adj_size < array_size)
@@ -281,7 +262,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	for (i = 0; i < array_size; i++) {
 		minfree = lowmem_minfree[i];
 		if (other_free < minfree && other_file < minfree) {
-#ifdef CONFIG_SWAP
+#if defined(CONFIG_SWAP) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
 			if (to_be_aggressive != 0 && i > 3) {
 				i -= to_be_aggressive;
 				if (i < 3)
@@ -292,10 +273,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			break;
 		}
 	}
-
-#if defined(CONFIG_SWAP) && !defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
-	min_score_adj = min(min_score_adj, amr_adj);
-#endif
 
 	/* Promote its priority */
 	if (unreclaimable_zones > 0)
@@ -326,7 +303,7 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 	if (output_expect(enable_candidate_log)) {
 		if (min_score_adj <= lowmem_debug_adj) {
 			if (time_after_eq(jiffies, lowmem_print_extra_info_timeout)) {
-				lowmem_print_extra_info_timeout = jiffies + HZ * 2;
+				lowmem_print_extra_info_timeout = jiffies + HZ;
 				print_extra_info = 1;
 			}
 		}
@@ -351,22 +328,6 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 		if (tsk->flags & PF_KTHREAD)
 			continue;
 
-		if (task_lmk_waiting(tsk) &&
-		    time_before_eq(jiffies, lowmem_deathpending_timeout)) {
-#ifdef CONFIG_MTK_ENG_BUILD
-			static pid_t last_dying_pid;
-
-			if (last_dying_pid != tsk->pid) {
-				lowmem_print(1, "lowmem_shrink return directly, due to  %d (%s) is dying\n",
-					     tsk->pid, tsk->comm);
-				last_dying_pid = tsk->pid;
-			}
-#endif
-			rcu_read_unlock();
-			spin_unlock(&lowmem_shrink_lock);
-			return SHRINK_STOP;
-		}
-
 		p = find_lock_task_mm(tsk);
 		if (!p)
 			continue;
@@ -377,15 +338,31 @@ static unsigned long lowmem_scan(struct shrinker *s, struct shrink_control *sc)
 			continue;
 		}
 #endif
+
 		/* Bypass D-state process */
 		if (p->state & TASK_UNINTERRUPTIBLE) {
 			lowmem_print(2, "lowmem_scan filter D state process: %d (%s) state:0x%lx\n",
 				     p->pid, p->comm, p->state);
 			task_unlock(p);
-			d_state_is_found = 1;
 			continue;
 		}
 
+		if (task_lmk_waiting(p) && p->mm &&
+		    time_before_eq(jiffies, lowmem_deathpending_timeout)) {
+#ifdef CONFIG_MTK_ENG_BUILD
+			static pid_t last_dying_pid;
+
+			if (last_dying_pid != p->pid) {
+				lowmem_print(1, "lowmem_shrink return directly, due to  %d (%s) is dying\n",
+					     p->pid, p->comm);
+				last_dying_pid = p->pid;
+			}
+#endif
+			task_unlock(p);
+			rcu_read_unlock();
+			spin_unlock(&lowmem_shrink_lock);
+			return SHRINK_STOP;
+		}
 		oom_score_adj = p->signal->oom_score_adj;
 
 		if (output_expect(enable_candidate_log)) {
@@ -467,31 +444,30 @@ log_again:
 		long cache_limit = minfree * (long)(PAGE_SIZE / 1024);
 		long free = other_free * (long)(PAGE_SIZE / 1024);
 
+		/*  Did it be selected? */
+		if (selected == prev_selected) {
+			lowmem_print(1, "%s state(%ld)\n", selected->comm, selected->state);
+			show_stack(selected, NULL);
+		}
+		prev_selected = selected;
+
 		task_lock(selected);
 		send_sig(SIGKILL, selected, 0);
 		if (selected->mm)
 			task_set_lmk_waiting(selected);
 		task_unlock(selected);
 		trace_lowmemory_kill(selected, cache_size, cache_limit, free);
-		lowmem_print(1, "Killing '%s' (%d), adj %hd, state(%ld)\n"
-				"   to free %ldkB on behalf of '%s' (%d) because\n"
-				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n"
-				"   Free memory is %ldkB above reserved\n"
-#ifdef CONFIG_SWAP
-				"   (decrease %d level, amr_adj %hd)\n"
-#endif
-				,
+		lowmem_print(1, "Killing '%s' (%d), adj %hd,\n" \
+			        "   to free %ldkB on behalf of '%s' (%d) because\n" \
+			        "   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n" \
+			        "   Free memory is %ldkB above reserved\n",
 			     selected->comm, selected->pid,
-			     selected_oom_score_adj, selected->state,
+			     selected_oom_score_adj,
 			     selected_tasksize * (long)(PAGE_SIZE / 1024),
 			     current->comm, current->pid,
 			     cache_size, cache_limit,
 			     min_score_adj,
-			     free
-#ifdef CONFIG_SWAP
-			     , to_be_aggressive, amr_adj
-#endif
-			     );
+			     free);
 
 		lowmem_deathpending_timeout = jiffies + LOWMEM_DEATHPENDING_TIMEOUT;
 
@@ -545,9 +521,6 @@ log_again:
 		}
 #endif
 		rem += selected_tasksize;
-	} else {
-		if (d_state_is_found == 1)
-			lowmem_print(2, "No selected (full of D-state processes at %d)\n", (int)min_score_adj);
 	}
 
 	lowmem_print(4, "lowmem_scan %lu, %x, return %lu\n",
@@ -572,7 +545,7 @@ static struct shrinker lowmem_shrinker = {
 static int __init lowmem_init(void)
 {
 #if defined(CONFIG_ZRAM) && defined(CONFIG_MTK_GMO_RAM_OPTIMIZE)
-	vm_swappiness = 100;
+	vm_swappiness = 150;
 #endif
 	register_shrinker(&lowmem_shrinker);
 	return 0;

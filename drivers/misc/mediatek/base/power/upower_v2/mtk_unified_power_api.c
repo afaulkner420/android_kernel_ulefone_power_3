@@ -95,7 +95,10 @@ struct upower_tbl_info **upower_get_tbl(void)
 
 	return ptr;
 #endif
-	return &p_upower_tbl_infos;
+	if (upower_enable)
+		return &p_upower_tbl_infos;
+	else
+		return NULL;
 
 }
 EXPORT_SYMBOL(upower_get_tbl);
@@ -105,25 +108,17 @@ struct upower_tbl *upower_get_core_tbl(unsigned int cpu)
 {
 	struct upower_tbl *ptr_tbl;
 	struct upower_tbl_info *ptr_tbl_info;
-#ifdef FIRST_CLUSTER_IS_L
-	enum upower_bank bank = UPOWER_BANK_L;
-#else
 	enum upower_bank bank = UPOWER_BANK_LL;
-#endif
 
-#ifdef FIRST_CLUSTER_IS_L
-	if (cpu < 4) /* cpu 0-3 */
-		bank = UPOWER_BANK_L;
-	else if (cpu < 8) /* cpu 4-7 */
-		bank = UPOWER_BANK_B;
-#else
+	if (!upower_enable)
+		return NULL;
+
 	if (cpu < 4) /* cpu 0-3 */
 		bank = UPOWER_BANK_LL;
 	else if (cpu < 8) /* cpu 4-7 */
 		bank = UPOWER_BANK_LL + 1;
 	else if (cpu < 10) /* cpu 8-9 */
 		bank = UPOWER_BANK_LL + 2;
-#endif
 
 #ifdef UPOWER_L_PLUS
 	if (cpu == UPOWER_L_PLUS_CORE)
@@ -147,6 +142,9 @@ upower_dtype type)
 	struct upower_tbl *ptr_tbl;
 	struct upower_tbl_info *ptr_tbl_info;
 
+	if (upower_enable == 0)
+		return 0;
+
 	#ifdef UPOWER_PROFILE_API_TIME
 	upower_get_start_time_us(GET_PWR);
 	#endif
@@ -159,8 +157,6 @@ upower_dtype type)
 	ptr_tbl_info = rcu_dereference(p_upower_tbl_infos);
 	ptr_tbl = ptr_tbl_info[bank].p_upower_tbl;
 	idx = ptr_tbl->lkg_idx;
-	if (idx >= NR_UPOWER_DEGREE)
-		idx = 0;
 	ret = (type == UPOWER_DYN) ? ptr_tbl->row[volt_idx].dyn_pwr :
 			(type == UPOWER_LKG) ? ptr_tbl->row[volt_idx].lkg_pwr[idx] :
 			ptr_tbl->row[volt_idx].cap;
@@ -169,8 +165,6 @@ upower_dtype type)
 	ptr_tbl_info = p_upower_tbl_infos;
 	ptr_tbl = ptr_tbl_info[bank].p_upower_tbl;
 	idx = ptr_tbl->lkg_idx;
-	if (idx >= NR_UPOWER_DEGREE)
-		idx = 0;
 	ret = (type == UPOWER_DYN) ? ptr_tbl->row[volt_idx].dyn_pwr :
 			(type == UPOWER_LKG) ? ptr_tbl->row[volt_idx].lkg_pwr[idx] :
 			ptr_tbl->row[volt_idx].cap;

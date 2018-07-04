@@ -326,7 +326,6 @@ static int _hps_task_main(void *data)
 
 #ifdef CONFIG_MTK_ACAO_SUPPORT
 	unsigned int cpu, first_cpu, i;
-	unsigned int cpu_onoff = 0;
 	ktime_t enter_ktime;
 
 	enter_ktime = ktime_get();
@@ -371,16 +370,13 @@ ACAO_HPS_START:
 
 	aee_rr_rec_hps_cb_footprint(2);
 	aee_rr_rec_hps_cb_fp_times((u64) ktime_to_ms(ktime_get()));
-	/*Debug message dump*/
+	/*Debgu message dump*/
 	for (i = 0 ; i < 8 ; i++) {
-
-		if (i >= setup_max_cpus)
-			break;
-
 		if (cpumask_test_cpu(i, hps_ctxt.online_core))
-			cpu_onoff |= (1<<i);
+			pr_info("CPU %d ==>1\n", i);
+		else
+			pr_info("CPU %d ==>0\n", i);
 	}
-	pr_info("CPU request is 0x%x\n", cpu_onoff);
 
 	if (!cpumask_empty(hps_ctxt.online_core)) {
 		aee_rr_rec_hps_cb_footprint(3);
@@ -397,10 +393,6 @@ ACAO_HPS_START:
 		aee_rr_rec_hps_cb_fp_times((u64) ktime_to_ms(ktime_get()));
 
 		for_each_possible_cpu(cpu) {
-
-			if (cpu >= setup_max_cpus)
-				break;
-
 			if (cpumask_test_cpu(cpu, hps_ctxt.online_core)) {
 				if (!cpu_online(cpu)) {
 					aee_rr_rec_hps_cb_footprint(5);
@@ -563,7 +555,6 @@ void hps_task_wakeup(void)
 static void ppm_limit_callback(struct ppm_client_req req)
 {
 	struct ppm_client_req *p = (struct ppm_client_req *)&req;
-
 #ifdef CONFIG_MTK_ACAO_SUPPORT
 #if 1
 	mutex_lock(&hps_ctxt.para_lock);
@@ -637,8 +628,9 @@ static void ppm_limit_callback(struct ppm_client_req req)
 int hps_core_init(void)
 {
 	int r = 0;
-	hps_warn("hps_core_init, setup_max_cpus ==> %d\n", setup_max_cpus);
+
 #ifndef CONFIG_MTK_ACAO_SUPPORT
+	hps_warn("hps_core_init\n");
 	if (hps_ctxt.periodical_by == HPS_PERIODICAL_BY_TIMER) {
 		/*init timer */
 		init_timer(&hps_ctxt.tmr_list);

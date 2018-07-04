@@ -19,7 +19,7 @@ config MTK_PRINTK_UART_CONSOLE
 
 config LOG_TOO_MUCH_WARNING
 	bool "printk too much warning"
-	default y
+	default n
 	depends on PRINTK_MT_PREFIX
 	help
 	  LOG_TOO_MUCH_WARNING which is used to control whether to

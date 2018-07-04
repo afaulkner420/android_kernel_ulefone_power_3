@@ -21,7 +21,8 @@
 #include "ccci_config.h"
 #include <linux/clk.h>
 #include <mach/mtk_pbm.h>
-#include <mt_emi_api.h>
+#include <mach/emi_mpu.h>
+#include <emi_mbw.h>
 
 #ifdef FEATURE_INFORM_NFC_VSIM_CHANGE
 #include <mach/mt6605.h>
@@ -89,12 +90,6 @@ void md_cldma_hw_reset(unsigned char md_id)
 	reg_value |= (CLDMA_PD_RST_MASK);
 	ccci_write32(infra_ao_base, INFRA_RST1_REG_PD, reg_value);
 	CCCI_DEBUG_LOG(md_id, TAG, "md_cldma_hw_reset:done\n");
-
-	/* set cldma wakeup source mask */
-	reg_value = ccci_read32(infra_ao_base, INFRA_CLDMA_CTRL_REG);
-	reg_value |= (CLDMA_IP_BUSY_MASK);
-	ccci_write32(infra_ao_base, INFRA_CLDMA_CTRL_REG, reg_value);
-	CCCI_DEBUG_LOG(md_id, TAG, "set cldma ctrl reg as:0x%x\n", reg_value);
 }
 
 int md_cd_get_modem_hw_info(struct platform_device *dev_ptr, struct ccci_dev_cfg *dev_cfg, struct md_hw_info *hw_info)
@@ -1093,7 +1088,7 @@ void ccci_modem_restore_reg(struct ccci_modem *md)
 {
 	struct md_cd_ctrl *md_ctrl = (struct md_cd_ctrl *)ccci_hif_get_by_id(CLDMA_HIF_ID);
 	struct md_sys1_info *md_info = (struct md_sys1_info *)md->private_data;
-	enum MD_STATE md_state = ccci_fsm_get_md_state(md->index);
+	MD_STATE md_state = ccci_fsm_get_md_state(md->index);
 	int i;
 	unsigned long flags;
 	unsigned int val = 0;

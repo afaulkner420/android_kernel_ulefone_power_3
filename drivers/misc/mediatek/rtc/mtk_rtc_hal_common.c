@@ -29,7 +29,6 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/types.h>
-#include <linux/sched.h>
 
 #include <mach/mtk_rtc_hal.h>
 #include <mtk_rtc_hw.h>
@@ -38,6 +37,13 @@
 
 #define hal_rtc_xinfo(fmt, args...)		\
 		pr_notice(fmt, ##args)
+
+#define hal_rtc_xerror(fmt, args...)	\
+		pr_err(fmt, ##args)
+
+#define hal_rtc_xfatal(fmt, args...)	\
+		pr_emerg(fmt, ##args)
+
 
 u16 rtc_read(u16 addr)
 {
@@ -54,18 +60,10 @@ void rtc_write(u16 addr, u16 data)
 
 void rtc_busy_wait(void)
 {
-	unsigned long long timeout = sched_clock() + 500000000;
-
 	do {
-		if ((rtc_read(RTC_BBPU) & RTC_BBPU_CBUSY) == 0)
-			break;
-		else if (sched_clock() > timeout) {
-			pr_err("%s, wait cbusy timeout, %x, %x, %x, %d\n", __func__,
-				rtc_read(RTC_BBPU), rtc_read(RTC_POWERKEY1),
-				rtc_read(RTC_POWERKEY2), rtc_read(RTC_TC_SEC));
-			break;
-		}
-	} while (1);
+		while (rtc_read(RTC_BBPU) & RTC_BBPU_CBUSY)
+			;
+	} while (0);
 }
 
 void rtc_write_trigger(void)
@@ -120,7 +118,7 @@ void rtc_set_writeif(bool enable)
 	}
 }
 
-void hal_rtc_set_spare_register(enum rtc_spare_enum cmd, u16 val)
+void hal_rtc_set_spare_register(rtc_spare_enum cmd, u16 val)
 {
 	u16 tmp_val;
 
@@ -138,7 +136,7 @@ void hal_rtc_set_spare_register(enum rtc_spare_enum cmd, u16 val)
 	}
 }
 
-u16 hal_rtc_get_spare_register(enum rtc_spare_enum cmd)
+u16 hal_rtc_get_spare_register(rtc_spare_enum cmd)
 {
 	u16 tmp_val;
 
@@ -174,7 +172,6 @@ void hal_rtc_get_tick_time(struct rtc_time *tm)
 	rtc_get_tick(tm);
 	bbpu = rtc_read(RTC_BBPU) | RTC_BBPU_KEY | RTC_BBPU_RELOAD;
 	rtc_write(RTC_BBPU, bbpu);
-	rtc_write_trigger();
 	if (rtc_read(RTC_INT_CNT) < tm->tm_cnt) {	/* SEC has carried */
 		rtc_get_tick(tm);
 	}
@@ -291,7 +288,7 @@ void rtc_lp_exception(void)
 	mdelay(2000);
 	sec2 = rtc_read(RTC_TC_SEC);
 
-	pr_emerg("!!! 32K WAS STOPPED !!!\n"
+	hal_rtc_xfatal("!!! 32K WAS STOPPED !!!\n"
 		       "RTC_BBPU      = 0x%x\n"
 		       "RTC_IRQ_STA   = 0x%x\n"
 		       "RTC_IRQ_EN    = 0x%x\n"

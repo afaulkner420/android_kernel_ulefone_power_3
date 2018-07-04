@@ -965,18 +965,6 @@ ktime_t tick_nohz_get_sleep_length(void)
 	return ts->sleep_length;
 }
 
-/**
- * tick_nohz_get_idle_calls - return the current idle calls counter value
- *
- * Called from the schedutil frequency scaling governor in scheduler context.
- */
-unsigned long tick_nohz_get_idle_calls(void)
-{
-	struct tick_sched *ts = this_cpu_ptr(&tick_cpu_sched);
-
-	return ts->idle_calls;
-}
-
 static void tick_nohz_account_idle_ticks(struct tick_sched *ts)
 {
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING_NATIVE
@@ -1236,12 +1224,7 @@ void tick_cancel_sched_timer(int cpu)
 		hrtimer_cancel(&ts->sched_timer);
 # endif
 
-#ifdef CONFIG_MEDIATEK_SOLUTION
-	/* Do not memset to 0 to avoid idle time be cleared to 0 after CPU plug-off */
-	ts->nohz_mode = NOHZ_MODE_INACTIVE;
-#else
 	memset(ts, 0, sizeof(*ts));
-#endif
 }
 #endif
 

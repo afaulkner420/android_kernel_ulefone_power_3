@@ -65,9 +65,6 @@ static const struct of_device_id otg_switch_of_match[] = {
 
 #endif
 
-#ifdef CONFIG_USB_VBUS_GPIO
-struct platform_device *g_pdev;
-#endif
 static const struct of_device_id otg_iddig_of_match[] = {
 	{.compatible = "mediatek,usb_iddig_bi_eint"},
 	{},
@@ -88,7 +85,7 @@ static enum idpin_state mtk_idpin_cur_stat = IDPIN_OUT;
 static struct delayed_work mtk_xhci_delaywork;
 
 int mtk_iddig_debounce = 50;
-module_param(mtk_iddig_debounce, int, 0400);
+module_param(mtk_iddig_debounce, int, 0644);
 
 void switch_int_to_host_and_mask(void)
 {
@@ -229,9 +226,6 @@ static int otg_iddig_probe(struct platform_device *pdev)
 	int iddig_gpio, iddig_debounce;
 	u32 ints[2] = {0, 0};
 
-#ifdef CONFIG_USB_VBUS_GPIO
-	g_pdev = pdev;
-#endif
 
 	mtk_idpin_irqnum = irq_of_parse_and_map(node, 0);
 	if (mtk_idpin_irqnum < 0)

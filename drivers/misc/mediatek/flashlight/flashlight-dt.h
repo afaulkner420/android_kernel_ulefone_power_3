@@ -16,25 +16,13 @@
 
 #define DUMMY_DTNAME      "mediatek,flashlights_dummy_gpio"
 #define DUMMY_DTNAME_I2C  "mediatek,flashlights_dummy_i2c"
-#define LED191_DTNAME     "mediatek,flashlights_led191"
-#define LM3642_DTNAME     "mediatek,flashlights_lm3642"
-#define LM3642_DTNAME_I2C "mediatek,strobe_main"
 #define LM3643_DTNAME     "mediatek,flashlights_lm3643"
 #define LM3643_DTNAME_I2C "mediatek,strobe_main"
-#define LM3644_DTNAME     "mediatek,flashlights_lm3644"
-#define LM3644_DTNAME_I2C "mediatek,strobe_main"
-#define MT6336_DTNAME     "mediatek,flashlights_mt6336"
-#define MT6370_DTNAME     "mediatek,flashlights_mt6370"
-#define RT4505_DTNAME     "mediatek,flashlights_rt4505"
-#define RT4505_DTNAME_I2C "mediatek,strobe_main"
+#define RT4505_DTNAME_I2C "mediatek,flashlights_rt4505_i2c"
 #define RT5081_DTNAME     "mediatek,flashlights_rt5081"
-//modify by ming.liao@reallytek.com for X604 start
-#define LM3648_DTNAME     "mediatek,flashlights_lm3648"
-#define LM3648_DTNAME_I2C "mediatek,strobe_sub"
-//modify by ming.liao@reallytek.com for X604 end
-//modify XLLWHLSE-4 bring up flashlight in x605 by luyan.ye 20180118 start
-#define AW3644_DTNAME     "mediatek,flashlights_aw3644"
-#define AW3644_DTNAME_I2C "mediatek,strobe_main"
-//modify XLLWHLSE-4 bring up flashlight in x605 by luyan.ye 20180118 end
+#define MT6336_DTNAME     "mediatek,flashlights_mt6336"
+
+#define LM3642_DTNAME     "mediatek,flashlights_lm3642"
+#define LM3642_DTNAME_I2C "mediatek,strobe_main"
 
 #endif /* _FLASHLIGHT_DT_H */

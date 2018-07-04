@@ -12,7 +12,6 @@
  *
  */
 
-#include <linux/aio.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/cdev.h>
@@ -23,7 +22,6 @@
 #include <linux/completion.h>
 #include <linux/sched.h>
 #include <linux/compat.h>
-#include <linux/uio.h>
 
 #include <linux/virtio.h>
 #include <linux/virtio_ids.h>
@@ -950,12 +948,12 @@ static inline bool _got_rx(struct tipc_dn_chan *dn)
 	return false;
 }
 
-static ssize_t tipc_read_iter(struct kiocb *iocb, struct iov_iter *iter)
+static ssize_t tipc_read(struct file *filp, char __user *buf, size_t buf_len,
+			 loff_t *offp)
 {
 	ssize_t ret;
-	size_t len;
+	size_t  data_len;
 	struct tipc_msg_buf *mb;
-	struct file *filp = iocb->ki_filp;
 	struct tipc_dn_chan *dn = filp->private_data;
 
 	mutex_lock(&dn->lock);
@@ -986,18 +984,18 @@ static ssize_t tipc_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 	mb = list_first_entry(&dn->rx_msg_queue, struct tipc_msg_buf, node);
 
-	len = mb_avail_data(mb);
-	if (len > iov_iter_count(iter)) {
+	data_len = mb_avail_data(mb);
+	if (data_len > buf_len) {
 		ret = -EMSGSIZE;
 		goto out;
 	}
 
-	if (copy_to_iter(mb_get_data(mb, len), len, iter) != len) {
+	if (copy_to_user(buf, mb_get_data(mb, data_len), data_len)) {
 		ret = -EFAULT;
 		goto out;
 	}
 
-	ret = len;
+	ret = data_len;
 	list_del(&mb->node);
 	tipc_chan_put_rxbuf(dn->chan, mb);
 
@@ -1006,13 +1004,12 @@ out:
 	return ret;
 }
 
-static ssize_t tipc_write_iter(struct kiocb *iocb, struct iov_iter *iter)
+static ssize_t tipc_write(struct file *filp, const char __user *ubuf,
+			  size_t len, loff_t *offp)
 {
 	ssize_t ret;
-	size_t len;
 	long timeout = TXBUF_TIMEOUT;
 	struct tipc_msg_buf *txbuf = NULL;
-	struct file *filp = iocb->ki_filp;
 	struct tipc_dn_chan *dn = filp->private_data;
 
 	if (filp->f_flags & O_NONBLOCK)
@@ -1022,9 +1019,6 @@ static ssize_t tipc_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 	if (IS_ERR(txbuf))
 		return PTR_ERR(txbuf);
 
-	/* message length */
-	len = iov_iter_count(iter);
-
 	/* check available space */
 	if (len > mb_avail_space(txbuf)) {
 		ret = -EMSGSIZE;
@@ -1032,7 +1026,7 @@ static ssize_t tipc_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 	}
 
 	/* copy in message data */
-	if (copy_from_iter(mb_put_data(txbuf, len), len, iter) != len) {
+	if (copy_from_user(mb_put_data(txbuf, len), ubuf, len)) {
 		ret = -EFAULT;
 		goto err_out;
 	}
@@ -1099,8 +1093,8 @@ static const struct file_operations tipc_fops = {
 #if defined(CONFIG_COMPAT)
 	.compat_ioctl	= tipc_compat_ioctl,
 #endif
-	.read_iter	= tipc_read_iter,
-	.write_iter	= tipc_write_iter,
+	.read		= tipc_read,
+	.write		= tipc_write,
 	.poll		= tipc_poll,
 	.owner		= THIS_MODULE,
 };

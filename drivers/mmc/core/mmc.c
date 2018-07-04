@@ -627,12 +627,6 @@ static int mmc_decode_ext_csd(struct mmc_card *card, u8 *ext_csd)
 		card->ext_csd.ffu_capable =
 			(ext_csd[EXT_CSD_SUPPORTED_MODE] & 0x1) &&
 			!(ext_csd[EXT_CSD_FW_CONFIG] & 0x1);
-
-		card->ext_csd.pre_eol_info = ext_csd[EXT_CSD_PRE_EOL_INFO];
-		card->ext_csd.device_life_time_est_typ_a =
-			ext_csd[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A];
-		card->ext_csd.device_life_time_est_typ_b =
-			ext_csd[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B];
 	}
 
 #ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
@@ -699,13 +693,6 @@ static int mmc_compare_ext_csds(struct mmc_card *card, unsigned bus_width)
 {
 	u8 *bw_ext_csd;
 	int err;
-
-#if defined(CONFIG_MTK_EMMC_CQ_SUPPORT)
-	/* add for emmc reset when error happen */
-	/* return directly because compare fail seldom happens when reinit emmc */
-	if (emmc_resetting_when_cmdq)
-		return 0;
-#endif
 
 	if (bus_width == MMC_BUS_WIDTH_1)
 		return 0;
@@ -789,11 +776,6 @@ MMC_DEV_ATTR(manfid, "0x%06x\n", card->cid.manfid);
 MMC_DEV_ATTR(name, "%s\n", card->cid.prod_name);
 MMC_DEV_ATTR(oemid, "0x%04x\n", card->cid.oemid);
 MMC_DEV_ATTR(prv, "0x%x\n", card->cid.prv);
-MMC_DEV_ATTR(rev, "0x%x\n", card->ext_csd.rev);
-MMC_DEV_ATTR(pre_eol_info, "%02x\n", card->ext_csd.pre_eol_info);
-MMC_DEV_ATTR(life_time, "0x%02x 0x%02x\n",
-	card->ext_csd.device_life_time_est_typ_a,
-	card->ext_csd.device_life_time_est_typ_b);
 MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
 MMC_DEV_ATTR(enhanced_area_offset, "%llu\n",
 		card->ext_csd.enhanced_area_offset);
@@ -831,9 +813,6 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_oemid.attr,
 	&dev_attr_prv.attr,
-	&dev_attr_rev.attr,
-	&dev_attr_pre_eol_info.attr,
-	&dev_attr_life_time.attr,
 	&dev_attr_serial.attr,
 	&dev_attr_enhanced_area_offset.attr,
 	&dev_attr_enhanced_area_size.attr,
@@ -1678,10 +1657,10 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 		err = mmc_select_hs400(card);
 		if (err)
 			goto free_card;
-	} else {
+	} else if (mmc_card_hs(card)) {
 		/* Select the desired bus width optionally */
 		err = mmc_select_bus_width(card);
-		if (!IS_ERR_VALUE(err) && mmc_card_hs(card)) {
+		if (!IS_ERR_VALUE(err)) {
 			err = mmc_select_hs_ddr(card);
 			if (err)
 				goto free_card;
@@ -1790,10 +1769,12 @@ err:
 	return err;
 }
 
+#ifdef CONFIG_MMC_FFU
 int mmc_reinit_oldcard(struct mmc_host *host)
 {
 	return mmc_init_card(host, host->card->ocr, host->card);
 }
+#endif
 
 static int mmc_cache_ctrl(struct mmc_host *host, u8 enable)
 {
@@ -2076,10 +2057,8 @@ static int _mmc_resume(struct mmc_host *host)
 
 	if (mmc_card_is_sleep(host->card) && mmc_can_sleep(host->card)) {
 		err = mmc_awake(host);
-		/*
-		 * No matter if err happens, we should guarantee mmc can run
-		 * suspend next time.
-		 */
+		if (err)
+			goto out;
 		mmc_card_clr_sleep(host->card);
 	} else
 		err = mmc_init_card(host, host->card->ocr, host->card);
@@ -2088,7 +2067,7 @@ static int _mmc_resume(struct mmc_host *host)
 	/*
 	 * Turn on cache if eMMC reversion before v5.0
 	 */
-	if (!err && host->card->ext_csd.rev < 7)
+	if (host->card->ext_csd.rev < 7)
 		err = mmc_cache_ctrl(host, 1);
 
 out:

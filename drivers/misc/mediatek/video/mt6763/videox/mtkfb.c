@@ -71,11 +71,6 @@
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 #include "external_display.h"
 #endif
-#ifndef _UAPI__ASMARM_SETUP_H
-#define _UAPI__ASMARM_SETUP_H
-#endif
-#include <mt-plat/mtk_ccci_common.h>
-#include "ddp_dsi.h"
 
 /* static variable */
 static u32 MTK_FB_XRES;
@@ -1509,8 +1504,7 @@ static int mtkfb_ioctl(struct fb_info *info, unsigned int cmd, unsigned long arg
 
 				for (i = 0; i < VIDEO_LAYER_COUNT; ++i) {
 					if (layerInfo[i].layer_id >= TOTAL_OVL_LAYER_NUM) {
-						disp_aee_print
-						    ("MTKFB_SET_VIDEO_LAYERS, layer_id invalid=%d\n",
+						DISPERR("MTKFB_SET_VIDEO_LAYERS, layer_id invalid=%d\n",
 						     layerInfo[i].layer_id);
 						continue;
 					}
@@ -2212,20 +2206,21 @@ static void _mtkfb_draw_block(unsigned long addr, unsigned int x, unsigned int y
 			mt_reg_sync_writel(color, (start_addr + i * 4 + j * MTK_FB_XRESV * 4));
 	}
 }
-/* add XLLSHLSS-3 by tao.wang 20171211 start */
-#if defined(CONFIG_TRAN_SYSTEM_DEVINFO)
-extern void app_get_lcm_name(char *name);
-#endif
-/* add XLLSHLSS-3 by tao.wang 20171211 end */
+
 char *mtkfb_find_lcm_driver(void)
 {
 	_parse_tag_videolfb();
 	DISPMSG("%s, %s\n", __func__, mtkfb_lcm_name);
-/* add XLLSHLSS-3 by tao.wang 20171211 start */
-#if defined(CONFIG_TRAN_SYSTEM_DEVINFO)
-	app_get_lcm_name(mtkfb_lcm_name);
+/* Vanzo:maxiaojun on: Mon, 26 Aug 2013 17:04:18 +0800
+    * board device name support.
+     */
+#ifdef VANZO_DEVICE_NAME_SUPPORT
+    {
+        extern void v_set_dev_name(int id, char *name);
+        v_set_dev_name(1, mtkfb_lcm_name);
+    }
 #endif
-/* add XLLSHLSS-3 by tao.wang 20171211 start */
+// End of Vanzo:maxiaojun
 	return mtkfb_lcm_name;
 }
 
@@ -2361,7 +2356,7 @@ static int __parse_tag_videolfb(struct device_node *node)
 	videolfb_tag = (struct tag_videolfb *)of_get_property(node, "atag,videolfb", (int *)&size);
 	if (videolfb_tag) {
 		memset((void *)mtkfb_lcm_name, 0, sizeof(mtkfb_lcm_name));
-		strncpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname, sizeof(mtkfb_lcm_name));
+		strcpy((char *)mtkfb_lcm_name, videolfb_tag->lcmname);
 		mtkfb_lcm_name[strlen(videolfb_tag->lcmname)] = '\0';
 
 		lcd_fps = videolfb_tag->fps;
@@ -2746,11 +2741,6 @@ static int mtkfb_probe(struct platform_device *pdev)
 
 	fbdev->state = MTKFB_ACTIVE;
 
-	if (!strcmp(mtkfb_find_lcm_driver(), "oppo17321_tianma_td4310_1080p_dsi_vdo") ||
-	    !strcmp(mtkfb_find_lcm_driver(), "oppo17321_tianma_nt36672_1080p_dsi_vdo")) {
-		register_ccci_sys_call_back(MD_SYS1, MD_DISPLAY_DYNAMIC_MIPI, mipi_clk_change);
-	}
-
 	MSG_FUNC_LEAVE();
 	return 0;
 
@@ -2780,12 +2770,11 @@ static int mtkfb_remove(struct platform_device *pdev)
 /* PM suspend */
 static int mtkfb_suspend(struct platform_device *pdev, pm_message_t mesg)
 {
-	DISPFUNC();
 	NOT_REFERENCED(pdev);
 	MSG_FUNC_ENTER();
 	MTKFB_LOG("[FB Driver] mtkfb_suspend(): 0x%x\n", mesg.event);
-	/* memory session suspend */
-	ovl2mem_suspend();
+	ovl2mem_wait_done();
+
 	MSG_FUNC_LEAVE();
 	return 0;
 }

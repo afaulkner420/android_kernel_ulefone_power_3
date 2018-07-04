@@ -50,7 +50,6 @@ static int i2c_read(u8 a_u2Addr, u8 *a_puBuff)
 {
 	int i4RetValue = 0;
 	char puReadCmd[1] = { (char)(a_u2Addr) };
-
 	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puReadCmd, 1);
 	if (i4RetValue != 2) {
 		LOG_INF(" I2C write failed!!\n");
@@ -69,7 +68,6 @@ static int i2c_read(u8 a_u2Addr, u8 *a_puBuff)
 static u8 read_data(u8 addr)
 {
 	u8 get_byte = 0;
-
 	i2c_read(addr, &get_byte);
 
 	return get_byte;
@@ -102,9 +100,9 @@ static int s4AF_WriteReg(u16 a_u2Data)
 	return 0;
 }
 
-static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
+static inline int getAFInfo(__user stAF_MotorInfo *pstMotorInfo)
 {
-	struct stAF_MotorInfo stMotorInfo;
+	stAF_MotorInfo stMotorInfo;
 
 	stMotorInfo.u4MacroPosition = g_u4AF_MACRO;
 	stMotorInfo.u4InfPosition = g_u4AF_INF;
@@ -118,26 +116,18 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 	else
 		stMotorInfo.bIsMotorOpen = 0;
 
-	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(struct stAF_MotorInfo)))
+	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(stAF_MotorInfo)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	return 0;
 }
 
-static int initdrv(void)
+static void initdrv(void)
 {
-	int i4RetValue = 0;
 	char puSendCmd2[2] = { 0x01, 0x39 };
 	char puSendCmd3[2] = { 0x05, 0x65 };
-
-	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
-
-	if (i4RetValue < 0)
-		return -1;
-
-	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
-
-	return i4RetValue;
+	i2c_master_send(g_pstAF_I2Cclient, puSendCmd2, 2);
+	i2c_master_send(g_pstAF_I2Cclient, puSendCmd3, 2);
 }
 
 
@@ -190,10 +180,9 @@ static inline int moveAF(unsigned long a_u4Position)
 		spin_unlock(g_pAF_SpinLock);
 	} else {
 		LOG_INF("set I2C failed when moving the motor\n");
-		ret = -1;
 	}
 
-	return ret;
+	return 0;
 }
 
 static inline int setAFInf(unsigned long a_u4Position)
@@ -219,7 +208,7 @@ long DW9718AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned l
 
 	switch (a_u4Command) {
 	case AFIOC_G_MOTORINFO:
-		i4RetValue = getAFInfo((__user struct stAF_MotorInfo *) (a_u4Param));
+		i4RetValue = getAFInfo((__user stAF_MotorInfo *) (a_u4Param));
 		break;
 
 	case AFIOC_T_MOVETO:

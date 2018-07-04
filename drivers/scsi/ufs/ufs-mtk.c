@@ -10,14 +10,12 @@
 */
 
 #include "ufs.h"
-#include <linux/hie.h>
 #include <linux/nls.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/rpmb.h>
 #include <linux/blkdev.h>
-#include <linux/blk_types.h>
 
 #include "ufshcd.h"
 #include "ufshcd-pltfrm.h"
@@ -25,18 +23,17 @@
 #include "ufs-mtk.h"
 #include "ufs-mtk-block.h"
 #include "ufs-mtk-platform.h"
-#include "ufs-dbg.h"
+#include <scsi/ufs/ufs-mtk-ioctl.h>
 
 #include <mt-plat/mtk_partition.h>
-#include <mt-plat/mtk_secure_api.h>
-#include <scsi/ufs/ufs-mtk-ioctl.h>
+#include "mtk_secure_api.h"
+#include "ufs-dbg.h"
 
 /* Query request retries */
 #define QUERY_REQ_RETRIES 10
 
 static struct ufs_dev_fix ufs_fixups[] = {
 	/* UFS cards deviations table */
-	UFS_FIX(UFS_VENDOR_TOSHIBA, UFS_ANY_MODEL, UFS_DEVICE_QUIRK_DELAY_BEFORE_DISABLE_REF_CLK),
 	UFS_FIX(UFS_VENDOR_SKHYNIX, UFS_ANY_MODEL, UFS_DEVICE_QUIRK_LIMITED_RPMB_MAX_RW_SIZE),
 	END_FIX
 };
@@ -51,7 +48,7 @@ bool ufs_mtk_host_scramble_enable;
 bool ufs_mtk_tr_cn_used;
 struct ufs_hba *ufs_mtk_hba;
 
-static bool ufs_mtk_is_data_cmd(char cmd_op);
+static bool ufs_mtk_is_data_write_cmd(char cmd_op);
 
 void ufs_mtk_dump_reg(struct ufs_hba *hba)
 {
@@ -191,68 +188,33 @@ static void ufs_mtk_advertise_hci_quirks(struct ufs_hba *hba)
 
 #ifdef CONFIG_MTK_HW_FDE
 /**
- * ufs_mtk_hwfde_cfg_cmd - configure command for hw fde
+ * ufs_mtk_hwfde_key_config - configure key for hw fde
  * @hba: host controller instance
  * @cmd: scsi command instance
  *
  * HW FDE key may be changed by updating master key by end-user's behavior.
  * Update new key to crypto IP if necessary.
  *
- * Host lock must be held during key update in atf.
+ * Host lock must be held during this configuration.
  */
-void ufs_mtk_hwfde_cfg_cmd(struct ufs_hba *hba,
-	struct scsi_cmnd *cmd)
+void ufs_mtk_hwfde_key_config(struct ufs_hba *hba, struct scsi_cmnd *cmd)
 {
-	u32 dunl, dunu, lba;
-	unsigned long flags;
-	int hwfde_key_idx_old;
-	struct ufshcd_lrb *lrbp;
-
-	lrbp = &hba->lrb[cmd->request->tag];
-
 	/* for r/w request only */
-	if (cmd->request->bio && cmd->request->bio->bi_hw_fde) {
+	if (cmd->request->bio) {
 
 		/* in case hw fde is enabled and key index is updated by dm-crypt */
-		if (cmd->request->bio->bi_key_idx != hba->crypto_hwfde_key_idx) {
-
-			/* acquire host lock to ensure atomicity during key change in atf */
-			spin_lock_irqsave(hba->host->host_lock, flags);
+		if (cmd->request->bio->bi_hw_fde &&
+			cmd->request->bio->bi_key_idx != hba->hwfde_key_idx) {
 
 			/* do key change */
 			mt_secure_call(MTK_SIP_KERNEL_HW_FDE_UFS_CTL, (1 << 3), 0, 0);
 
-			hwfde_key_idx_old = hba->crypto_hwfde_key_idx;
-			hba->crypto_hwfde_key_idx = cmd->request->bio->bi_key_idx;
-
-			spin_unlock_irqrestore(hba->host->host_lock, flags);
-
-			dev_info(hba->dev, "update hw-fde key, ver %d->%d\n", hwfde_key_idx_old,
-				hba->crypto_hwfde_key_idx);
+			hba->hwfde_key_idx = cmd->request->bio->bi_key_idx;
 		}
-
-		lba = ((cmd->cmnd[2]) << 24) | ((cmd->cmnd[3]) << 16) |
-		((cmd->cmnd[4]) << 8) | (cmd->cmnd[5]);
-
-		ufs_mtk_crypto_cal_dun(UFS_CRYPTO_ALGO_ESSIV_AES_CBC, lba, &dunl, &dunu);
-
-		lrbp->crypto_cfgid = 0;
-		lrbp->crypto_dunl = dunl;
-		lrbp->crypto_dunu = dunu;
-		lrbp->crypto_en = 1;
-
-		/* mark data has ever gone through encryption/decryption path */
-		hba->crypto_feature |= UFS_CRYPTO_HW_FDE_ENCRYPTED;
-
-	} else {
-		/* disable inline encryption */
-		lrbp->crypto_en = 0;
 	}
 }
-
 #else
-void ufs_mtk_hwfde_cfg_cmd(struct ufs_hba *hba,
-	struct scsi_cmnd *cmd) {};
+void ufs_mtk_hwfde_key_config(struct ufs_hba *hba, struct scsi_cmnd *cmd) {};
 #endif
 
 int ufs_mtk_perf_heurisic_if_allow_cmd(struct ufs_hba *hba, struct scsi_cmnd *cmd)
@@ -376,7 +338,7 @@ static int ufs_mtk_init(struct ufs_hba *hba)
 	ufs_mtk_host_scramble_enable = 0;
 	ufs_mtk_tr_cn_used = 0;
 	ufs_mtk_hba = hba;
-	hba->crypto_hwfde_key_idx = -1;
+	hba->hwfde_key_idx = -1;
 
 	ufs_mtk_pltfrm_init();
 
@@ -442,14 +404,8 @@ static int ufs_mtk_pre_pwr_change(struct ufs_hba *hba,
 #if 0 /* standard way: use the maximum speed supported by device */
 	memcpy(final, desired, sizeof(struct ufs_pa_layer_attr));
 #else /* for compatibility, use assigned speed temporarily */
-/* HSG3B as default power mode, only use HSG1B at FPGA */
-#ifndef CONFIG_FPGA_EARLY_PORTING
 	final->gear_rx = 3;
 	final->gear_tx = 3;
-#else
-	final->gear_rx = 1;
-	final->gear_tx = 1;
-#endif
 	final->lane_rx = 1;
 	final->lane_tx = 1;
 	final->hs_rate = PA_HS_MODE_B;
@@ -604,13 +560,6 @@ static int ufs_mtk_post_link(struct ufs_hba *hba)
 
 #endif
 
-#ifdef CONFIG_HIE
-
-	/* init ufs crypto IP for HIE */
-	mt_secure_call(MTK_SIP_KERNEL_CRYPTO_HIE_INIT, 0, 0, 0);
-
-#endif
-
 	/* enable unipro clock gating feature */
 	ufs_mtk_cfg_unipro_cg(hba, true);
 
@@ -655,13 +604,6 @@ static int ufs_mtk_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 
 		/* HW FDE related suspend operation */
 		mt_secure_call(MTK_SIP_KERNEL_HW_FDE_UFS_CTL, (1 << 1), 0, 0);
-
-#endif
-
-#ifdef CONFIG_HIE
-
-		/* hie suspend handling: reset key hint */
-		hie_kh_reset(ufs_mtk_hie_get_dev());
 
 #endif
 	}
@@ -1089,7 +1031,7 @@ int ufs_mtk_ioctl_ffu(struct scsi_device *dev, void __user *buf_user)
 	struct ufs_ioctl_ffu_data *idata = NULL;
 	struct ufs_ioctl_ffu_data *idata_user = NULL;
 	int err = 0;
-	u32 attr = 0;
+	u32 attr;
 
 	idata = kzalloc(sizeof(struct ufs_ioctl_ffu_data), GFP_KERNEL);
 	if (!idata) {
@@ -1187,7 +1129,7 @@ int ufs_mtk_ioctl_query(struct ufs_hba *hba, u8 lun, void __user *buf_user)
 	int length = 0;
 	void *data_ptr;
 	bool flag;
-	u32 att = 0;
+	u32 att;
 	u8 *desc = NULL;
 	u8 read_desc, read_attr, write_attr, read_flag;
 
@@ -1762,11 +1704,11 @@ void ufs_mtk_crypto_cal_dun(u32 alg_id, u32 lba, u32 *dunl, u32 *dunu)
 		*dunu = 0;
 	} else {                             /* bitlocker dun use byte address */
 		*dunl = (lba & 0x7FFFF) << 12;   /* byte address for lower 32 bit */
-		*dunu = (lba >> (32 - 12)) << 12;  /* byte address for higher 32 bit */
+		*dunu = (lba >> (32-12)) << 12;  /* byte address for higher 32 bit */
 	}
 }
 
-bool ufs_mtk_is_data_write_cmd(char cmd_op)
+static bool ufs_mtk_is_data_write_cmd(char cmd_op)
 {
 	if (cmd_op == WRITE_10 || cmd_op == WRITE_16 || cmd_op == WRITE_6)
 		return true;
@@ -1774,7 +1716,7 @@ bool ufs_mtk_is_data_write_cmd(char cmd_op)
 	return false;
 }
 
-static bool ufs_mtk_is_data_cmd(char cmd_op)
+bool ufs_mtk_is_data_cmd(char cmd_op)
 {
 	if (cmd_op == WRITE_10 || cmd_op == READ_10 ||
 	    cmd_op == WRITE_16 || cmd_op == READ_16 ||
@@ -1844,7 +1786,7 @@ void ufs_mtk_dbg_dump_scsi_cmd(struct ufs_hba *hba, struct scsi_cmnd *cmd, u32 f
 
 #ifdef CONFIG_MTK_HW_FDE
 		if (cmd->request->bio && cmd->request->bio->bi_hw_fde) {
-			dev_info(hba->dev, "QCMD(C),L:%x,T:%d,0x%x,%s,LBA:%d,BCNT:%d,FUA:%d,FLUSH:%d\n",
+			dev_err(hba->dev, "QCMD(C),L:%x,T:%d,0x%x,%s,LBA:%d,BCNT:%d,FUA:%d,FLUSH:%d\n",
 				ufshcd_scsi_to_upiu_lun(cmd->device->lun), cmd->request->tag, cmd->cmnd[0],
 				ufs_mtk_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str,
 				lba, blk_cnt, fua, flush);
@@ -1852,25 +1794,195 @@ void ufs_mtk_dbg_dump_scsi_cmd(struct ufs_hba *hba, struct scsi_cmnd *cmd, u32 f
 		} else
 #endif
 		{
-			if (hie_request_crypted(cmd->request)) {
-				dev_info(hba->dev, "QCMD(H),L:%x,T:%d,0x%x,%s,LBA:%d,BCNT:%d,FUA:%d,FLUSH:%d\n",
-					ufshcd_scsi_to_upiu_lun(cmd->device->lun), cmd->request->tag, cmd->cmnd[0],
-					ufs_mtk_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str,
-					lba, blk_cnt, fua, flush);
-			} else {
-				dev_info(hba->dev, "QCMD,L:%x,T:%d,0x%x,%s,LBA:%d,BCNT:%d,FUA:%d,FLUSH:%d\n",
-					ufshcd_scsi_to_upiu_lun(cmd->device->lun), cmd->request->tag, cmd->cmnd[0],
-					ufs_mtk_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str,
-					lba, blk_cnt, fua, flush);
-			}
+			dev_err(hba->dev, "QCMD,L:%x,T:%d,0x%x,%s,LBA:%d,BCNT:%d,FUA:%d,FLUSH:%d\n",
+				ufshcd_scsi_to_upiu_lun(cmd->device->lun), cmd->request->tag, cmd->cmnd[0],
+				ufs_mtk_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str,
+				lba, blk_cnt, fua, flush);
 		}
 	} else {
-		dev_info(hba->dev, "QCMD,L:%x,T:%d,0x%x,%s\n",
+		dev_err(hba->dev, "QCMD,L:%x,T:%d,0x%x,%s\n",
 		ufshcd_scsi_to_upiu_lun(cmd->device->lun),
 			cmd->request->tag, cmd->cmnd[0],
 			ufs_mtk_cmd_str_tbl[ufs_mtk_get_cmd_str_idx(cmd->cmnd[0])].str);
 	}
 }
+
+struct ufs_mtk_trace_cmd_hlist_struct {
+	enum ufs_trace_event event;
+	u8 opcode;
+	u8 lun;
+	u32 tag;
+	u32 transfer_len;
+	sector_t lba;
+	u64 time;
+};
+
+#ifdef CONFIG_MTK_UFS_DEBUG
+#define MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT (500)
+
+struct ufs_mtk_trace_cmd_hlist_struct ufs_mtk_trace_cmd_hlist[MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT];
+int ufs_mtk_trace_cmd_ptr = MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT - 1;
+int ufs_mtk_trace_cnt;
+static spinlock_t ufs_mtk_cmd_dump_lock;
+static int ufs_mtk_is_cmd_dump_lock_init;
+
+void ufs_mtk_dbg_add_trace(enum ufs_trace_event event, u32 tag,
+	u8 lun, u32 transfer_len, sector_t lba, u8 opcode)
+{
+	int ptr;
+	unsigned long flags;
+
+	if (!ufs_mtk_is_cmd_dump_lock_init) {
+		spin_lock_init(&ufs_mtk_cmd_dump_lock);
+		ufs_mtk_is_cmd_dump_lock_init = 1;
+	}
+
+	spin_lock_irqsave(&ufs_mtk_cmd_dump_lock, flags);
+
+	ufs_mtk_trace_cmd_ptr++;
+
+	if (ufs_mtk_trace_cmd_ptr >= MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT)
+		ufs_mtk_trace_cmd_ptr = 0;
+
+	ptr = ufs_mtk_trace_cmd_ptr;
+
+	ufs_mtk_trace_cmd_hlist[ptr].event = event;
+	ufs_mtk_trace_cmd_hlist[ptr].tag = tag;
+	ufs_mtk_trace_cmd_hlist[ptr].transfer_len = transfer_len;
+	ufs_mtk_trace_cmd_hlist[ptr].lun = lun;
+	ufs_mtk_trace_cmd_hlist[ptr].lba = lba;
+	ufs_mtk_trace_cmd_hlist[ptr].opcode = opcode;
+	ufs_mtk_trace_cmd_hlist[ptr].time = sched_clock();
+
+	ufs_mtk_trace_cnt++;
+
+	spin_unlock_irqrestore(&ufs_mtk_cmd_dump_lock, flags);
+	/*
+	 * pr_info("[ufs]%d,%d,op=0x%x,lun=%u,t=%d,lba=%llu,len=%u,time=%llu\n",
+	 * ptr, event, opcode, lun, tag, (u64)(lba >> 3), transfer_len, sched_clock());
+	 */
+}
+
+void ufs_mtk_dbg_dump_trace(u32 latest_cnt, struct seq_file *m)
+{
+	int ptr;
+	int dump_cnt;
+	unsigned long flags;
+
+	if (!ufs_mtk_is_cmd_dump_lock_init) {
+		spin_lock_init(&ufs_mtk_cmd_dump_lock);
+		ufs_mtk_is_cmd_dump_lock_init = 1;
+	}
+
+	spin_lock_irqsave(&ufs_mtk_cmd_dump_lock, flags);
+
+	if (ufs_mtk_trace_cnt > MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT)
+		dump_cnt = MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT;
+	else
+		dump_cnt = ufs_mtk_trace_cnt;
+
+	if (latest_cnt)
+		dump_cnt = min_t(u32, latest_cnt, dump_cnt);
+
+	ptr = ufs_mtk_trace_cmd_ptr;
+
+	UFS_PRINFO_PROC_MSG(m, "[ufs]cmd history:req_cnt=%d,real_cnt=%d,ptr=%d\n",
+		latest_cnt, dump_cnt, ptr);
+
+	while (dump_cnt > 0) {
+
+		if (ufs_mtk_trace_cmd_hlist[ptr].event == UFS_TRACE_TM_SEND ||
+			ufs_mtk_trace_cmd_hlist[ptr].event == UFS_TRACE_TM_COMPLETED) {
+
+			UFS_PRINFO_PROC_MSG(m, "[ufs]%d-t,%d,tm=0x%x,t=%d,lun=0x%x,data=0x%x,%llu\n",
+				ptr,
+				ufs_mtk_trace_cmd_hlist[ptr].event,
+				ufs_mtk_trace_cmd_hlist[ptr].opcode,
+				ufs_mtk_trace_cmd_hlist[ptr].tag,
+				ufs_mtk_trace_cmd_hlist[ptr].lun,
+				ufs_mtk_trace_cmd_hlist[ptr].transfer_len,
+				(u64)ufs_mtk_trace_cmd_hlist[ptr].time
+				);
+
+		} else if (ufs_mtk_trace_cmd_hlist[ptr].event == UFS_TRACE_DEV_SEND ||
+			ufs_mtk_trace_cmd_hlist[ptr].event == UFS_TRACE_DEV_COMPLETED) {
+
+			UFS_PRINFO_PROC_MSG(m, "[ufs]%d-d,%d,0x%x,t=%d,lun=0x%x,idn=0x%x,idx=0x%x,sel=0x%x,%llu\n",
+				ptr,
+				ufs_mtk_trace_cmd_hlist[ptr].event,
+				ufs_mtk_trace_cmd_hlist[ptr].opcode,
+				ufs_mtk_trace_cmd_hlist[ptr].tag,
+				ufs_mtk_trace_cmd_hlist[ptr].lun,
+				(u8)ufs_mtk_trace_cmd_hlist[ptr].lba & 0xFF,
+				(u8)(ufs_mtk_trace_cmd_hlist[ptr].lba >> 8) & 0xFF,
+				(u8)(ufs_mtk_trace_cmd_hlist[ptr].lba >> 16) & 0xFF,
+				(u64)ufs_mtk_trace_cmd_hlist[ptr].time
+				);
+
+		} else {
+
+			UFS_PRINFO_PROC_MSG(m, "[ufs]%d-r,%d,0x%x,t=%d,lun=0x%x,lba=%lld,len=%d,%llu\n",
+				ptr,
+				ufs_mtk_trace_cmd_hlist[ptr].event,
+				ufs_mtk_trace_cmd_hlist[ptr].opcode,
+				ufs_mtk_trace_cmd_hlist[ptr].tag,
+				ufs_mtk_trace_cmd_hlist[ptr].lun,
+				(long long int)ufs_mtk_trace_cmd_hlist[ptr].lba,
+				ufs_mtk_trace_cmd_hlist[ptr].transfer_len,
+				(u64)ufs_mtk_trace_cmd_hlist[ptr].time
+				);
+		}
+
+		dump_cnt--;
+
+		ptr--;
+
+		if (ptr < 0)
+			ptr = MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT - 1;
+	}
+
+	spin_unlock_irqrestore(&ufs_mtk_cmd_dump_lock, flags);
+}
+
+void ufs_mtk_dbg_hang_detect_dump(void)
+{
+	/*
+	 * do not touch host to get unipro or mphy information via
+	 * dme commands during exception handling since interrupt
+	 * or preemption may be disabled.
+	 */
+	ufshcd_print_host_state(ufs_mtk_hba, 0, NULL);
+
+	ufs_mtk_dbg_dump_trace(ufs_mtk_hba->nutrs + ufs_mtk_hba->nutrs / 2, NULL);
+}
+
+void ufs_mtk_dbg_proc_dump(struct seq_file *m)
+{
+	/*
+	 * do not touch host to get unipro or mphy information via
+	 * dme commands during exception handling since interrupt
+	 * or preemption may be disabled.
+	 */
+	ufshcd_print_host_state(ufs_mtk_hba, 0, m);
+
+	ufs_mtk_dbg_dump_trace(MAX_UFS_MTK_TRACE_CMD_HLIST_ENTRY_CNT, m);
+}
+
+#else
+void ufs_mtk_dbg_add_trace(enum ufs_trace_event event, u32 tag,
+	u8 lun, u32 transfer_len, sector_t lba, u8 opcode)
+{
+}
+
+void ufs_mtk_dbg_dump_trace(u32 latest_cnt, struct seq_file *m)
+{
+}
+
+void ufs_mtk_dbg_hang_detect_dump(void)
+{
+}
+
+#endif
 
 /**
  * struct ufs_hba_mtk_vops - UFS MTK specific variant operations
@@ -1898,88 +2010,6 @@ static struct ufs_hba_variant_ops ufs_hba_mtk_vops = {
 	ufs_mtk_scsi_dev_cfg,         /* scsi_dev_cfg */
 };
 
-#ifdef CONFIG_HIE
-/* configure request for HIE */
-static int ufs_mtk_hie_cfg_request(unsigned int mode, const char *key, int len, struct request *req, void *priv)
-{
-	struct ufs_crypt_info *info = (struct ufs_crypt_info *)priv;
-	struct ufshcd_lrb *lrbp;
-	u32 hie_para, i;
-	u32 *key_ptr;
-	unsigned long flags;
-	u32 lba, dunl, dunu;
-	struct scsi_cmnd *cmd;
-	int need_update = 1;
-	int key_idx;
-
-	spin_lock_irqsave(info->hba->host->host_lock, flags);
-
-	/* get key index from key hint, or install new key to key hint */
-	key_idx = hie_kh_get_hint(ufs_mtk_hie_get_dev(), key, &need_update);
-
-	spin_unlock_irqrestore(info->hba->host->host_lock, flags);
-
-	if (need_update || (key_idx < 0)) {
-
-		if (key_idx < 0)
-			key_idx = 0;
-
-		key_ptr = (u32 *)key;
-
-		hie_para = ((key_idx & 0xFF) << UFS_HIE_PARAM_OFS_CFG_ID) |
-					((mode & 0xFF) << UFS_HIE_PARAM_OFS_MODE) |
-					((len & 0xFF) << UFS_HIE_PARAM_OFS_KEY_TOTAL_BYTE);
-
-		spin_lock_irqsave(info->hba->host->host_lock, flags);
-
-		/* init ufs crypto IP for HIE and program key by first 8 bytes */
-		mt_secure_call(MTK_SIP_KERNEL_CRYPTO_HIE_CFG_REQUEST,
-			hie_para, key_ptr[0], key_ptr[1]);
-
-		/* program remaining key */
-		for (i = 2; i < len / sizeof(u32); i += 3) {
-			mt_secure_call(MTK_SIP_KERNEL_CRYPTO_HIE_CFG_REQUEST,
-				key_ptr[i], key_ptr[i + 1], key_ptr[i + 2]);
-		}
-
-		spin_unlock_irqrestore(info->hba->host->host_lock, flags);
-	}
-
-	cmd = info->cmd;
-	lba = ((cmd->cmnd[2]) << 24) | ((cmd->cmnd[3]) << 16) |
-			((cmd->cmnd[4]) << 8) | (cmd->cmnd[5]);
-
-	ufs_mtk_crypto_cal_dun(UFS_CRYPTO_ALGO_AES_XTS, lba, &dunl, &dunu);
-
-	/* setup LRB for UTPRD's crypto fields */
-	lrbp = &info->hba->lrb[req->tag];
-	lrbp->crypto_en = 1;
-	lrbp->crypto_cfgid = key_idx;
-
-	/* remember to give "tweak" for AES-XTS */
-	lrbp->crypto_dunl = dunl;
-	lrbp->crypto_dunu = dunu;
-
-	/* mark data has ever gone through encryption/decryption path */
-	info->hba->crypto_feature |= UFS_CRYPTO_HW_FBE_ENCRYPTED;
-
-	return 0;
-}
-
-struct hie_dev ufs_hie_dev = {
-	.name = "ufs",
-	.mode = (BC_AES_256_XTS | BC_AES_128_XTS),
-	.encrypt = ufs_mtk_hie_cfg_request,
-	.decrypt = ufs_mtk_hie_cfg_request,
-	.priv = NULL,
-};
-
-struct hie_dev *ufs_mtk_hie_get_dev(void)
-{
-	return &ufs_hie_dev;
-}
-#endif
-
 /**
  * ufs_mtk_probe - probe routine of the driver
  * @pdev: pointer to Platform device handle
@@ -1989,43 +2019,14 @@ struct hie_dev *ufs_mtk_hie_get_dev(void)
 static int ufs_mtk_probe(struct platform_device *pdev)
 {
 	int err;
-	struct ufs_hba *hba;
 	struct device *dev = &pdev->dev;
 
 	ufs_mtk_biolog_init();
-
-	/* perform generic probe */
+	/* Perform generic probe */
 	err = ufshcd_pltfrm_init(pdev, &ufs_hba_mtk_vops);
-	if (err) {
+	if (err)
 		dev_err(dev, "ufshcd_pltfrm_init() failed %d\n", err);
-		goto out;
-	}
 
-	hba = platform_get_drvdata(pdev);
-
-#ifdef CONFIG_HIE
-
-	hie_register_device(&ufs_hie_dev);
-
-	/*
-	 * enable hie key hint feature
-	 *
-	 * key_bits = 512 bits for all possible FBE crypto algorithms
-	 * key_slot = 16 crypto configuration slots
-	 */
-	hie_kh_register(&ufs_hie_dev, 512, 16);
-
-	hba->crypto_feature |= UFS_CRYPTO_HW_FBE;
-
-#endif
-
-#if defined(CONFIG_MTK_HW_FDE)
-
-	hba->crypto_feature |= UFS_CRYPTO_HW_FDE;
-
-#endif
-
-out:
 	return err;
 }
 

@@ -153,8 +153,7 @@ static int bl_switcher_notifier_handler(struct notifier_block *this,
 			ctx->mcp->flags.sleep_mode.sleep_req = REQ_TO_SLEEP;
 			_nsiq();
 			/* By this time we should be ready for sleep or we are
-			 * in the middle of something important
-			 */
+			 * in the middle of something important */
 			if (!sleep_ready()) {
 				dump_sleep_params(&mcp->flags);
 				MCDRV_DBG(mcd,
@@ -200,7 +199,6 @@ int mc_pm_initialize(struct mc_context *context)
 int mc_pm_free(void)
 {
 	int ret = unregister_pm_notifier(&mc_notif_block);
-
 	if (ret)
 		MCDRV_DBG_ERROR(mcd, "device pm unregister failed");
 #ifdef MC_BL_NOTIFIER

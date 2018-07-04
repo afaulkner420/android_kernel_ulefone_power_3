@@ -57,11 +57,7 @@
 
 #define SPM_PWAKE_EN            1
 #define SPM_PCMWDT_EN           1
-#if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)
-#define SPM_BYPASS_SYSPWREQ     1
-#else
 #define SPM_BYPASS_SYSPWREQ     0
-#endif
 
 #define WAKE_SRC_FOR_MD32  0
 
@@ -108,7 +104,6 @@ static unsigned long mcucfg_phys_base;
 #define	ACINACTM_MP2	(0x11)
 
 #if defined(CONFIG_ARM_PSCI) || defined(CONFIG_MTK_PSCI)
-#include <mt-plat/mtk_secure_api.h>
 #define MCUSYS_SMC_WRITE(addr, val)  mcusys_smc_write_phy(addr##_PHYS, val)
 #else
 #define MCUSYS_SMC_WRITE(addr, val)  mcusys_smc_write(addr, val)
@@ -571,9 +566,9 @@ int spm_set_dpidle_wakesrc(u32 wakesrc, bool enable, bool replace)
 	return 0;
 }
 
-static unsigned int spm_output_wake_reason(struct wake_status *wakesta, struct pcm_desc *pcmdesc, u32 dump_log)
+static wake_reason_t spm_output_wake_reason(struct wake_status *wakesta, struct pcm_desc *pcmdesc, u32 dump_log)
 {
-	unsigned int wr = WR_NONE;
+	wake_reason_t wr = WR_NONE;
 	unsigned long int dpidle_log_print_curr_time = 0;
 	bool log_print = false;
 	static bool timer_out_too_short;
@@ -584,7 +579,7 @@ static unsigned int spm_output_wake_reason(struct wake_status *wakesta, struct p
 		/* Determine print SPM log or not */
 		dpidle_log_print_curr_time = spm_get_current_time_ms();
 
-		if (wakesta->assert_pc != 0 || wakesta->r12 == 0)
+		if (wakesta->assert_pc != 0)
 			log_print = true;
 #if 0
 		/* Not wakeup by GPT */
@@ -621,7 +616,7 @@ static unsigned int spm_output_wake_reason(struct wake_status *wakesta, struct p
 		exec_ccci_kern_func_by_md_id(0, ID_GET_MD_WAKEUP_SRC, NULL, 0);
 #endif
 
-#if 0 /*defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)*/
+#if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)
 	if (wakesta->r12 == 0) {
 		int i;
 
@@ -656,12 +651,12 @@ int dpidle_active_status(void)
 EXPORT_SYMBOL(dpidle_active_status);
 #endif
 
-unsigned int spm_go_to_dpidle(u32 spm_flags, u32 spm_data, u32 dump_log)
+wake_reason_t spm_go_to_dpidle(u32 spm_flags, u32 spm_data, u32 dump_log)
 {
 	struct wake_status wakesta;
 	unsigned long flags;
 	struct mtk_irq_mask mask;
-	static unsigned int wr = WR_NONE;
+	static wake_reason_t wr = WR_NONE;
 	/* struct pcm_desc *pcmdesc = __spm_dpidle.pcmdesc; */
 	struct pcm_desc *pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_dpidle.pwrctrl;
@@ -692,6 +687,7 @@ unsigned int spm_go_to_dpidle(u32 spm_flags, u32 spm_data, u32 dump_log)
 
 	spm_dpidle_before_wfi(cpu);
 
+	lockdep_off();
 	spin_lock_irqsave(&__spm_lock, flags);
 	mt_irq_mask_all(&mask);
 	mt_irq_unmask_for_sleep_ex(SPM_IRQ0_ID);
@@ -708,7 +704,7 @@ unsigned int spm_go_to_dpidle(u32 spm_flags, u32 spm_data, u32 dump_log)
 #if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)
 	snapshot_golden_setting(__func__, 0);
 #endif
-	/*mt_power_gs_dump_dpidle();*/
+	mt_power_gs_dump_dpidle();
 
 	if (request_uart_to_sleep()) {
 		wr = WR_UART_BUSY;
@@ -774,6 +770,7 @@ RESTORE_IRQ:
 #endif
 	mt_irq_mask_restore(&mask);
 	spin_unlock_irqrestore(&__spm_lock, flags);
+	lockdep_on();
 	spm_dpidle_after_wfi(cpu, wakesta.debug_flag);
 
 #if SPM_AEE_RR_REC
@@ -800,7 +797,7 @@ RESTORE_IRQ:
  * pwake_time:
  *    >= 0  = specific wakeup period
  */
-unsigned int spm_go_to_sleep_dpidle(u32 spm_flags, u32 spm_data)
+wake_reason_t spm_go_to_sleep_dpidle(u32 spm_flags, u32 spm_data)
 {
 	u32 sec = 0;
 	u32 dpidle_timer_val = 0;
@@ -812,7 +809,7 @@ unsigned int spm_go_to_sleep_dpidle(u32 spm_flags, u32 spm_data)
 	struct wd_api *wd_api;
 	int wd_ret;
 #endif
-	static unsigned int last_wr = WR_NONE;
+	static wake_reason_t last_wr = WR_NONE;
 	/* struct pcm_desc *pcmdesc = __spm_dpidle.pcmdesc; */
 	struct pcm_desc *pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_dpidle.pwrctrl;
@@ -941,7 +938,7 @@ RESTORE_IRQ:
 	return last_wr;
 }
 
-void __init spm_deepidle_init(void)
+void spm_deepidle_init(void)
 {
 #if defined(CONFIG_OF)
 	struct device_node *node;

@@ -81,11 +81,11 @@
 
 #ifdef CONFIG_MACH_MT6757
 #include "mtk_spm_dpidle_mt6757.h"
-#else
-/* CONFIG_MACH_MT6759, CONFIG_MACH_MT6758, CONFIG_MACH_MT6775 */
-#include "mtk_idle.h"
 #endif
 
+#if defined(CONFIG_MACH_MT6759)
+#include "mtk_idle.h"
+#endif
 
 /*****************************************************************************
  * PMIC related define
@@ -177,7 +177,7 @@ void exec_low_battery_callback(LOW_BATTERY_LEVEL low_battery_level)
 	}
 }
 
-static void lbat_min_en_setting(int en_val)
+void lbat_min_en_setting(int en_val)
 {
 	pmic_set_register_value(PMIC_AUXADC_LBAT_EN_MIN, en_val);
 	pmic_set_register_value(PMIC_AUXADC_LBAT_IRQ_EN_MIN, en_val);
@@ -185,7 +185,7 @@ static void lbat_min_en_setting(int en_val)
 	/* pmic_set_register_value(PMIC_RG_INT_EN_BAT_L, en_val); */
 }
 
-static void lbat_max_en_setting(int en_val)
+void lbat_max_en_setting(int en_val)
 {
 	pmic_set_register_value(PMIC_AUXADC_LBAT_EN_MAX, en_val);
 	pmic_set_register_value(PMIC_AUXADC_LBAT_IRQ_EN_MAX, en_val);
@@ -590,7 +590,7 @@ int do_ptim_internal(bool isSuspend, unsigned int *bat, signed int *cur, bool *i
 	/*PMICLOG("[do_ptim] start\n"); */
 
 
-	/* pmic_set_register_value(PMIC_AUXADC_SPL_NUM_LARGE, 0x0006); */
+	pmic_set_register_value(PMIC_AUXADC_SPL_NUM_LARGE, 0x0006);
 
 	pmic_set_register_value(PMIC_AUXADC_IMP_AUTORPT_PRD, 6);
 #if 0				/* default use hw control, no need to set CK_PDN_HWEN to sw mode */
@@ -653,7 +653,7 @@ int do_ptim_internal(bool isSuspend, unsigned int *bat, signed int *cur, bool *i
 	/*ptim_bat_vol = (vbat_reg * 3 * 18000) / 32768; */
 	*bat = (vbat_reg * 3 * 18000) / 32768;
 
-#if defined(CONFIG_MTK_SMART_BATTERY) && !defined(CONFIG_POWER_EXT)
+#if defined(CONFIG_MTK_SMART_BATTERY)
 	/*fgauge_read_IM_current((void *)cur);*/
 	gauge_get_ptim_current(cur, is_charging);
 #else
@@ -1262,8 +1262,7 @@ int dlpt_notify_handler(void *unused)
 	cur_ui_soc = pre_ui_soc;
 
 	do {
-#if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_MT6759) \
-	|| defined(CONFIG_MACH_MT6758) || defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_MT6759)
 		if (dpidle_active_status())
 			ktime = ktime_set(20, 0); /* light-loading mode */
 		else

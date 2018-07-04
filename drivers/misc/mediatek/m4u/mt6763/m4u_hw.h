@@ -168,12 +168,12 @@ static inline int larb_2_m4u_slave_id(int larb)
 
 static inline int m4u_port_2_m4u_id(M4U_PORT_ID port)
 {
-	return gM4uPort[port].m4u_id;
+		return gM4uPort[port].m4u_id;
 }
 
 static inline int m4u_port_2_m4u_slave_id(M4U_PORT_ID port)
 {
-	return gM4uPort[port].m4u_slave;
+		return gM4uPort[port].m4u_slave;
 }
 
 static inline int larb_port_2_m4u_port(int larb, int larb_port)

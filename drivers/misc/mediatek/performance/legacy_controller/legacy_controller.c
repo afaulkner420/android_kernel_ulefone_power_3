@@ -1,19 +1,3 @@
-/*
- * Copyright (C) 2017 MediaTek Inc.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
- */
-
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/kallsyms.h>
@@ -23,16 +7,10 @@
 #include <linux/uaccess.h>
 #include <linux/printk.h>
 #include <linux/string.h>
-#include <linux/topology.h>
-#include <linux/slab.h>
 
 #include <linux/platform_device.h>
 #include "legacy_controller.h"
-
-#ifdef CONFIG_TRACING
-#include <linux/kallsyms.h>
-#include <linux/trace_events.h>
-#endif
+#include <mach/mtk_ppm_api.h>
 
 #define TAG "[boost_controller]"
 
@@ -40,11 +18,10 @@
 
 static struct mutex boost_freq;
 static struct mutex boost_core;
-static struct ppm_limit_data *current_core;
-static struct ppm_limit_data *current_freq;
-static struct ppm_limit_data *core_set[PPM_MAX_KIR];
-static struct ppm_limit_data *freq_set[PPM_MAX_KIR];
-static int nr_ppm_clusters;
+static struct ppm_limit_data current_core[NR_PPM_CLUSTERS];
+static struct ppm_limit_data current_freq[NR_PPM_CLUSTERS];
+static struct ppm_limit_data core_set[PPM_MAX_KIR][NR_PPM_CLUSTERS];
+static struct ppm_limit_data freq_set[PPM_MAX_KIR][NR_PPM_CLUSTERS];
 static int log_enable;
 
 #define legacy_debug(enable, fmt, x...)\
@@ -53,186 +30,92 @@ static int log_enable;
 			pr_debug(fmt, ##x);\
 	} while (0)
 
-static char *lbc_copy_from_user_for_proc(const char __user *buffer, size_t count)
-{
-	char *buf = (char *)__get_free_page(GFP_USER);
-
-	if (!buf)
-		return NULL;
-
-	if (count >= PAGE_SIZE)
-		goto out;
-
-	if (copy_from_user(buf, buffer, count))
-		goto out;
-
-	buf[count] = '\0';
-
-	return buf;
-
-out:
-	free_page((unsigned long)buf);
-
-	return NULL;
-}
-
-#ifdef CONFIG_TRACING
-
-static unsigned long __read_mostly tracing_mark_write_addr;
-static inline void __mt_update_tracing_mark_write_addr(void)
-{
-	if (unlikely(tracing_mark_write_addr == 0))
-		tracing_mark_write_addr = kallsyms_lookup_name("tracing_mark_write");
-}
-
-static inline void lhd_kernel_trace(char *name, int id, int min, int max)
-{
-	__mt_update_tracing_mark_write_addr();
-	preempt_disable();
-	event_trace_printk(tracing_mark_write_addr,
-			"boost_controller: %d %s %d %d %d\n", current->tgid, name, id, min, max);
-	preempt_enable();
-}
-
-#endif
-
 /*************************************************************************************/
 int update_userlimit_cpu_core(int kicker, int num_cluster, struct ppm_limit_data *core_limit)
 {
 #ifndef CONFIG_MTK_ACAO_SUPPORT
-	struct ppm_limit_data *final_core;
-	int retval = 0;
+	struct ppm_limit_data final_core[NR_PPM_CLUSTERS];
 	int i, j;
-	int total_core_per_kicker[PPM_MAX_KIR] = {0};
-	int total_core = 0;
 
 	mutex_lock(&boost_core);
-
-	final_core = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	if (!final_core) {
-		retval = -1;
-		goto ret_update;
+	if (num_cluster != NR_PPM_CLUSTERS) {
+		pr_crit(TAG"num_cluster : %d NR_PPM_CLUSTERS: %d, doesn't match",
+			 num_cluster, NR_PPM_CLUSTERS);
+		mutex_unlock(&boost_core);
+		return -1;
 	}
 
-	if (num_cluster != nr_ppm_clusters) {
-		pr_debug(TAG"num_cluster : %d nr_ppm_clusters: %d, doesn't match",
-			 num_cluster, nr_ppm_clusters);
-		retval = -1;
-		goto ret_update;
-	}
-
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		final_core[i].min = -1;
 		final_core[i].max = -1;
 	}
+
 #if 0
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		legacy_debug(log_enable, TAG"cluster %d, core_limit_min %d core_limit_max %d\n",
 			 i, core_limit[i].min, core_limit[i].max);
 	}
 #endif
 
-	/* STEP 0: set this kicker's core_set*/
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		core_set[kicker][i].min = core_limit[i].min >= -1 ? core_limit[i].min : -1;
 		core_set[kicker][i].max = core_limit[i].max >= -1 ? core_limit[i].max : -1;
 		legacy_debug(log_enable, TAG"kicker %d cluster %d, core_set_min %d core_set_max %d\n",
 			 kicker, i, core_set[kicker][i].min, core_set[kicker][i].max);
 	}
 
-	/* STEP 1: decide total core*/
 	for (i = 0; i < PPM_MAX_KIR; i++) {
-		for (j = 0; j < nr_ppm_clusters; j++)
-			if (core_set[i][j].min != -1)
-				total_core_per_kicker[i] += core_set[i][j].min;
-	}
-
-	for (i = 0; i < PPM_MAX_KIR; i++)
-		total_core = MAX(total_core, total_core_per_kicker[i]);
-
-	legacy_debug(log_enable, TAG"total_core %d", total_core);
-
-	/* STEP 2: decide min core of each cluster*/
-	for (i = nr_ppm_clusters - 1; i >= 0; i--) {
-		for (j = 0; j < PPM_MAX_KIR; j++)
-			final_core[i].min = MAX(core_set[j][i].min, final_core[i].min);
-		if (total_core >= final_core[i].min && final_core[i].min != -1) {
-			total_core -= final_core[i].min;
-		} else if (total_core < final_core[i].min && final_core[i].min != -1) {
-			final_core[i].min = total_core;
-			total_core = 0;
-		}
-	}
-
-	/* STEP 3: decide max core of each cluster*/
-	for (i = 0; i < PPM_MAX_KIR; i++) {
-		for (j = 0; j < nr_ppm_clusters; j++) {
+		for (j = 0; j < NR_PPM_CLUSTERS; j++) {
+			final_core[j].min = MAX(core_set[i][j].min, final_core[j].min);
 			final_core[j].max = MAX(core_set[i][j].max, final_core[j].max);
 			if (final_core[j].min > final_core[j].max && final_core[j].max != -1)
 				final_core[j].max = final_core[j].min;
 		}
 	}
 
-	/* STEP 4: decide actual value of max core of each cluster (if max < min)*/
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		current_core[i].min = final_core[i].min;
 		current_core[i].max = final_core[i].max;
 		legacy_debug(log_enable, TAG"cluster %d, current_core_min %d current_core_max %d\n",
 			 i, current_core[i].min, current_core[i].max);
-#ifdef CONFIG_TRACING
-		lhd_kernel_trace("current_core", i, current_core[i].min, current_core[i].max);
-#endif
 	}
 
-	mt_ppm_userlimit_cpu_core(nr_ppm_clusters, final_core);
+	mt_ppm_userlimit_cpu_core(NR_PPM_CLUSTERS, final_core);
 
-
-ret_update:
-	kfree(final_core);
 	mutex_unlock(&boost_core);
-	return retval;
 #endif
 
 	return 0;
 }
-EXPORT_SYMBOL(update_userlimit_cpu_core);
 
 /*************************************************************************************/
 int update_userlimit_cpu_freq(int kicker, int num_cluster, struct ppm_limit_data *freq_limit)
 {
-	struct ppm_limit_data *final_freq;
-	int retval = 0;
+	struct ppm_limit_data final_freq[NR_PPM_CLUSTERS];
 	int i, j;
 
 	mutex_lock(&boost_freq);
-
-	final_freq = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	if (!final_freq) {
-		retval = -1;
-		goto ret_update;
-	}
-	if (num_cluster != nr_ppm_clusters) {
-		pr_debug(TAG"num_cluster : %d nr_ppm_clusters: %d, doesn't match\n",
-			 num_cluster, nr_ppm_clusters);
-		retval = -1;
-		goto ret_update;
+	if (num_cluster != NR_PPM_CLUSTERS) {
+		pr_crit(TAG"num_cluster : %d NR_PPM_CLUSTERS: %d, doesn't match",
+			 num_cluster, NR_PPM_CLUSTERS);
+		mutex_unlock(&boost_core);
+		return -1;
 	}
 
-
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		final_freq[i].min = -1;
 		final_freq[i].max = -1;
 	}
 
 #if 0
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		legacy_debug(log_enable, TAG"cluster %d, freq_limit_min %d freq_limit_max %d\n",
 			 i, freq_limit[i].min, freq_limit[i].max);
 	}
 #endif
 
 
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		freq_set[kicker][i].min = freq_limit[i].min >= -1 ? freq_limit[i].min : -1;
 		freq_set[kicker][i].max = freq_limit[i].max >= -1 ? freq_limit[i].max : -1;
 		legacy_debug(log_enable, TAG"kicker %d cluster %d, freq_set_min %d freq_set_max %d\n",
@@ -240,7 +123,7 @@ int update_userlimit_cpu_freq(int kicker, int num_cluster, struct ppm_limit_data
 	}
 
 	for (i = 0; i < PPM_MAX_KIR; i++) {
-		for (j = 0; j < nr_ppm_clusters; j++) {
+		for (j = 0; j < NR_PPM_CLUSTERS; j++) {
 			final_freq[j].min = MAX(freq_set[i][j].min, final_freq[j].min);
 			final_freq[j].max = MAX(freq_set[i][j].max, final_freq[j].max);
 			if (final_freq[j].min > final_freq[j].max && final_freq[j].max != -1)
@@ -248,51 +131,39 @@ int update_userlimit_cpu_freq(int kicker, int num_cluster, struct ppm_limit_data
 		}
 	}
 
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		current_freq[i].min = final_freq[i].min;
 		current_freq[i].max = final_freq[i].max;
 		legacy_debug(log_enable, TAG"cluster %d, freq_min %d freq_max %d\n",
 				i, current_freq[i].min, current_freq[i].max);
-#ifdef CONFIG_TRACING
-		lhd_kernel_trace("current_freq", i, current_freq[i].min, current_freq[i].max);
-#endif
 	}
 
-	mt_ppm_userlimit_cpu_freq(nr_ppm_clusters, final_freq);
+	mt_ppm_userlimit_cpu_freq(NR_PPM_CLUSTERS, final_freq);
 
-
-ret_update:
-	kfree(final_freq);
 	mutex_unlock(&boost_freq);
-	return retval;
 
 	return 0;
 }
-EXPORT_SYMBOL(update_userlimit_cpu_freq);
 
 /*************************************************************************************/
 static ssize_t perfmgr_perfserv_core_write(struct file *filp, const char __user *ubuf,
 		size_t cnt, loff_t *pos)
 {
 	int i = 0, data;
-	struct ppm_limit_data *core_limit;
-	unsigned int arg_num = nr_ppm_clusters * 2; /* for min and max */
+	struct ppm_limit_data core_limit[NR_PPM_CLUSTERS];
+	unsigned int arg_num = NR_PPM_CLUSTERS * 2; /* for min and max */
 	char *tok, *tmp;
-	char *buf = lbc_copy_from_user_for_proc(ubuf, cnt);
-
-	core_limit = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	if (!core_limit)
-		goto out;
+	char *buf = ppm_copy_from_user_for_proc(ubuf, cnt);
 
 	tmp = buf;
 	while ((tok = strsep(&tmp, " ")) != NULL) {
 		if (i == arg_num) {
-			pr_debug(TAG"@%s: number of arguments > %d!\n", __func__, arg_num);
+			pr_crit(TAG"@%s: number of arguments > %d!\n", __func__, arg_num);
 			goto out;
 		}
 
 		if (kstrtoint(tok, 10, &data)) {
-			pr_debug(TAG"@%s: Invalid input: %s\n", __func__, tok);
+			pr_crit(TAG"@%s: Invalid input: %s\n", __func__, tok);
 			goto out;
 		} else {
 			if (i % 2) /* max */
@@ -304,13 +175,12 @@ static ssize_t perfmgr_perfserv_core_write(struct file *filp, const char __user 
 	}
 
 	if (i < arg_num)
-		pr_debug(TAG"@%s: number of arguments < %d!\n", __func__, arg_num);
+		pr_crit(TAG"@%s: number of arguments < %d!\n", __func__, arg_num);
 	else
-		update_userlimit_cpu_core(PPM_KIR_PERF, nr_ppm_clusters, core_limit);
+		update_userlimit_cpu_core(PPM_KIR_PERF, NR_PPM_CLUSTERS, core_limit);
 
 out:
 	free_page((unsigned long)buf);
-	kfree(core_limit);
 	return cnt;
 
 }
@@ -319,7 +189,7 @@ static int perfmgr_perfserv_core_show(struct seq_file *m, void *v)
 {
 	int i;
 
-	for (i = 0; i < nr_ppm_clusters; i++)
+	for (i = 0; i < NR_PPM_CLUSTERS; i++)
 		seq_printf(m, "cluster %d min:%d max:%d\n",
 				i, core_set[PPM_KIR_PERF][i].min, core_set[PPM_KIR_PERF][i].max);
 
@@ -344,24 +214,20 @@ static ssize_t perfmgr_perfserv_freq_write(struct file *filp, const char __user 
 		size_t cnt, loff_t *pos)
 {
 	int i = 0, data;
-	struct ppm_limit_data *freq_limit;
-	unsigned int arg_num = nr_ppm_clusters * 2; /* for min and max */
+	struct ppm_limit_data freq_limit[NR_PPM_CLUSTERS];
+	unsigned int arg_num = NR_PPM_CLUSTERS * 2; /* for min and max */
 	char *tok, *tmp;
-	char *buf = lbc_copy_from_user_for_proc(ubuf, cnt);
-
-	freq_limit = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	if (!freq_limit)
-		goto out;
+	char *buf = ppm_copy_from_user_for_proc(ubuf, cnt);
 
 	tmp = buf;
 	while ((tok = strsep(&tmp, " ")) != NULL) {
 		if (i == arg_num) {
-			pr_debug(TAG"@%s: number of arguments > %d!\n", __func__, arg_num);
+			pr_crit(TAG"@%s: number of arguments > %d!\n", __func__, arg_num);
 			goto out;
 		}
 
 		if (kstrtoint(tok, 10, &data)) {
-			pr_debug(TAG"@%s: Invalid input: %s\n", __func__, tok);
+			pr_crit(TAG"@%s: Invalid input: %s\n", __func__, tok);
 			goto out;
 		} else {
 			if (i % 2) /* max */
@@ -373,13 +239,12 @@ static ssize_t perfmgr_perfserv_freq_write(struct file *filp, const char __user 
 	}
 
 	if (i < arg_num)
-		pr_debug(TAG"@%s: number of arguments < %d!\n", __func__, arg_num);
+		pr_crit(TAG"@%s: number of arguments < %d!\n", __func__, arg_num);
 	else
-		update_userlimit_cpu_freq(PPM_KIR_PERF, nr_ppm_clusters, freq_limit);
+		update_userlimit_cpu_freq(PPM_KIR_PERF, NR_PPM_CLUSTERS, freq_limit);
 
 out:
 	free_page((unsigned long)buf);
-	kfree(freq_limit);
 	return cnt;
 
 }
@@ -388,7 +253,7 @@ static int perfmgr_perfserv_freq_show(struct seq_file *m, void *v)
 {
 	int i;
 
-	for (i = 0; i < nr_ppm_clusters; i++)
+	for (i = 0; i < NR_PPM_CLUSTERS; i++)
 		seq_printf(m, "cluster %d min:%d max:%d\n",
 				i, freq_set[PPM_KIR_PERF][i].min, freq_set[PPM_KIR_PERF][i].max);
 
@@ -407,81 +272,13 @@ static const struct file_operations perfmgr_perfserv_freq_fops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
-/*************************************************************************************/
-static ssize_t perfmgr_boot_freq_write(struct file *filp, const char __user *ubuf,
-		size_t cnt, loff_t *pos)
-{
-	int i = 0, data;
-	struct ppm_limit_data *freq_limit;
-	unsigned int arg_num = nr_ppm_clusters * 2; /* for min and max */
-	char *tok, *tmp;
-	char *buf = lbc_copy_from_user_for_proc(ubuf, cnt);
-
-	freq_limit = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	if (!freq_limit)
-		goto out;
-
-	tmp = buf;
-	while ((tok = strsep(&tmp, " ")) != NULL) {
-		if (i == arg_num) {
-			pr_debug(TAG"@%s: number of arguments > %d!\n", __func__, arg_num);
-			goto out;
-		}
-
-		if (kstrtoint(tok, 10, &data)) {
-			pr_debug(TAG"@%s: Invalid input: %s\n", __func__, tok);
-			goto out;
-		} else {
-			if (i % 2) /* max */
-				freq_limit[i/2].max = data == -1 ? -1 : mt_cpufreq_get_freq_by_idx(i / 2, data);
-			else /* min */
-				freq_limit[i/2].min = data == -1 ? -1 : mt_cpufreq_get_freq_by_idx(i / 2, data);
-			i++;
-		}
-	}
-
-	if (i < arg_num)
-		pr_debug(TAG"@%s: number of arguments < %d!\n", __func__, arg_num);
-	else
-		update_userlimit_cpu_freq(PPM_KIR_BOOT, nr_ppm_clusters, freq_limit);
-
-out:
-	free_page((unsigned long)buf);
-	kfree(freq_limit);
-	return cnt;
-
-}
-
-static int perfmgr_boot_freq_show(struct seq_file *m, void *v)
-{
-	int i;
-
-	for (i = 0; i < nr_ppm_clusters; i++)
-		seq_printf(m, "cluster %d min:%d max:%d\n",
-				i, freq_set[PPM_KIR_BOOT][i].min, freq_set[PPM_KIR_BOOT][i].max);
-
-	return 0;
-}
-
-static int perfmgr_boot_freq_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, perfmgr_boot_freq_show, inode->i_private);
-}
-
-static const struct file_operations perfmgr_boot_freq_fops = {
-	.open = perfmgr_boot_freq_open,
-	.write = perfmgr_boot_freq_write,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = single_release,
-};
 
 /*************************************************************************************/
 static int perfmgr_current_core_show(struct seq_file *m, void *v)
 {
 	int i;
 
-	for (i = 0; i < nr_ppm_clusters; i++)
+	for (i = 0; i < NR_PPM_CLUSTERS; i++)
 		seq_printf(m, "cluster %d min:%d max:%d\n",
 				i, current_core[i].min, current_core[i].max);
 
@@ -504,7 +301,7 @@ static int perfmgr_current_freq_show(struct seq_file *m, void *v)
 {
 	int i;
 
-	for (i = 0; i < nr_ppm_clusters; i++)
+	for (i = 0; i < NR_PPM_CLUSTERS; i++)
 		seq_printf(m, "cluster %d min:%d max:%d\n",
 				i, current_freq[i].min, current_freq[i].max);
 
@@ -583,20 +380,10 @@ static int __init perfmgr_legacy_boost_init(void)
 	proc_create("perfserv_core", 0644, boost_dir, &perfmgr_perfserv_core_fops);
 	proc_create("current_core", 0644, boost_dir, &perfmgr_current_core_fops);
 	proc_create("perfserv_freq", 0644, boost_dir, &perfmgr_perfserv_freq_fops);
-	proc_create("boot_freq", 0644, boost_dir, &perfmgr_boot_freq_fops);
 	proc_create("current_freq", 0644, boost_dir, &perfmgr_current_freq_fops);
 	proc_create("perfmgr_log", 0644, boost_dir, &perfmgr_log_fops);
 
-	nr_ppm_clusters = arch_get_nr_clusters();
-
-	current_core = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	current_freq = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	for (i = 0; i < PPM_MAX_KIR; i++) {
-		core_set[i] = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-		freq_set[i] = kcalloc(nr_ppm_clusters, sizeof(struct ppm_limit_data), GFP_KERNEL);
-	}
-
-	for (i = 0; i < nr_ppm_clusters; i++) {
+	for (i = 0; i < NR_PPM_CLUSTERS; i++) {
 		current_core[i].min = -1;
 		current_core[i].max = -1;
 		current_freq[i].min = -1;
@@ -604,7 +391,7 @@ static int __init perfmgr_legacy_boost_init(void)
 	}
 
 	for (i = 0; i < PPM_MAX_KIR; i++) {
-		for (j = 0; j < nr_ppm_clusters; j++) {
+		for (j = 0; j < NR_PPM_CLUSTERS; j++) {
 			core_set[i][j].min = -1;
 			core_set[i][j].max = -1;
 			freq_set[i][j].min = -1;
@@ -616,19 +403,4 @@ static int __init perfmgr_legacy_boost_init(void)
 
 }
 
-void perfmgr_legacy_boost_exit(void)
-{
-	int i;
-
-	kfree(current_core);
-	kfree(current_freq);
-	for (i = 0; i < PPM_MAX_KIR; i++) {
-		kfree(core_set[i]);
-		kfree(freq_set[i]);
-	}
-}
-
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("MediaTek LBC");
-module_init(perfmgr_legacy_boost_init);
-module_exit(perfmgr_legacy_boost_exit);
+late_initcall(perfmgr_legacy_boost_init);

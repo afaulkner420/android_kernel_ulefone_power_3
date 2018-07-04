@@ -158,7 +158,9 @@ static void accdet_mod_exit(void)
 
 	ACCDET_DEBUG_DRV("[Accdet]accdet_mod_exit Done!\n");
 }
-module_init(accdet_mod_init);
+
+/* for support audio DC trim measure before accdet init */
+late_initcall(accdet_mod_init);
 module_exit(accdet_mod_exit);
 
 module_param(debug_enable_drv, int, 0644);

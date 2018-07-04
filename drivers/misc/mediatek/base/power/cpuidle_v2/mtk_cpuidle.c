@@ -30,6 +30,7 @@
 #include <mt-plat/mtk_io.h>
 #include <mt-plat/sync_write.h>
 
+#include <mtk_clkmgr.h>
 #include <mtk_cpuidle.h>
 #if defined(CONFIG_MTK_RAM_CONSOLE) || defined(CONFIG_TRUSTONIC_TEE_SUPPORT)
 #include <mt-plat/mtk_secure_api.h>
@@ -38,8 +39,8 @@
 #include <mtk_spm_misc.h>
 
 #ifdef CONFIG_MTK_RAM_CONSOLE
-static void __iomem *mtk_cpuidle_aee_phys_addr;
-static void __iomem *mtk_cpuidle_aee_virt_addr;
+static volatile void __iomem *mtk_cpuidle_aee_phys_addr;
+static volatile void __iomem *mtk_cpuidle_aee_virt_addr;
 #endif
 
 #if MTK_CPUIDLE_TIME_PROFILING
@@ -58,7 +59,7 @@ static void mtk_spm_wakeup_src_restore(void)
 	int i;
 
 	for (i = 0; i < IRQ_NR_MAX; i++) {
-		if (readl_relaxed(SPM_SW_RSV_0) & wake_src_irq[i])
+		if (spm_read(SPM_WAKEUP_STA) & wake_src_irq[i])
 			mt_irq_set_pending(irq_nr[i]);
 	}
 }

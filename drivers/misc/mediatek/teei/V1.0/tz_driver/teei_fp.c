@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -11,7 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/semaphore.h>
@@ -41,7 +40,6 @@ unsigned long create_fp_fdrv(int buff_size)
 		IMSG_ERROR("[%s][%d]: There is NO command buffer!.\n", __func__, __LINE__);
 		return (unsigned long)NULL;
 	}
-
 
 	if (buff_size > VDRV_MAX_SIZE) {
 		IMSG_ERROR("[%s][%d]: FP Drv buffer is too large, Can NOT create it.\n", __FILE__, __LINE__);
@@ -150,9 +148,8 @@ int send_fp_command(unsigned long share_memory_size)
 	down(&fdrv_lock);
 	ut_pm_mutex_lock(&pm_mutex);
 	down(&smc_lock);
-	//modify XLLSHLSS-819 by haiping.bai 20180122 start
-	IMSG_ERROR("send_fp_command start\n");
-	//modify XLLSHLSS-819 by haiping.bai 20180122 end
+	IMSG_DEBUG("send_fp_command start\n");
+
 	if (teei_config_flag == 1)
 		complete(&global_down_lock);
 
@@ -172,16 +169,13 @@ int send_fp_command(unsigned long share_memory_size)
 	}
 
 	down(&fdrv_sema);
-	//modify XLLSHLSS-819 by haiping.bai 20180122 start
-	IMSG_ERROR("send_fp_command end\n");
-	//modify XLLSHLSS-819 by haiping.bai 20180122 end
+	IMSG_DEBUG("send_fp_command end\n");
 	/* with a rmb() */
 
 	Invalidate_Dcache_By_Area((unsigned long)fp_buff_addr, (unsigned long)fp_buff_addr + FP_BUFF_SIZE);
 
 	ut_pm_mutex_unlock(&pm_mutex);
 	up(&fdrv_lock);
-
 
 	return fdrv_ent.retVal;
 }

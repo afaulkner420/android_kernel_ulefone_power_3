@@ -18,7 +18,6 @@
 #include <linux/delay.h>
 #include <linux/string.h>
 #include <linux/of_fdt.h>
-#include <linux/seq_file.h>
 #include <asm/setup.h>
 #include <mt-plat/mtk_secure_api.h>
 
@@ -33,14 +32,10 @@
 #if defined(CONFIG_MTK_WATCHDOG) && defined(CONFIG_MTK_WD_KICKER)
 #include <mach/wd_api.h>
 #endif
-#if defined(CONFIG_MTK_PMIC) || defined(CONFIG_MTK_PMIC_NEW_ARCH)
 #include <mt-plat/upmu_common.h>
-#endif
 #include <mtk_spm_misc.h>
 #include <mtk_spm_sleep.h>
-#ifdef CONFIG_MTK_DRAMC
 #include <mtk_dramc.h>
-#endif /* CONFIG_MTK_DRAMC */
 
 #include <mtk_spm_internal.h>
 #if !defined(CONFIG_FPGA_EARLY_PORTING)
@@ -63,7 +58,22 @@
 #include <mtk_hps_internal.h>
 #endif
 
-#include <mtk_spm_sleep_internal.h>
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+#include <mtk_mcdi_api.h>
+#endif
+
+/**************************************
+ * only for internal debug
+ **************************************/
+#ifdef CONFIG_MTK_LDVT
+#define SPM_PWAKE_EN            0
+#define SPM_PCMWDT_EN           0
+#define SPM_BYPASS_SYSPWREQ     1
+#else
+#define SPM_PWAKE_EN            1
+#define SPM_PCMWDT_EN           1
+#define SPM_BYPASS_SYSPWREQ     1
+#endif
 
 static int spm_dormant_sta;
 int spm_ap_mdsrc_req_cnt;
@@ -75,6 +85,15 @@ u8 spm_snapshot_golden_setting;
 
 struct wake_status spm_wakesta; /* record last wakesta */
 static unsigned int spm_sleep_count;
+
+/**************************************
+ * SW code for suspend
+ **************************************/
+#define SPM_SYSCLK_SETTLE       99	/* 3ms */
+
+#define WAIT_UART_ACK_TIMES     10	/* 10 * 10us */
+
+#define spm_is_wakesrc_invalid(wakesrc)     (!!((u32)(wakesrc) & 0xc0003803))
 
 int __attribute__ ((weak)) mtk_enter_idle_state(int idx)
 {
@@ -102,17 +121,21 @@ void __attribute__((weak)) mt_cirq_disable(void)
 	pr_err("NO %s !!!\n", __func__);
 }
 
+enum spm_suspend_step {
+	SPM_SUSPEND_ENTER = 0x00000001,
+	SPM_SUSPEND_ENTER_UART_SLEEP = 0x00000003,
+	SPM_SUSPEND_ENTER_WFI = 0x000000ff,
+	SPM_SUSPEND_LEAVE_WFI = 0x000001ff,
+	SPM_SUSPEND_ENTER_UART_AWAKE = 0x000003ff,
+	SPM_SUSPEND_LEAVE = 0x000007ff,
+};
+
+#define CPU_FOOTPRINT_SHIFT 24
+
 static inline void spm_suspend_footprint(enum spm_suspend_step step)
 {
 #ifdef CONFIG_MTK_RAM_CONSOLE
-	aee_rr_rec_spm_suspend_val(aee_rr_curr_spm_suspend_val() | step | (smp_processor_id() << CPU_FOOTPRINT_SHIFT));
-#endif
-}
-
-static inline void spm_suspend_reset_footprint(void)
-{
-#ifdef CONFIG_MTK_RAM_CONSOLE
-	aee_rr_rec_spm_suspend_val(0);
+	aee_rr_rec_spm_suspend_val(step | (smp_processor_id() << CPU_FOOTPRINT_SHIFT));
 #endif
 }
 
@@ -163,9 +186,6 @@ static void spm_suspend_pcm_setup_after_wfi(u32 cpu, struct pwr_ctrl *pwrctrl)
 	spm_suspend_post_process(pwrctrl);
 }
 
-int sleep_ddr_status;
-int sleep_vcore_status;
-
 static unsigned int spm_output_wake_reason(struct wake_status *wakesta)
 {
 	unsigned int wr;
@@ -196,17 +216,14 @@ static unsigned int spm_output_wake_reason(struct wake_status *wakesta)
 	ddr_status = vcorefs_get_curr_ddr();
 	vcore_status = vcorefs_get_curr_vcore();
 
-	spm_crit2("dormant = %d, s_ddr = %d, s_vcore = %d, ddr = %d, vcore = %d, sleep_count = %d\n",
-		  spm_dormant_sta, sleep_ddr_status, sleep_vcore_status,
-		  ddr_status, vcore_status, spm_sleep_count);
+	spm_crit2("suspend dormant state = %d, ddr = %d, vcore = %d, spm_sleep_count = %d\n",
+		  spm_dormant_sta, ddr_status, vcore_status, spm_sleep_count);
 	if (spm_ap_mdsrc_req_cnt != 0)
 		spm_crit2("warning: spm_ap_mdsrc_req_cnt = %d, r7[ap_mdsrc_req] = 0x%x\n",
 			  spm_ap_mdsrc_req_cnt, spm_read(SPM_POWER_ON_VAL1) & (1 << 17));
 
-#if defined(CONFIG_MTK_EIC) || defined(CONFIG_PINCTRL_MTK_COMMON)
 	if (wakesta->r12 & WAKE_SRC_R12_EINT_EVENT_B)
 		mt_eint_print_status();
-#endif
 
 #ifdef CONFIG_MTK_CCCI_DEVICES
 	/* if (wakesta->r13 & 0x18) { */
@@ -217,8 +234,6 @@ static unsigned int spm_output_wake_reason(struct wake_status *wakesta)
 
 #if !defined(CONFIG_FPGA_EARLY_PORTING)
 #ifdef CONFIG_MTK_ECCCI_DRIVER
-	if (wakesta->r12 & WAKE_SRC_R12_CLDMA_EVENT_B)
-		exec_ccci_kern_func_by_md_id(0, ID_GET_MD_WAKEUP_SRC, NULL, 0);
 	if (wakesta->r12 & WAKE_SRC_R12_MD2AP_PEER_EVENT_B)
 		exec_ccci_kern_func_by_md_id(0, ID_GET_MD_WAKEUP_SRC, NULL, 0);
 	if (wakesta->r12 & WAKE_SRC_R12_CCIF0_EVENT_B)
@@ -298,7 +313,10 @@ unsigned int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 	static unsigned int last_wr = WR_NONE;
 	struct pwr_ctrl *pwrctrl;
 	u32 cpu = 0;
-	u32 spm_flags1 = spm_data;
+
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+	mcdi_task_pause(true);
+#endif
 
 	spm_suspend_footprint(SPM_SUSPEND_ENTER);
 
@@ -315,10 +333,7 @@ unsigned int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 			SPM_PWR_CTRL_SUSPEND, PWR_WAKE_SRC, 0);
 
 	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
-
-	__sync_big_buck_ctrl_pcm_flag(&spm_flags1);
-	set_pwrctrl_pcm_flags1(pwrctrl, spm_flags1);
-
+	/* set_pwrctrl_pcm_flags1(pwrctrl, spm_data); */
 
 #if SPM_PWAKE_EN
 	sec = _spm_get_wake_period(-1, last_wr);
@@ -341,9 +356,7 @@ unsigned int spm_go_to_sleep(u32 spm_flags, u32 spm_data)
 #if defined(CONFIG_MTK_GIC_V3_EXT)
 	mt_irq_mask_all(&mask);
 	mt_irq_unmask_for_sleep_ex(SPM_IRQ0_ID);
-#if defined(CONFIG_MACH_MT6763)
 	unmask_edge_trig_irqs_for_cirq();
-#endif
 #endif
 
 #if defined(CONFIG_MTK_SYS_CIRQ)
@@ -413,15 +426,14 @@ RESTORE_IRQ:
 	if (usb2jtag_mode())
 		mtk_usb2jtag_resume();
 #endif
-	spm_suspend_reset_footprint();
+	spm_suspend_footprint(0);
+
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+	mcdi_task_pause(false);
+#endif
 
 	if (last_wr == WR_PCM_ASSERT)
 		rekick_vcorefs_scenario();
-
-	if (pwrctrl->wakelock_timer_val) {
-		spm_crit2("#@# %s(%d) calling spm_pm_stay_awake()\n", __func__, __LINE__);
-		spm_pm_stay_awake(pwrctrl->wakelock_timer_val);
-	}
 
 	return last_wr;
 }
@@ -449,11 +461,9 @@ u32 spm_get_last_wakeup_src(void)
 {
 	return spm_wakesta.r12;
 }
-EXPORT_SYMBOL(spm_get_last_wakeup_src);
 
 u32 spm_get_last_wakeup_misc(void)
 {
 	return spm_wakesta.wake_misc;
 }
-EXPORT_SYMBOL(spm_get_last_wakeup_misc);
 MODULE_DESCRIPTION("SPM-Sleep Driver v0.1");

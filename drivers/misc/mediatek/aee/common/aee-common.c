@@ -24,7 +24,6 @@
 #include <linux/smp.h>
 #include <linux/io.h>
 #include <linux/delay.h>
-#include <linux/reboot.h>
 #ifdef CONFIG_MTK_WATCHDOG
 #include <mach/wd_api.h>
 #endif
@@ -110,12 +109,14 @@ void aee_trigger_kdb(void)
 }
 #endif
 
-struct aee_oops *aee_oops_create(enum AE_DEFECT_ATTR attr, enum AE_EXP_CLASS clazz, const char *module)
+struct aee_oops *aee_oops_create(AE_DEFECT_ATTR attr, AE_EXP_CLASS clazz, const char *module)
 {
 	struct aee_oops *oops = kzalloc(sizeof(struct aee_oops), GFP_ATOMIC);
 
-	if (oops == NULL)
+	if (oops == NULL) {
+		pr_notice("%s : kzalloc() fail\n", __func__);
 		return NULL;
+	}
 	oops->attr = attr;
 	oops->clazz = clazz;
 	if (module != NULL)
@@ -200,16 +201,10 @@ void aee_kernel_warning_api(const char *file, const int line, const int db_opt, 
 	va_start(args, msg);
 	offset += snprintf(msgbuf, KERNEL_REPORT_LENGTH, "<%s:%d> ", file, line);
 	offset += vsnprintf(msgbuf + offset, KERNEL_REPORT_LENGTH - offset, msg, args);
-	if (g_aee_api && g_aee_api->kernel_reportAPI) {
-#ifdef CONFIG_MTK_ENG_BUILD
-		if (module && strstr(module, "maybe have other hang_detect KE DB"))
-			g_aee_api->kernel_reportAPI(AE_DEFECT_FATAL, db_opt, module, msgbuf);
-		else
-#endif
-			g_aee_api->kernel_reportAPI(AE_DEFECT_WARNING, db_opt, module, msgbuf);
-	} else {
+	if (g_aee_api && g_aee_api->kernel_reportAPI)
+		g_aee_api->kernel_reportAPI(AE_DEFECT_WARNING, db_opt, module, msgbuf);
+	else
 		pr_notice("AEE kernel warning: %s", msgbuf);
-	}
 	va_end(args);
 }
 EXPORT_SYMBOL(aee_kernel_warning_api);

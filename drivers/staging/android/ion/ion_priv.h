@@ -89,8 +89,10 @@ struct ion_client {
 };
 
 struct ion_handle_debug {
-	int fd;
-	unsigned long long user_ts; /* alloc or import timestamp */
+	pid_t pid;
+	pid_t tgid;
+	unsigned int backtrace[BACKTRACE_SIZE];
+	unsigned int backtrace_num;
 };
 
 /**
@@ -113,7 +115,9 @@ struct ion_handle {
 	struct rb_node node;
 	unsigned int kmap_cnt;
 	int id;
-	struct ion_handle_debug dbg; /*add by K for debug */
+#if ION_RUNTIME_DEBUGGER
+	struct ion_handle_debug dbg; /* add by K for debug */
+#endif
 };
 
 
@@ -170,7 +174,6 @@ struct ion_buffer {
 	int handle_count;
 	char task_comm[TASK_COMM_LEN];
 	pid_t pid;
-	char alloc_dbg[ION_MM_DBG_NAME_LEN];
 };
 void ion_buffer_destroy(struct ion_buffer *buffer);
 

@@ -131,7 +131,7 @@ bool __skb_flow_dissect(const struct sk_buff *skb,
 	struct flow_dissector_key_tags *key_tags;
 	struct flow_dissector_key_keyid *key_keyid;
 	u8 ip_proto = 0;
-	bool ret;
+	bool ret = false;
 
 	if (!data) {
 		data = skb->data;
@@ -492,17 +492,12 @@ ip_proto_again:
 out_good:
 	ret = true;
 
-	key_control->thoff = (u16)nhoff;
-out:
+out_bad:
 	key_basic->n_proto = proto;
 	key_basic->ip_proto = ip_proto;
+	key_control->thoff = (u16)nhoff;
 
 	return ret;
-
-out_bad:
-	ret = false;
-	key_control->thoff = min_t(u16, nhoff, skb ? skb->len : hlen);
-	goto out;
 }
 EXPORT_SYMBOL(__skb_flow_dissect);
 
@@ -949,4 +944,4 @@ static int __init init_default_flow_dissectors(void)
 	return 0;
 }
 
-core_initcall(init_default_flow_dissectors);
+late_initcall_sync(init_default_flow_dissectors);

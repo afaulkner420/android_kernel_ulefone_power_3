@@ -25,23 +25,13 @@
  * Ring buffer that supports one secure producer thread and one
  * linux side consumer thread.
  */
-#define TZ_EMPTY_PARENTHESES(z) z
-#define TZ_VOLATILE(x) TZ_EMPTY_PARENTHESES(vola##tile x)
-#define TZ_NON_VOLATILE(x) x
 struct log_rb {
-	TZ_VOLATILE(uint32_t alloc);
-	TZ_VOLATILE(uint32_t put);
-	TZ_NON_VOLATILE(uint32_t sz);
-	TZ_VOLATILE(char data[0]);
-} __packed;
-
-
-struct boot_log_rb {
-	uint32_t get;
-	uint32_t put;
+	volatile uint32_t alloc;
+	volatile uint32_t put;
 	uint32_t sz;
-	char data[0];
+	volatile char data[0];
 } __packed;
+
 
 struct tz_log_state {
 	struct device *dev;
@@ -52,11 +42,9 @@ struct tz_log_state {
 	 */
 	spinlock_t lock;
 	struct log_rb *log;
-	struct boot_log_rb *boot_log;
 	uint32_t get;
 
 	struct page *log_pages;
-	struct page *boot_log_pages;
 
 	struct notifier_block call_notifier;
 	struct notifier_block panic_notifier;

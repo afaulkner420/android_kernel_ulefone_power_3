@@ -35,13 +35,10 @@ struct charger_manager;
 #include "mtk_pe_intf.h"
 #include "mtk_pe20_intf.h"
 #include "mtk_pe30_intf.h"
-#include "mtk_pe40_intf.h"
 #include "mtk_pdc_intf.h"
 
 #define CHARGING_INTERVAL 10
 #define CHARGING_FULL_INTERVAL 20
-
-#define MAX_CHARGING_TIME (12 * 60 * 60) /* 12 hours */
 
 #define CHRLOG_ERROR_LEVEL   1
 #define CHRLOG_DEBUG_LEVEL   2
@@ -102,20 +99,6 @@ extern void charger_log_flash(const char *fmt, ...);
 			}								   \
 		} while (0)
 #endif
-
-
-#define CHR_CC		(0x0001)
-#define CHR_TOPOFF  (0x0002)
-#define CHR_TUNING	(0x0003)
-#define CHR_POSTCC	(0x0004)
-#define CHR_BATFULL	(0x0005)
-#define CHR_ERROR	(0x0006)
-#define	CHR_PE40_INIT	(0x0007)
-#define	CHR_PE40_CC	(0x0008)
-#define	CHR_PE40_TUNING (0x0009)
-#define	CHR_PE40_POSTCC (0x000A)
-#define CHR_PE30	(0x000B)
-
 
 /* charger_algorithm notify charger_dev */
 enum {
@@ -178,8 +161,6 @@ struct battery_thermal_protection_data {
 struct charger_custom_data {
 	int battery_cv;	/* uv */
 	int max_charger_voltage;
-	int max_charger_voltage_setting;
-	int min_charger_voltage;
 
 	int usb_charger_current_suspend;
 	int usb_charger_current_unconfigured;
@@ -233,14 +214,6 @@ struct charger_custom_data {
 	int ta_start_battery_soc;
 	int ta_stop_battery_soc;
 
-	/* pe4.0 */
-	int pe40_single_charger_input_current;	/* ma */
-	int pe40_single_charger_current;
-	int pe40_dual_charger_input_current;
-	int pe40_dual_charger_chg1_current;
-	int pe40_dual_charger_chg2_current;
-	int pe40_stop_battery_soc;
-
 	/* pe3.0 */
 	int cv_limit;	/* vbus upper bound (mv)*/
 	int bat_upper_bound;	/* battery upper bound (mv)*/
@@ -290,10 +263,6 @@ struct charger_custom_data {
 	int bif_threshold2;	/* uv */
 	int bif_cv_under_threshold2;	/* uv */
 
-	/* power path */
-	bool power_path_support;
-
-	int max_charging_time; /* second */
 };
 
 struct charger_data {
@@ -313,7 +282,6 @@ struct charger_manager {
 	void	*algorithm_data;
 	int usb_state;
 	bool usb_unlimited;
-	bool disable_charger;
 
 	struct charger_device *chg1_dev;
 	struct notifier_block chg1_nb;
@@ -381,20 +349,9 @@ struct charger_manager {
 	struct mtk_pe30 pe3;
 	struct charger_device *dc_chg;
 
-	/* pe 4.0 */
-	bool enable_pe_4;
-	struct mtk_pe40 pe4;
-
-	/* type-C*/
-	bool enable_type_c;
-
 	/* pd */
 	struct mtk_pdc pdc;
 
-	int pd_type;
-	struct tcpc_device *tcpc;
-	struct notifier_block pd_nb;
-	bool pd_reset;
 
 	/* thread related */
 	struct hrtimer charger_kthread_timer;
@@ -402,7 +359,6 @@ struct charger_manager {
 
 	struct wake_lock charger_wakelock;
 	struct mutex charger_lock;
-	struct mutex charger_pd_lock;
 	spinlock_t slock;
 	unsigned int polling_interval;
 	bool charger_thread_timeout;
@@ -417,12 +373,8 @@ struct charger_manager {
 extern int charger_manager_notifier(struct charger_manager *info, int event);
 extern int mtk_switch_charging_init(struct charger_manager *);
 extern int mtk_dual_switch_charging_init(struct charger_manager *);
-extern int mtk_linear_charging_init(struct charger_manager *);
 extern void _wake_up_charger(struct charger_manager *);
 extern int mtk_get_dynamic_cv(struct charger_manager *info, unsigned int *cv);
-extern bool is_dual_charger_supported(struct charger_manager *info);
-extern int charger_enable_vbus_ovp(struct charger_manager *pinfo, bool enable);
-extern bool is_typec_adapter(struct charger_manager *info);
 
 /* procfs */
 #define PROC_FOPS_RW(name)							\

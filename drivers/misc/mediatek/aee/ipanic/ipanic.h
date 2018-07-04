@@ -15,7 +15,6 @@
 #define __AEE_IPANIC_H__
 
 #include <generated/autoconf.h>
-#include <linux/console.h>
 #include <linux/kallsyms.h>
 #include <linux/kmsg_dump.h>
 /* #include "staging/android/logger.h" */
@@ -254,7 +253,6 @@ extern void aee_rr_rec_exp_type(unsigned int type);
 extern unsigned int aee_rr_curr_exp_type(void);
 extern void aee_rr_rec_scp(void);
 extern void aee_rr_rec_fiq_step(u8 step);
-extern void aee_rr_rec_kaslr_offset(u64 value64);
 #else
 __weak unsigned int aee_rr_curr_exp_type(void)
 {

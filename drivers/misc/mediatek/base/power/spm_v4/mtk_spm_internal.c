@@ -21,7 +21,6 @@
 #include <linux/random.h>
 #include <asm/setup.h>
 #include <mtk_eem.h>
-#include <mtk_spm_idle.h>
 #include <mtk_spm_internal.h>
 #include <mtk_spm_misc.h>
 #include <mtk_spm_pmic_wrap.h>
@@ -29,24 +28,17 @@
 #include <mtk_spm_resource_req_internal.h>
 #include <mtk_vcorefs_governor.h>
 #include <mtk_spm_vcore_dvfs.h>
-#if defined(CONFIG_MTK_PMIC) || defined(CONFIG_MTK_PMIC_NEW_ARCH)
 #include <mt-plat/upmu_common.h>
-#endif
 #ifdef CONFIG_MTK_TINYSYS_SCP_SUPPORT
 #include <scp_dvfs.h>
 #endif /* CONFIG_MTK_TINYSYS_SCP_SUPPORT */
-#if defined(CONFIG_MACH_MT6739)
-#include <mt-plat/mtk_secure_api.h>
-#endif /* CONFIG_MACH_MT6739 */
+/* #include <mt-plat/mtk_secure_api.h> */
 #ifdef CONFIG_MTK_DCS
 #include <mt-plat/mtk_meminfo.h>
 #endif
-
-#if defined(CONFIG_MACH_MT6771)
-/* for mp1 vproc control check with mcdi and hps */
-#include "mtk_hps_internal.h"
-#include "mtk_mcdi_governor.h"
-#endif
+#ifdef CONFIG_MTK_DRAMC
+#include <mtk_dramc.h>
+#endif /* CONFIG_MTK_DRAMC */
 
 /**************************************
  * Config and Parameter
@@ -78,13 +70,8 @@ const char *wakesrc_str[32] = {
 	[8] = " R12_CCIF0_EVENT_B",
 	[9] = " R12_LOWBATTERY_IRQ_B",
 	[10] = " R12_SSPM_SPM_IRQ_B",
-#if defined(CONFIG_MACH_MT6771)
-	[11] = " R12_SCP_SPM_IRQ_B",
-	[12] = " R12_SCP_WDT_EVENT_B",
-#else /* MT6763 and MT6739 */
 	[11] = " R12_26M_WAKE",
 	[12] = " R12_26M_SLEEP",
-#endif
 	[13] = " R12_PCM_WDT_WAKEUP_B",
 	[14] = " R12_USB_CDSC_B",
 	[15] = " R12_USB_POWERDWN_B",
@@ -109,23 +96,6 @@ const char *wakesrc_str[32] = {
 /**************************************
  * Function and API
  **************************************/
-
-static int md_srcclkena = -1;
-int __spm_get_md_srcclkena_setting(void)
-{
-	int val;
-
-	if (md_srcclkena < 0) {
-		val = get_devinfo_with_index(54);
-		if (((((val >> 28) & 0x3) == 0x1) || (((val >> 28) & 0x3) == 0x2))
-				& (((val >> 25) & 0x1) == 0x0))
-			md_srcclkena = 1;
-		else
-			md_srcclkena = 0;
-	}
-
-	return md_srcclkena;
-}
 
 int __spm_get_pcm_timer_val(const struct pwr_ctrl *pwrctrl)
 {
@@ -218,16 +188,55 @@ do {						\
 
 void rekick_vcorefs_scenario(void)
 {
-	/* FIXME: */
-#if defined(CONFIG_MACH_MT6763)
 	int flag;
 
 	if (spm_read(PCM_REG15_DATA) == 0x0) {
 		flag = spm_dvfs_flag_init();
 		spm_go_to_vcorefs(flag);
 	}
-#endif
 }
+
+#ifdef CONFIG_MTK_DRAMC
+struct ddrphy_debug_dump {
+	u32 base;
+	u32 offset;
+};
+
+static struct ddrphy_debug_dump _ddrphy_debug_dump[] = {
+	{DRAMC_AO_CHA, 0x210},
+	{DRAMC_AO_CHB, 0x210},
+	{DRAMC_NAO_CHA, 0xc00},
+	{DRAMC_NAO_CHA, 0xc04},
+	{DRAMC_NAO_CHB, 0xc00},
+	{DRAMC_NAO_CHB, 0xc04},
+	{DRAMC_NAO_CHA, 0x090},
+	{DRAMC_NAO_CHB, 0x090},
+	{DRAMC_NAO_CHA, 0x080},
+	{DRAMC_NAO_CHB, 0x080},
+	{DRAMC_NAO_CHA, 0x084},
+	{DRAMC_NAO_CHB, 0x084},
+};
+
+int spm_dram_debug_dump(void)
+{
+	int i, ddrphy_num, r = 0;
+	struct ddrphy_debug_dump *ddrphy_debug_dump;
+
+	ddrphy_debug_dump = _ddrphy_debug_dump;
+	ddrphy_num = ARRAY_SIZE(_ddrphy_debug_dump);
+
+	for (i = 0; i < ddrphy_num; i++) {
+		u32 value;
+
+		value = lpDram_Register_Read(ddrphy_debug_dump[i].base, ddrphy_debug_dump[i].offset);
+			spm_crit2("dramc debug addr: 0x%.2x, offset: 0x%.3x, read: 0x%x\n",
+				ddrphy_debug_dump[i].base, ddrphy_debug_dump[i].offset, value);
+	}
+
+	return r;
+
+}
+#endif /* CONFIG_MTK_DRAMC */
 
 unsigned int __spm_output_wake_reason(const struct wake_status *wakesta,
 		const struct pcm_desc *pcmdesc, bool suspend, const char *scenario)
@@ -235,7 +244,6 @@ unsigned int __spm_output_wake_reason(const struct wake_status *wakesta,
 	int i;
 	char buf[LOG_BUF_SIZE] = { 0 };
 	char log_buf[1024] = { 0 };
-	char *local_ptr;
 	int log_size = 0;
 	unsigned int wr = WR_UNKNOWN;
 
@@ -245,34 +253,61 @@ unsigned int __spm_output_wake_reason(const struct wake_status *wakesta,
 			  wakesta->assert_pc, scenario, wakesta->r13,
 			  wakesta->debug_flag, wakesta->debug_flag1);
 
-#if defined(CONFIG_MACH_MT6763)
+#if 0
 		if (!(wakesta->debug_flag1 & SPM_DBG1_DRAM_SREF_ACK_TO))
 			aee_kernel_warning("SPM Warning",
 					"PCM ASSERT AT 0x%x (%s), r13 = 0x%x, debug_flag = 0x%x 0x%x\n",
 					wakesta->assert_pc, scenario, wakesta->r13,
 					wakesta->debug_flag, wakesta->debug_flag1);
-#endif /* CONFIG_MACH_MT6763 */
+#endif
+
+#ifdef CONFIG_MTK_DRAMC
+		spm_crit2(" debug for PDEF_SW_DMDRAMCSHU_ACK_LSB\n");
+		spm_dram_debug_dump();
+#endif /* CONFIG_MTK_DRAMC */
+
+		spm_crit2(" spm r0: 0x%x\n", spm_read(PCM_REG0_DATA));
+		spm_crit2(" spm r1: 0x%x\n", spm_read(PCM_REG1_DATA));
+		spm_crit2(" spm r2: 0x%x\n", spm_read(PCM_REG2_DATA));
+		spm_crit2(" spm r3: 0x%x\n", spm_read(PCM_REG3_DATA));
+		spm_crit2(" spm r4: 0x%x\n", spm_read(PCM_REG4_DATA));
+		spm_crit2(" spm r5: 0x%x\n", spm_read(PCM_REG5_DATA));
+		spm_crit2(" spm r6: 0x%x\n", spm_read(PCM_REG6_DATA));
+		spm_crit2(" spm r7: 0x%x\n", spm_read(PCM_REG7_DATA));
+		spm_crit2(" spm r8: 0x%x\n", spm_read(PCM_REG8_DATA));
+		spm_crit2(" spm r9: 0x%x\n", spm_read(PCM_REG9_DATA));
+		spm_crit2(" spm r10: 0x%x\n", spm_read(PCM_REG10_DATA));
+		spm_crit2(" spm r11: 0x%x\n", spm_read(PCM_REG11_DATA));
+		spm_crit2(" spm r12: 0x%x\n", spm_read(PCM_REG12_DATA));
+		spm_crit2(" spm r12_ext: 0x%x\n", spm_read(PCM_REG12_EXT_DATA));
+		spm_crit2(" spm r13: 0x%x\n", spm_read(PCM_REG13_DATA));
+		spm_crit2(" spm r14: 0x%x\n", spm_read(PCM_REG14_DATA));
+		spm_crit2(" spm r15: 0x%x\n", spm_read(PCM_REG15_DATA));
+
+		spm_crit2(" SPM_PC_TRACE_CON : 0x%x\n", spm_read(SPM_PC_TRACE_CON));
+		spm_crit2(" SPM_PC_TRACE_G0 : 0x%x\n", spm_read(SPM_PC_TRACE_G0));
+		spm_crit2(" SPM_PC_TRACE_G1 : 0x%x\n", spm_read(SPM_PC_TRACE_G1));
+		spm_crit2(" SPM_PC_TRACE_G2 : 0x%x\n", spm_read(SPM_PC_TRACE_G2));
+		spm_crit2(" SPM_PC_TRACE_G3 : 0x%x\n", spm_read(SPM_PC_TRACE_G3));
+		spm_crit2(" SPM_PC_TRACE_G4 : 0x%x\n", spm_read(SPM_PC_TRACE_G4));
+		spm_crit2(" SPM_PC_TRACE_G5 : 0x%x\n", spm_read(SPM_PC_TRACE_G5));
+		spm_crit2(" SPM_PC_TRACE_G6 : 0x%x\n", spm_read(SPM_PC_TRACE_G6));
+		spm_crit2(" SPM_PC_TRACE_G7 : 0x%x\n", spm_read(SPM_PC_TRACE_G7));
 
 		return WR_PCM_ASSERT;
 	}
 
 	if (wakesta->r12 & WAKE_SRC_R12_PCM_TIMER) {
 		if (wakesta->wake_misc & WAKE_MISC_PCM_TIMER) {
-			local_ptr = " PCM_TIMER";
-			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
-				strncat(buf, local_ptr, strlen(local_ptr));
+			strcat(buf, " PCM_TIMER");
 			wr = WR_PCM_TIMER;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_TWAM) {
-			local_ptr = " TWAM";
-			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
-				strncat(buf, local_ptr, strlen(local_ptr));
+			strcat(buf, " TWAM");
 			wr = WR_WAKE_SRC;
 		}
 		if (wakesta->wake_misc & WAKE_MISC_CPU_WAKE) {
-			local_ptr = " CPU";
-			if ((strlen(buf) + strlen(local_ptr)) < LOG_BUF_SIZE)
-				strncat(buf, local_ptr, strlen(local_ptr));
+			strcat(buf, " CPU");
 			wr = WR_WAKE_SRC;
 		}
 	}
@@ -319,7 +354,8 @@ long int spm_get_current_time_ms(void)
 
 void spm_set_dummy_read_addr(int debug)
 {
-#if defined(CONFIG_MACH_MT6739)
+/* FIXME: */
+#if 0
 	u64 rank0_addr, rank1_addr;
 	u32 dram_rank_num;
 
@@ -348,7 +384,27 @@ void spm_set_dummy_read_addr(int debug)
 				enable_4G(), rank0_addr, rank1_addr);
 
 	mt_secure_call(MTK_SIP_KERNEL_SPM_DUMMY_READ, rank0_addr, rank1_addr, 0);
-#endif /* CONFIG_MACH_MT6739 */
+#endif
+}
+
+void __spm_set_pcm_wdt(int en)
+{
+	/* enable PCM WDT (normal mode) to start count if needed */
+	if (en) {
+		u32 con1;
+
+		con1 = spm_read(PCM_CON1) & ~(PCM_WDT_WAKE_MODE_LSB);
+		spm_write(PCM_CON1, SPM_REGWR_CFG_KEY | con1);
+
+		if (spm_read(PCM_TIMER_VAL) > PCM_TIMER_MAX)
+			spm_write(PCM_TIMER_VAL, PCM_TIMER_MAX);
+		spm_write(PCM_WDT_VAL, spm_read(PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
+		spm_write(PCM_CON1, con1 | SPM_REGWR_CFG_KEY | PCM_WDT_EN_LSB);
+	} else {
+		spm_write(PCM_CON1, SPM_REGWR_CFG_KEY | (spm_read(PCM_CON1) &
+		~PCM_WDT_EN_LSB));
+	}
+
 }
 
 int __attribute__ ((weak)) get_dynamic_period(int first_use, int first_wakeup_time,
@@ -378,58 +434,6 @@ u32 _spm_get_wake_period(int pwake_time, unsigned int last_wr)
 		period = 36 * 3600;
 
 	return period;
-}
-
-bool __attribute__ ((weak)) mcdi_is_buck_off(int cluster_idx)
-{
-	spm_crit2("NO %s !!!\n", __func__);
-	return false;
-}
-bool __attribute__ ((weak)) cpuhp_is_buck_off(int cluster_idx)
-{
-	spm_crit2("NO %s !!!\n", __func__);
-	return false;
-}
-
-#if defined(CONFIG_MACH_MT6771)
-bool is_big_buck_ctrl_by_spm(void)
-{
-	/*
-	 * parameter idx MP0: 0, MP1: 1
-	 * check mcdi status with big_buck
-	 * check hotplug status with big_buck
-	 * mcdi/cpuhp api
-	 * @Return:
-	 * true if buck is powered off by mcdi/cpuhp
-	 * false if buck is not powered off by mcdi/cpuhp
-	 *
-	 */
-
-	return !(mcdi_is_buck_off(1) || cpuhp_is_buck_off(1));
-}
-#endif
-
-void __sync_big_buck_ctrl_pcm_flag(u32 *flag)
-{
-#if defined(CONFIG_MACH_MT6771)
-	if (is_big_buck_ctrl_by_spm()) {
-		*flag |= (SPM_FLAG1_BIG_BUCK_OFF_ENABLE |
-				SPM_FLAG1_BIG_BUCK_ON_ENABLE);
-	} else {
-		*flag &= ~(SPM_FLAG1_BIG_BUCK_OFF_ENABLE |
-				SPM_FLAG1_BIG_BUCK_ON_ENABLE);
-	}
-#endif
-}
-
-void __sync_vcore_ctrl_pcm_flag(u32 oper_cond, u32 *flag)
-{
-#if defined(CONFIG_MACH_MT6771)
-	if (oper_cond & DEEPIDLE_OPT_VCORE_LOW_VOLT)
-		*flag &= ~SPM_FLAG1_VCORE_LP_0P7V;
-	else
-		*flag |= SPM_FLAG1_VCORE_LP_0P7V;
-#endif
 }
 
 MODULE_DESCRIPTION("SPM-Internal Driver v0.1");

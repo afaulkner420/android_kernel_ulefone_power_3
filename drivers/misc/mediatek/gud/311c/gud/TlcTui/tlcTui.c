@@ -38,7 +38,7 @@ static struct tlc_tui_command_t g_user_cmd = {.id = TLC_TUI_CMD_NONE};
 static struct mc_session_handle dr_session_handle = {0, 0};
 struct tlc_tui_response_t g_user_rsp = {.id = TLC_TUI_CMD_NONE,
 				.return_code = TLC_TUI_ERR_UNKNOWN_CMD};
-static bool g_dci_version_checked;
+bool g_dci_version_checked;
 
 /* Functions */
 
@@ -52,7 +52,7 @@ static bool tlc_open_driver(void)
 	/* Allocate WSM buffer for the DCI */
 	mc_ret = mc_malloc_wsm(DEVICE_ID, 0, sizeof(struct tui_dci_msg_t),
 			       (uint8_t **)&dci, 0);
-	if (mc_ret != MC_DRV_OK) {
+	if (MC_DRV_OK != mc_ret) {
 		pr_err("ERROR %s:%d Allocation of DCI WSM failed: %d\n",
 			 __func__, __LINE__, mc_ret);
 		return false;
@@ -65,7 +65,7 @@ static bool tlc_open_driver(void)
 	/* Open session with the Driver */
 	mc_ret = mc_open_session(&dr_session_handle, &dr_uuid, (uint8_t *)dci,
 				 (uint32_t)sizeof(struct tui_dci_msg_t));
-	if (mc_ret != MC_DRV_OK) {
+	if (MC_DRV_OK != mc_ret) {
 		pr_err("ERROR %s:%d Open driver session failed: %d\n",
 			 __func__, __LINE__, mc_ret);
 		ret = false;
@@ -110,7 +110,7 @@ static void tlc_wait_cmd_from_driver(void)
 
 	/* Wait for a command from secure driver */
 	ret = mc_wait_notification(&dr_session_handle, -1);
-	if (ret == MC_DRV_OK)
+	if (MC_DRV_OK == ret)
 		pr_debug("tlc_wait_cmd_from_driver: Got a command\n");
 	else
 		pr_err("ERROR %s:%d mc_wait_notification() failed: %d\n",
@@ -142,20 +142,16 @@ uint32_t send_cmd_to_user(uint32_t command_id, uint32_t data0, uint32_t data1)
 			 retry);
 	}
 
-	/*
-	 * Check that the client (TuiService) is still present before to return
-	 * the command.
-	 */
+	/* Check that the client (TuiService) is still present before to return
+	 * the command. */
 	if (atomic_read(&fileopened)) {
 		/* Clean up previous response. */
 		complete_all(&io_comp);
 		reinit_completion(&io_comp);
 
-		/*
-		 * Unlock the ioctl thread (IOCTL_WAIT) in order to let the
-		 * client know that there is a command to process.
-		 */
-		pr_info("%s: give way to ioctl thread\n", __func__);
+		/* Unlock the ioctl thread (IOCTL_WAIT) in order to let the
+		 * client know that there is a command to process. */
+		pr_debug("%s: give way to ioctl thread\n", __func__);
 		complete(&dci_comp);
 		pr_info("TUI TLC is running, waiting for the userland response\n");
 		/* Wait for the client acknowledge (IOCTL_ACK). */
@@ -166,10 +162,8 @@ uint32_t send_cmd_to_user(uint32_t command_id, uint32_t data0, uint32_t data1)
 				 __func__, __LINE__);
 		}
 	} else {
-		/*
-		 * There is no client, do nothing except reporting an error to
-		 * SWd.
-		 */
+		/* There is no client, do nothing except reporting an error to
+		 * SWd. */
 		pr_info("TUI TLC seems dead. Not waiting for userland answer\n");
 		ret = TUI_DCI_ERR_INTERNAL_ERROR;
 		goto end;
@@ -200,10 +194,8 @@ uint32_t send_cmd_to_user(uint32_t command_id, uint32_t data0, uint32_t data1)
 	}
 
 end:
-	/*
-	 * In any case, reset the value of the command, to ensure that commands
-	 * sent due to inturrupted wait_for_completion are TLC_TUI_CMD_NONE.
-	 */
+	/* In any case, reset the value of the command, to ensure that commands
+	 * sent due to inturrupted wait_for_completion are TLC_TUI_CMD_NONE. */
 	reset_global_command_id();
 	return ret;
 }
@@ -214,7 +206,7 @@ static void tlc_process_cmd(void)
 	uint32_t ret = TUI_DCI_ERR_INTERNAL_ERROR;
 	uint32_t command_id = CMD_TUI_SW_NONE;
 
-	if (!dci) {
+	if  (NULL == dci) {
 		pr_err("ERROR %s:%d DCI has not been set up properly - exiting\n",
 			 __func__, __LINE__);
 		return;
@@ -226,7 +218,7 @@ static void tlc_process_cmd(void)
 		hal_tui_notif();
 
 	/* Warn if previous response was not acknowledged */
-	if (command_id == CMD_TUI_SW_NONE) {
+	if (CMD_TUI_SW_NONE == command_id) {
 		pr_err("ERROR %s:%d Notified without command\n", __func__,
 			 __LINE__);
 		return;
@@ -253,7 +245,7 @@ static void tlc_process_cmd(void)
 				       num_of_buff,
 				       dci->cmd_nwd.payload.alloc_data.
 				       alloc_size);
-		if (ret != TUI_DCI_OK)
+		if (TUI_DCI_OK != ret)
 			break;
 
 /*****************************************************************************/
@@ -262,7 +254,7 @@ static void tlc_process_cmd(void)
 		ret = hal_tui_alloc(dci->nwd_rsp.alloc_buffer,
 				    dci->cmd_nwd.payload.alloc_data.alloc_size,
 				   dci->cmd_nwd.payload.alloc_data.num_of_buff);
-		if (ret != TUI_DCI_OK) {
+		if (TUI_DCI_OK != ret) {
 			pr_err("%s: hal_tui_alloc() failed (0x%08X)",
 				 __func__, ret);
 			send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY, 0, 0);
@@ -272,7 +264,7 @@ static void tlc_process_cmd(void)
 		/* Deactivate linux UI drivers */
 		ret = hal_tui_deactivate();
 
-		if (ret != TUI_DCI_OK) {
+		if (TUI_DCI_OK != ret) {
 			pr_err("hal_tui_deactivate fail\n");
 			hal_tui_free();
 			send_cmd_to_user(TLC_TUI_CMD_STOP_ACTIVITY, 0, 0);
@@ -344,7 +336,7 @@ static void tlc_process_cmd(void)
 	/* Notify SWd */
 	pr_debug("DCI RSP NOTIFY CORE\n");
 	ret = mc_notify(&dr_session_handle);
-	if (ret != MC_DRV_OK)
+	if (MC_DRV_OK != ret)
 		pr_err("ERROR %s:%d Notify failed: %d\n", __func__, __LINE__,
 			 ret);
 }
@@ -356,7 +348,7 @@ static void tlc_close_driver(void)
 
 	/* Close session with the Driver */
 	ret = mc_close_session(&dr_session_handle);
-	if (ret != MC_DRV_OK) {
+	if (MC_DRV_OK != ret) {
 		pr_err("ERROR %s:%d Closing driver session failed: %d\n",
 			 __func__, __LINE__, ret);
 	}
@@ -373,7 +365,7 @@ static void tlc_close(void)
 	pr_debug("%s: Closing tbase\n", __func__);
 	/* Close the tbase device */
 	ret = mc_close_device(DEVICE_ID);
-	if (ret != MC_DRV_OK) {
+	if (MC_DRV_OK != ret) {
 		pr_err("ERROR %s:%d Closing tbase device failed: %d\n",
 			 __func__, __LINE__, ret);
 	}
@@ -391,7 +383,7 @@ bool tlc_notify_event(uint32_t event_type)
 	bool ret = false;
 	enum mc_result result;
 
-	if (!dci) {
+	if (NULL == dci) {
 		pr_err("WARNING %s:%d tlc_notify_event: DCI has not been set up properly - exiting\n",
 			 __func__, __LINE__);
 		return false;
@@ -404,7 +396,7 @@ bool tlc_notify_event(uint32_t event_type)
 	/* Signal the Driver */
 	pr_debug("DCI EVENT NOTIFY CORE\n");
 	result = mc_notify(&dr_session_handle);
-	if (result != MC_DRV_OK) {
+	if (MC_DRV_OK != result) {
 		pr_err("ERROR %s:%d tlc_notify_event: mc_notify failed: %d\n",
 			 __func__, __LINE__, result);
 		ret = false;
@@ -437,10 +429,8 @@ static int main_thread(void *uarg)
 		tlc_process_cmd();
 	}
 
-	/*
-	 * Close tlc. Note that this frees the DCI pointer.
-	 * Do not use this pointer after tlc_close().
-	 */
+	/* Close tlc. Note that this frees the DCI pointer.
+	 * Do not use this pointer after tlc_close().*/
 	tlc_close();
 
 	return 0;
@@ -448,9 +438,8 @@ static int main_thread(void *uarg)
 
 static int start_thread_if_needed(void)
 {
-	/*
-	 * Create the TlcTui Main thread and start secure driver (only 1st time)
-	 */
+	/* Create the TlcTui Main thread and start secure driver (only
+	   1st time) */
 	if (!dr_session_handle.session_id) {
 		thread_id = kthread_run(main_thread, NULL, "tee_tui");
 		if (!thread_id) {
@@ -489,7 +478,7 @@ int tlc_ack_cmd(struct tlc_tui_response_t *rsp)
 {
 	g_user_rsp = *rsp;
 
-	if (g_user_rsp.id == TLC_TUI_CMD_ALLOC_FB)
+	if (TLC_TUI_CMD_ALLOC_FB == g_user_rsp.id)
 		hal_tui_post_start(&g_user_rsp);
 
 	/* Send signal to DCI */

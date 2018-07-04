@@ -74,7 +74,7 @@ static void _golden_setting_disable(struct golden *g)
 	}
 }
 
-static void _golden_setting_set_mode(struct golden *g, unsigned int mode)
+static void _golden_setting_set_mode(struct golden *g, print_mode mode)
 {
 	g->mode = mode;
 }
@@ -455,9 +455,6 @@ static ssize_t golden_test_proc_write(struct file *file, const char __user *buff
 	unsigned int mask;
 	unsigned int golden_val;
 
-	if (!buf)
-		return -EINVAL;
-
 	/* set golden setting (hex mode) */
 	if (sscanf(buf, "0x%x 0x%x 0x%x", &addr, &mask, &golden_val) == 3)
 		_golden_setting_add(&_golden, addr, mask, golden_val);
@@ -797,7 +794,7 @@ void mt_power_gs_compare(char *scenario, char *pmic_name,
 		p = buf;
 		p += snprintf(p, sizeof(buf), "\n");
 		p += snprintf(p, sizeof(buf) - (p - buf),
-		"Scenario - %s - Addr       - Value      - Mask       - Golden     - Wrong Bit\n", pmic_name);
+		"Scenario - PMIC - Addr       - Value      - Mask       - Golden     - Wrong Bit\n");
 
 		for (i = 0; i < pmic_gs_len; i += 3) {
 			val0 = _golden_read_reg(pmic_gs[i]);

@@ -1,7 +1,7 @@
 /*
  *  include header file for MediaTek MT6370 Charger
  *
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -64,7 +64,6 @@ struct mt6370_pmu_chip {
 	struct rt_mutex io_lock;
 	int irq;
 	uint8_t chip_rev;
-	uint8_t chip_vid;
 };
 
 /* core control */

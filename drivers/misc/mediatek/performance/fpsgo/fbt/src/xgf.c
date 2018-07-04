@@ -25,7 +25,7 @@
 #include <linux/trace_events.h>
 #include <linux/debugfs.h>
 
-#include "../../../perf_ioctl/perf_ioctl.h"
+#include <uapi/linux/fpsgo.h>
 #include <mt-plat/fpsgo_common.h>
 
 #define CREATE_TRACE_POINTS
@@ -82,7 +82,7 @@ void xgf_trace(const char *fmt, ...)
 }
 EXPORT_SYMBOL(xgf_trace);
 
-static inline void xgf_timer_systrace(const void * const timer,
+static inline void xgf_timer_systrace(const struct hrtimer * const timer,
 				      int value)
 {
 	xgf_lockprove(__func__);
@@ -164,13 +164,15 @@ static void xgf_update_tick(struct xgf_proc *proc, struct xgf_tick *tick,
 }
 
 static struct xgf_timer *xgf_get_timer_rec(
-		const void * const timer,
+		const struct hrtimer * const timer,
 		struct xgf_proc *proc, int force)
 {
 	struct rb_node **p = &proc->timer_rec.rb_node;
 	struct rb_node *parent = NULL;
 	struct xgf_timer *xt = NULL;
-	const void *ref;
+	unsigned long long ref, tar;
+
+	tar = (unsigned long long)timer;
 
 	xgf_lockprove(__func__);
 
@@ -178,10 +180,10 @@ static struct xgf_timer *xgf_get_timer_rec(
 		parent = *p;
 		xt = rb_entry(parent, struct xgf_timer, rb_node);
 
-		ref = xt->hrtimer;
-		if (timer < ref)
+		ref = (unsigned long long)xt->hrtimer;
+		if (tar < ref)
 			p = &(*p)->rb_left;
-		else if (timer > ref)
+		else if (tar > ref)
 			p = &(*p)->rb_right;
 		else
 			return xt;
@@ -246,7 +248,7 @@ static inline void xgf_blacked_recycle(struct rb_root *root,
 /**
  * is_valid_sleeper
  */
-static int is_valid_sleeper(const void * const timer,
+static int is_valid_sleeper(const struct hrtimer * const timer,
 			    struct xgf_proc *proc,
 			    unsigned long long now_ts)
 {
@@ -287,7 +289,7 @@ static int is_valid_sleeper(const void * const timer,
 /**
  * xgf_timer_fire - called when timer invocation
  */
-static void xgf_timer_fire(const void * const timer,
+static void xgf_timer_fire(const struct hrtimer * const timer,
 			   struct xgf_proc *proc)
 {
 	struct xgf_timer *xt;
@@ -314,7 +316,7 @@ static void xgf_timer_fire(const void * const timer,
 	hlist_add_head(&xt->hlist, &proc->timer_head);
 }
 
-static void xgf_update_timer_rec(const void * const timer,
+static void xgf_update_timer_rec(const struct hrtimer * const timer,
 		struct xgf_proc *proc, unsigned long long now_ts)
 {
 	struct xgf_timer *xt;
@@ -331,7 +333,7 @@ static void xgf_update_timer_rec(const void * const timer,
 /**
  * xgf_timer_expire - called when timer expires
  */
-static void xgf_timer_expire(const void * const timer,
+static void xgf_timer_expire(const struct hrtimer * const timer,
 			     struct xgf_proc *proc)
 {
 	struct xgf_timer *iter;
@@ -357,7 +359,7 @@ static void xgf_timer_expire(const void * const timer,
 	}
 }
 
-static void xgf_timer_remove(const void * const timer,
+static void xgf_timer_remove(const struct hrtimer * const timer,
 			     struct xgf_proc *proc)
 {
 	struct xgf_timer *iter;
@@ -383,7 +385,7 @@ static void xgf_timer_remove(const void * const timer,
 /**
  * xgf_igather_timer - called for intelligence gathering of timer
  */
-void xgf_igather_timer(const void * const timer, int fire)
+void xgf_igather_timer(const struct hrtimer * const timer, int fire)
 {
 	struct xgf_proc *iter;
 	pid_t tpid;
@@ -632,20 +634,8 @@ void xgf_game_mode_exit(int val)
 	xgf_unlock(__func__);
 }
 
-static inline void xgf_ioctl_notify(unsigned int cmd, unsigned long arg)
-{
-	xgf_lockprove(__func__);
-
-	/* only allow game process to proceed */
-	if (task_tgid_nr(current) != game_ppid)
-		return;
-
-	/* mainly for loading estimation */
-	if (cmd == FPSGO_QUEUE || cmd == FPSGO_DEQUEUE)
-		xgf_dequeuebuffer(arg);
-}
-
-void xgf_qudeq_notify(unsigned int cmd, unsigned long arg)
+static long fpsgo_ioctl(struct file *flip, unsigned int cmd,
+			unsigned long arg)
 {
 	int ret = 0;
 	struct xgf_proc *p, **pproc;
@@ -655,15 +645,20 @@ void xgf_qudeq_notify(unsigned int cmd, unsigned long arg)
 
 	/* filter out main thread to queue/dequeue */
 	if (task_tgid_nr(current) == task_pid_nr(current))
-		return;
+		return 0;
 
 	xgf_lock(__func__);
 	if (!xgf_is_enable()) {
 		xgf_unlock(__func__);
-		return;
+		return 0;
 	}
 
-	xgf_ioctl_notify(cmd, arg);
+	/* TODO: move to following switch case? */
+	if (cmd == FPSGO_QUEUE && !!arg) {
+		xgf_trace("eq start=%d", !!arg);
+		xgf_dequeuebuffer(1);
+	}
+
 
 	switch (cmd) {
 	case FPSGO_QUEUE:
@@ -710,6 +705,7 @@ void xgf_qudeq_notify(unsigned int cmd, unsigned long arg)
 			deqend = ged_get_time();
 		xgf_trace("start=%d deq str=%llu end=%llu", !!arg, deqstr, deqend);
 
+		xgf_dequeuebuffer(arg);
 
 		ret = xgf_get_proc(task_tgid_nr(current), pproc, 0);
 		if (ret)
@@ -735,8 +731,29 @@ void xgf_qudeq_notify(unsigned int cmd, unsigned long arg)
 
 ioctl_err:
 	xgf_unlock(__func__);
-	return;
+	return ret;
 }
+
+static int fpsgo_show(struct seq_file *m, void *unused)
+{
+	seq_puts(m, "fpsgo v1.0\n");
+	return 0;
+}
+
+static int fpsgo_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, fpsgo_show, inode->i_private);
+}
+
+static const struct file_operations fpsgo_fops = {
+	.owner		= THIS_MODULE,
+	.unlocked_ioctl	= fpsgo_ioctl,
+	.compat_ioctl	= fpsgo_ioctl,
+	.open		= fpsgo_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 int xgf_query_blank_time(pid_t ppid, unsigned long long *deqtime,
 			 unsigned long long *slptime)
@@ -768,8 +785,6 @@ query_err:
 	xgf_unlock(__func__);
 	return ret;
 }
-
-void fpsgo_update_render_dep(struct task_struct *p) { }
 
 #define FPSGO_DEBUGFS_ENTRY(name) \
 static int fpsgo_##name##_open(struct inode *i, struct file *file) \
@@ -820,6 +835,14 @@ FPSGO_DEBUGFS_ENTRY(black);
 
 static int __init init_xgf(void)
 {
+	struct proc_dir_entry *pe;
+
+	pe = proc_create("fpsgo",
+			 (S_IRUGO | S_IWUSR | S_IWGRP),
+			 NULL, &fpsgo_fops);
+	if (!pe)
+		return -ENOMEM;
+
 	if (!fpsgo_debugfs_dir)
 		return -ENODEV;
 

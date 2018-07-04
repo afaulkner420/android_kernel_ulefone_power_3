@@ -49,7 +49,6 @@
 #include <linux/sched/deadline.h>
 #include <linux/timer.h>
 #include <linux/freezer.h>
-#include <linux/delay.h>
 
 #include <asm/uaccess.h>
 
@@ -352,7 +351,6 @@ static int hrtimer_fixup_init(void *addr, enum debug_obj_state state)
 
 	switch (state) {
 	case ODEBUG_STATE_ACTIVE:
-		debug_object_mtk_aee_warning("re-init active hrtimer");
 		hrtimer_cancel(timer);
 		debug_object_init(timer, &hrtimer_debug_descr);
 		return 1;
@@ -372,12 +370,10 @@ static int hrtimer_fixup_activate(void *addr, enum debug_obj_state state)
 
 	case ODEBUG_STATE_NOTAVAILABLE:
 		WARN_ON_ONCE(1);
-		debug_object_mtk_aee_warning("activate an unknown hrtimer");
 		return 0;
 
 	case ODEBUG_STATE_ACTIVE:
 		WARN_ON(1);
-		debug_object_mtk_aee_warning("activate an active hrtimer");
 
 	default:
 		return 0;
@@ -396,7 +392,6 @@ static int hrtimer_fixup_free(void *addr, enum debug_obj_state state)
 	case ODEBUG_STATE_ACTIVE:
 		hrtimer_cancel(timer);
 		debug_object_free(timer, &hrtimer_debug_descr);
-		debug_object_mtk_aee_warning("free an active hrtimer");
 		return 1;
 	default:
 		return 0;
@@ -896,7 +891,7 @@ static int enqueue_hrtimer(struct hrtimer *timer,
 
 	base->cpu_base->active_bases |= 1 << base->index;
 
-	timer->state |= HRTIMER_STATE_ENQUEUED;
+	timer->state = HRTIMER_STATE_ENQUEUED;
 
 	return timerqueue_add(&base->active, &timer->node);
 }
@@ -916,9 +911,11 @@ static void __remove_hrtimer(struct hrtimer *timer,
 			     u8 newstate, int reprogram)
 {
 	struct hrtimer_cpu_base *cpu_base = base->cpu_base;
+	u8 state = timer->state;
 
-	if (!(timer->state & HRTIMER_STATE_ENQUEUED))
-		goto out;
+	timer->state = newstate;
+	if (!(state & HRTIMER_STATE_ENQUEUED))
+		return;
 
 	if (!timerqueue_del(&base->active, &timer->node))
 		cpu_base->active_bases &= ~(1 << base->index);
@@ -935,13 +932,6 @@ static void __remove_hrtimer(struct hrtimer *timer,
 	if (reprogram && timer == cpu_base->next_timer)
 		hrtimer_force_reprogram(cpu_base, 1);
 #endif
-
-out:
-	/*
-	* We need to preserve PINNED state here, otherwise we may end up
-	* migrating pinned hrtimers as well.
-	*/
-	timer->state = newstate | (timer->state & HRTIMER_STATE_PINNED);
 }
 
 /*
@@ -970,7 +960,6 @@ remove_hrtimer(struct hrtimer *timer, struct hrtimer_clock_base *base, bool rest
 			state = HRTIMER_STATE_INACTIVE;
 
 		__remove_hrtimer(timer, base, state, reprogram);
-		timer->state &= ~HRTIMER_STATE_PINNED;
 		return 1;
 	}
 	return 0;
@@ -1023,10 +1012,6 @@ void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	new_base = switch_hrtimer_base(timer, base, mode & HRTIMER_MODE_PINNED);
 
 	timer_stats_hrtimer_set_start_info(timer);
-
-	/* Update pinned state */
-	timer->state &= ~HRTIMER_STATE_PINNED;
-	timer->state |= (!!(mode & HRTIMER_MODE_PINNED)) << HRTIMER_PINNED_SHIFT;
 
 	leftmost = enqueue_hrtimer(timer, new_base);
 	if (!leftmost)
@@ -1202,8 +1187,8 @@ bool hrtimer_active(const struct hrtimer *timer)
 		cpu_base = READ_ONCE(timer->base->cpu_base);
 		seq = raw_read_seqcount_begin(&cpu_base->seq);
 
-		if (((timer->state & ~HRTIMER_STATE_PINNED) !=
-		      HRTIMER_STATE_INACTIVE) || cpu_base->running == timer)
+		if (timer->state != HRTIMER_STATE_INACTIVE ||
+		    cpu_base->running == timer)
 			return true;
 
 	} while (read_seqcount_retry(&cpu_base->seq, seq) ||
@@ -1671,43 +1656,17 @@ static void init_hrtimers_cpu(int cpu)
 	hrtimer_init_hres(cpu_base);
 }
 
-#if defined(CONFIG_HOTPLUG_CPU)
-static void migrate_hrtimer_list(struct hrtimer_cpu_base *old_base,
-				 struct hrtimer_cpu_base *new_base,
-				 unsigned int i,
-				 bool wait,
-				 bool remove_pinned)
+#ifdef CONFIG_HOTPLUG_CPU
+
+static void migrate_hrtimer_list(struct hrtimer_clock_base *old_base,
+				struct hrtimer_clock_base *new_base)
 {
 	struct hrtimer *timer;
 	struct timerqueue_node *node;
-	struct timerqueue_head pinned;
-	int is_pinned;
-	struct hrtimer_clock_base *old_c_base = &old_base->clock_base[i];
-	struct hrtimer_clock_base *new_c_base = &new_base->clock_base[i];
 
-	timerqueue_init_head(&pinned);
-
-	while ((node = timerqueue_getnext(&old_c_base->active))) {
+	while ((node = timerqueue_getnext(&old_base->active))) {
 		timer = container_of(node, struct hrtimer, node);
-		if (wait) {
-			/* Ensure timers are done running before continuing */
-			while (hrtimer_callback_running(timer)) {
-				raw_spin_unlock(&old_base->lock);
-				raw_spin_unlock(&new_base->lock);
-				cpu_relax();
-				/*
-				 * cpu_relax may just be a barrier. Grant the
-				 * run_hrtimer_list code some time to obtain the
-				 * spinlock.
-				 */
-				udelay(2);
-				raw_spin_lock(&new_base->lock);
-				raw_spin_lock_nested(&old_base->lock,
-							SINGLE_DEPTH_NESTING);
-			}
-		} else {
-			WARN_ON(hrtimer_callback_running(timer));
-		}
+		BUG_ON(hrtimer_callback_running(timer));
 		debug_deactivate(timer);
 
 		/*
@@ -1715,15 +1674,8 @@ static void migrate_hrtimer_list(struct hrtimer_cpu_base *old_base,
 		 * timer could be seen as !active and just vanish away
 		 * under us on another CPU
 		 */
-		__remove_hrtimer(timer, old_c_base, HRTIMER_STATE_ENQUEUED, 0);
-
-		is_pinned = timer->state & HRTIMER_STATE_PINNED;
-		if (!remove_pinned && is_pinned) {
-			timerqueue_add(&pinned, &timer->node);
-			continue;
-		}
-
-		timer->base = new_c_base;
+		__remove_hrtimer(timer, old_base, HRTIMER_STATE_ENQUEUED, 0);
+		timer->base = new_base;
 		/*
 		 * Enqueue the timers on the new cpu. This does not
 		 * reprogram the event device in case the timer
@@ -1732,25 +1684,19 @@ static void migrate_hrtimer_list(struct hrtimer_cpu_base *old_base,
 		 * sort out already expired timers and reprogram the
 		 * event device.
 		 */
-		enqueue_hrtimer(timer, new_c_base);
-	}
-
-	/* Re-queue pinned timers for non-hotplug usecase */
-	while ((node = timerqueue_getnext(&pinned))) {
-		timer = container_of(node, struct hrtimer, node);
-
-		timerqueue_del(&pinned, &timer->node);
-		enqueue_hrtimer(timer, old_c_base);
+		enqueue_hrtimer(timer, new_base);
 	}
 }
 
-static void __migrate_hrtimers(int scpu, bool wait, bool remove_pinned)
+static void migrate_hrtimers(int scpu)
 {
 	struct hrtimer_cpu_base *old_base, *new_base;
-	unsigned long flags;
 	int i;
 
-	local_irq_save(flags);
+	BUG_ON(cpu_online(scpu));
+	tick_cancel_sched_timer(scpu);
+
+	local_irq_disable();
 	old_base = &per_cpu(hrtimer_bases, scpu);
 	new_base = this_cpu_ptr(&hrtimer_bases);
 	/*
@@ -1761,8 +1707,8 @@ static void __migrate_hrtimers(int scpu, bool wait, bool remove_pinned)
 	raw_spin_lock_nested(&old_base->lock, SINGLE_DEPTH_NESTING);
 
 	for (i = 0; i < HRTIMER_MAX_CLOCK_BASES; i++) {
-		migrate_hrtimer_list(old_base, new_base, i, wait,
-								remove_pinned);
+		migrate_hrtimer_list(&old_base->clock_base[i],
+				     &new_base->clock_base[i]);
 	}
 
 	raw_spin_unlock(&old_base->lock);
@@ -1770,20 +1716,7 @@ static void __migrate_hrtimers(int scpu, bool wait, bool remove_pinned)
 
 	/* Check, if we got expired work to do */
 	__hrtimer_peek_ahead_timers();
-	local_irq_restore(flags);
-}
-
-static void migrate_hrtimers(int scpu)
-{
-	WARN_ON(cpu_online(scpu));
-	tick_cancel_sched_timer(scpu);
-
-	__migrate_hrtimers(scpu, false, true);
-}
-
-void hrtimer_quiesce_cpu(void *cpup)
-{
-	__migrate_hrtimers(*(int *)cpup, true, false);
+	local_irq_enable();
 }
 
 #endif /* CONFIG_HOTPLUG_CPU */
@@ -1891,19 +1824,15 @@ schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
  * You can set the task state as follows -
  *
  * %TASK_UNINTERRUPTIBLE - at least @timeout time is guaranteed to
- * pass before the routine returns unless the current task is explicitly
- * woken up, (e.g. by wake_up_process()).
+ * pass before the routine returns.
  *
  * %TASK_INTERRUPTIBLE - the routine may return early if a signal is
- * delivered to the current task or the current task is explicitly woken
- * up.
+ * delivered to the current task.
  *
  * The current task state is guaranteed to be TASK_RUNNING when this
  * routine returns.
  *
- * Returns 0 when the timer has expired. If the task was woken before the
- * timer expired by a signal (only possible in state TASK_INTERRUPTIBLE) or
- * by an explicit wakeup, it returns -EINTR.
+ * Returns 0 when the timer has expired otherwise -EINTR
  */
 int __sched schedule_hrtimeout_range(ktime_t *expires, u64 delta,
 				     const enum hrtimer_mode mode)
@@ -1925,19 +1854,15 @@ EXPORT_SYMBOL_GPL(schedule_hrtimeout_range);
  * You can set the task state as follows -
  *
  * %TASK_UNINTERRUPTIBLE - at least @timeout time is guaranteed to
- * pass before the routine returns unless the current task is explicitly
- * woken up, (e.g. by wake_up_process()).
+ * pass before the routine returns.
  *
  * %TASK_INTERRUPTIBLE - the routine may return early if a signal is
- * delivered to the current task or the current task is explicitly woken
- * up.
+ * delivered to the current task.
  *
  * The current task state is guaranteed to be TASK_RUNNING when this
  * routine returns.
  *
- * Returns 0 when the timer has expired. If the task was woken before the
- * timer expired by a signal (only possible in state TASK_INTERRUPTIBLE) or
- * by an explicit wakeup, it returns -EINTR.
+ * Returns 0 when the timer has expired otherwise -EINTR
  */
 int __sched schedule_hrtimeout(ktime_t *expires,
 			       const enum hrtimer_mode mode)

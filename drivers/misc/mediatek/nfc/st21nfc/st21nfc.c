@@ -109,7 +109,7 @@ static u32 nfc_irq;
 static bool irqIsAttached;
 
 static bool device_open; /* Is device open? */
-static bool enable_debug_log; /* set to true for bringup phase */
+static bool enable_debug_log;
 
 struct st21nfc_dev {
 	wait_queue_head_t read_wq;
@@ -482,7 +482,7 @@ static long st21nfc_dev_ioctl(struct file *filp, unsigned int cmd,
 			msleep(20);
 			/* during the reset, force IRQ OUT as PU output instead
 			 * of input in normal usage
-			 */
+			*/
 			ret = gpio_direction_output(
 			    st21nfc_dev->platform_data.irq_gpio, 1);
 			if (ret) {
@@ -621,10 +621,10 @@ static ssize_t st21nfc_version(struct device *dev,
 	return sprintf(buf, "%s\n", DRIVER_VERSION);
 } /* st21nfc_version */
 
-static DEVICE_ATTR(i2c_addr, 0644, st21nfc_show_i2c_addr,
+static DEVICE_ATTR(i2c_addr, S_IRUGO | S_IWUSR, st21nfc_show_i2c_addr,
 		   st21nfc_change_i2c_addr);
 
-static DEVICE_ATTR(version, 0444, st21nfc_version, NULL);
+static DEVICE_ATTR(version, S_IRUGO, st21nfc_version, NULL);
 
 static struct attribute *st21nfc_attrs[] = {
 	&dev_attr_i2c_addr.attr, &dev_attr_version.attr, NULL,

@@ -661,6 +661,7 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	struct block_device *bdev = inode->i_bdev;
 	struct gendisk *disk = bdev->bd_disk;
 	fmode_t mode = file->f_mode;
+	struct backing_dev_info *bdi;
 	loff_t size;
 	unsigned int max_sectors;
 
@@ -701,22 +702,15 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	case BLKBSZSET_32:
 		return blkdev_ioctl(bdev, mode, BLKBSZSET,
 				(unsigned long)compat_ptr(arg));
-#ifdef CONFIG_MTK_BLK_RW_PROFILING
-	case BLKRWCLR:
-	case BLKRNUM:
-	case BLKWNUM:
-	case BLKRWNUM:
-		return blkdev_ioctl(bdev, mode, cmd,
-				(unsigned long)compat_ptr(arg));
-#endif
 	case BLKPG:
 		return compat_blkpg_ioctl(bdev, mode, cmd, compat_ptr(arg));
 	case BLKRAGET:
 	case BLKFRAGET:
 		if (!arg)
 			return -EINVAL;
+		bdi = blk_get_backing_dev_info(bdev);
 		return compat_put_long(arg,
-			       (bdev->bd_bdi->ra_pages * PAGE_CACHE_SIZE) / 512);
+				       (bdi->ra_pages * PAGE_CACHE_SIZE) / 512);
 	case BLKROGET: /* compatible */
 		return compat_put_int(arg, bdev_read_only(bdev) != 0);
 	case BLKBSZGET_32: /* get the logical block size (cf. BLKSSZGET) */
@@ -734,7 +728,8 @@ long compat_blkdev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	case BLKFRASET:
 		if (!capable(CAP_SYS_ADMIN))
 			return -EACCES;
-		bdev->bd_bdi->ra_pages = (arg * 512) / PAGE_CACHE_SIZE;
+		bdi = blk_get_backing_dev_info(bdev);
+		bdi->ra_pages = (arg * 512) / PAGE_CACHE_SIZE;
 		return 0;
 	case BLKGETSIZE:
 		size = i_size_read(bdev->bd_inode);

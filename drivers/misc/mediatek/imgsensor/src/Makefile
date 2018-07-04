@@ -10,8 +10,6 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
-subdir-ccflags-y += -I$(srctree)/drivers/i2c/busses/ \
-             -I$(srctree)/drivers/misc/mediatek/ccu/inc
 
 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
 ARCH_MTK_PROJECT := $(subst ",,$(CONFIG_ARCH_MTK_PROJECT))
@@ -21,16 +19,26 @@ MTK_PROJECT_PATH_ROOT := $(srctree)/drivers/misc/mediatek/mach/$(MTK_PLATFORM)/$
 
 CONFIG_MTK_PLATFORM_SENSOR := $(CONFIG_MTK_PLATFORM)
 
-subdir-ccflags-y += -I$(MTK_PROJECT_PATH_ROOT)/camera/camera
+# Vanzo:yucheng on: Sat, 15 Oct 2016 12:31:11 +0800
+# added for aosp management to import our variable
+project_name:=$(shell echo $(VANZO_INNER_PROJECT_NAME))
+ifneq ($(strip $(project_name)),)
+-include $(srctree)/../zprojects/$(project_name)/$(project_name).mk
+ifneq ($(strip $(CUSTOM_KERNEL_IMGSENSOR)),)
+CONFIG_CUSTOM_KERNEL_IMGSENSOR:=$(CUSTOM_KERNEL_IMGSENSOR)
+endif
+endif
+# End of Vanzo: yucheng
+subdir-ccflags-y += -I$(MTK_PROJECT_PATH_ROOT)/camera/camera \
 
-MTK_DRIVER_PATH  := $(srctree)/drivers/misc/mediatek
+MTK_CUSTOM_PATH  := $(srctree)/drivers/misc/mediatek
 
-subdir-ccflags-y += -I$(MTK_DRIVER_PATH)/camera/$(MTK_PLATFORM) \
-             -I$(MTK_DRIVER_PATH)/imgsensor/inc \
-             -I$(MTK_DRIVER_PATH)/cam_cal/inc \
-             -I$(MTK_DRIVER_PATH)/smi \
-             -I$(MTK_DRIVER_PATH)/include/mt-plat/$(MTK_PLATFORM)/include/mach \
-             -I$(MTK_DRIVER_PATH)/imgsensor/src/$(CONFIG_MTK_PLATFORM_SENSOR) \
+subdir-ccflags-y += -I$(MTK_CUSTOM_PATH)/camera/$(MTK_PLATFORM) \
+             -I$(MTK_CUSTOM_PATH)/imgsensor/inc \
+             -I$(MTK_CUSTOM_PATH)/imgsensor/src/$(CONFIG_MTK_PLATFORM_SENSOR) \
+             -I$(MTK_CUSTOM_PATH)/cam_cal/inc \
+             -I$(MTK_CUSTOM_PATH)/smi \
+             -I$(MTK_CUSTOM_PATH)/include/mt-plat/$(MTK_PLATFORM)/include/mach \
 
 
 CUSTOM_KERNEL_FLAGS := $(addprefix -D, $(shell echo \

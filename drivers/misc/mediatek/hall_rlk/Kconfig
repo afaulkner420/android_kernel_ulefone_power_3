@@ -1,4 +1,0 @@
-
-config SENSORS_HALL
-        bool "hall for transsion solution"
-        default n

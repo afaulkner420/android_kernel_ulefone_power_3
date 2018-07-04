@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -116,19 +116,19 @@ struct mt6370_pmu_dsv_platform_data {
 static irqreturn_t mt6370_pmu_dsv_vneg_ocp_irq_handler(int irq, void *data)
 {
 	/* Use pr_info()  instead of dev_info */
-	pr_info("%s: IRQ triggered\n", __func__);
+	//pr_info("%s: IRQ triggered\n", __func__);
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t mt6370_pmu_dsv_vpos_ocp_irq_handler(int irq, void *data)
 {
-	pr_info("%s: IRQ triggered\n", __func__);
+	//pr_info("%s: IRQ triggered\n", __func__);
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t mt6370_pmu_dsv_bst_ocp_irq_handler(int irq, void *data)
 {
-	pr_info("%s: IRQ triggered\n", __func__);
+	//pr_info("%s: IRQ triggered\n", __func__);
 	return IRQ_HANDLED;
 }
 
@@ -137,7 +137,7 @@ static irqreturn_t mt6370_pmu_dsv_vneg_scp_irq_handler(int irq, void *data)
 	struct mt6370_pmu_dsv_data *dsv_data = data;
 	int ret;
 
-	pr_info("%s: IRQ triggered\n", __func__);
+	//pr_info("%s: IRQ triggered\n", __func__);
 	ret = mt6370_pmu_reg_read(dsv_data->chip, MT6370_PMU_REG_DBSTAT);
 	if (ret&0x40)
 		regulator_notifier_call_chain(
@@ -150,7 +150,7 @@ static irqreturn_t mt6370_pmu_dsv_vpos_scp_irq_handler(int irq, void *data)
 	struct mt6370_pmu_dsv_data *dsv_data = data;
 	int ret;
 
-	pr_info("%s: IRQ triggered\n", __func__);
+	//pr_info("%s: IRQ triggered\n", __func__);
 	ret = mt6370_pmu_reg_read(dsv_data->chip, MT6370_PMU_REG_DBSTAT);
 	if (ret&0x80)
 		regulator_notifier_call_chain(

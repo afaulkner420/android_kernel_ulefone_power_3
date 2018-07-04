@@ -115,7 +115,7 @@ static u32 ufs_query_desc_max_size[] = {
 	QUERY_DESC_RFU_MAX_SIZE,
 	QUERY_DESC_GEOMETRY_MAX_SIZE,
 	QUERY_DESC_POWER_MAX_SIZE,
-	QUERY_DESC_HEALTH_MAX_SIZE,
+	QUERY_DESC_RFU_MAX_SIZE,
 };
 
 enum {
@@ -189,6 +189,8 @@ const int ufs_pm_lvl_states_size = ARRAY_SIZE(ufs_pm_lvl_states);
 #ifdef CONFIG_MTK_UFS_DEBUG
 struct ufs_hba *g_ufs_hba_p;	/* for debugging only */
 static int ufs_trace_en = 1;
+#else
+static int ufs_trace_en;
 #endif
 
 static inline enum ufs_dev_pwr_mode
@@ -393,7 +395,7 @@ void ufshcd_print_trs(struct ufs_hba *hba, unsigned long bitmap, bool pr_prdt)
 	}
 }
 
-void ufshcd_print_host_state(struct ufs_hba *hba, u32 mphy_info, struct seq_file *m, char **buff, unsigned long *size)
+void ufshcd_print_host_state(struct ufs_hba *hba, u32 mphy_info, struct seq_file *m)
 {
 	int err = 0;
 	u32 val;
@@ -401,32 +403,32 @@ void ufshcd_print_host_state(struct ufs_hba *hba, u32 mphy_info, struct seq_file
 	if (!(hba->ufshcd_dbg_print & UFSHCD_DBG_PRINT_HOST_STATE_EN))
 		return;
 
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "UFS Host state=%d\n", hba->ufshcd_state);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "req r=%d w=%d map=0x%lx\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "UFS Host state=%d\n", hba->ufshcd_state);
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "req r=%d w=%d map=0x%lx\n",
 		hba->req_r_cnt, hba->req_w_cnt, hba->req_tag_map);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "lrb in use=0x%lx, outstanding reqs=0x%lx tasks=0x%lx\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "lrb in use=0x%lx, outstanding reqs=0x%lx tasks=0x%lx\n",
 		hba->lrb_in_use, hba->outstanding_tasks, hba->outstanding_reqs);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "saved_err=0x%x, saved_uic_err=0x%x\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "saved_err=0x%x, saved_uic_err=0x%x\n",
 		hba->saved_err, hba->saved_uic_err);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "Device power mode=%d, UIC link state=%d\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "Device power mode=%d, UIC link state=%d\n",
 		hba->curr_dev_pwr_mode, hba->uic_link_state);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "PM in progress=%d, sys. suspended=%d\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "PM in progress=%d, sys. suspended=%d\n",
 		hba->pm_op_in_progress, hba->is_sys_suspended);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "Auto BKOPS=%d, Host self-block=%d\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "Auto BKOPS=%d, Host self-block=%d\n",
 		hba->auto_bkops_enabled, hba->host->host_self_blocked);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "error handling flags=0x%x, req. abort count=%d\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "error handling flags=0x%x, req. abort count=%d\n",
 		hba->eh_flags, hba->req_abort_count);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "Host capabilities=0x%x, caps=0x%x\n",
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "Host capabilities=0x%x, caps=0x%x\n",
 		hba->capabilities, hba->caps);
-	SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "quirks=0x%x, dev. quirks=0x%x\n", hba->quirks,
+	UFS_DEVINFO_PROC_MSG(m, hba->dev, "quirks=0x%x, dev. quirks=0x%x\n", hba->quirks,
 		hba->dev_quirks);
 
 	if (mphy_info) {
 		err = ufshcd_dme_get(hba, UIC_ARG_MIB_SEL(TX_FSM_STATE, 0), &val);
 		if (err)
-			SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "get TX_FSM_STATE fail\n");
+			UFS_DEVINFO_PROC_MSG(m, hba->dev, "get TX_FSM_STATE fail\n");
 		else
-			SPREAD_DEV_PRINTF(buff, size, m, hba->dev, "TX_FSM_STATE: %u\n", val);
+			UFS_DEVINFO_PROC_MSG(m, hba->dev, "TX_FSM_STATE: %u\n", val);
 	}
 }
 
@@ -1397,7 +1399,7 @@ static void ufshcd_prepare_req_desc_hdr(struct ufs_hba *hba,
 		dword_0 = data_direction | (lrbp->command_type
 				<< UPIU_COMMAND_TYPE_OFFSET);
 
-#if defined(CONFIG_MTK_HW_FDE) || defined(CONFIG_HIE)
+#ifdef CONFIG_MTK_HW_FDE
 	if (lrbp->crypto_en) {
 		dword_0 |= (1 << UPIU_COMMAND_CRYPTO_EN_OFFSET);  /* crypto enable */
 		dword_0 |= lrbp->crypto_cfgid;
@@ -1570,6 +1572,10 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	int tag;
 	int err = 0;
 	int cmd_allowed = 0;
+#ifdef CONFIG_MTK_HW_FDE
+	int hw_crypto_en = 0;
+	u32 dunl, dunu, lba;
+#endif
 
 	hba = shost_priv(host);
 
@@ -1595,6 +1601,9 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 		cmd->scsi_done(cmd);
 		goto out_unlock;
 	}
+
+	/* MTK Patch: Check if HW FDE key change is required */
+	ufs_mtk_hwfde_key_config(hba, cmd);
 
 	/* MTK Patch: Check if this cmd can get ticket */
 	err = ufs_mtk_perf_heurisic_if_allow_cmd(hba, cmd);
@@ -1639,7 +1648,22 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 
 	WARN_ON(hba->clk_gating.state != CLKS_ON);
 
+#ifdef CONFIG_MTK_HW_FDE
+	if (cmd->request->bio) {
+		hw_crypto_en = cmd->request->bio->bi_hw_fde;
+
+		if (hw_crypto_en) {
+			lba = ((cmd->cmnd[2]) << 24) | ((cmd->cmnd[3]) << 16) |
+			((cmd->cmnd[4]) << 8) | (cmd->cmnd[5]);
+
+			ufs_mtk_crypto_cal_dun(UFS_CRYPTO_ALGO_ESSIV_AES_CBC, lba, &dunl, &dunu);
+		}
+	}
+#endif
+
 	ufs_mtk_cache_setup_cmd(cmd);
+
+	ufs_mtk_dbg_dump_scsi_cmd(hba, cmd, UFSHCD_DBG_PRINT_QCMD_EN);
 
 	lrbp = &hba->lrb[tag];
 
@@ -1653,33 +1677,15 @@ static int ufshcd_queuecommand(struct Scsi_Host *host, struct scsi_cmnd *cmd)
 	lrbp->req_abort_skip = false;
 	lrbp->command_type = UTP_CMD_TYPE_SCSI;
 
-	/*
-	 * file-based inline encryption:
-	 * call UFS registered decryption/encryption function.
-	 */
-	if (hie_request_crypted(cmd->request)) {
-		struct ufs_crypt_info info = {
-			.hba = hba,
-			.cmd = cmd,
-		};
-
-		if (ufs_mtk_is_data_write_cmd(cmd->cmnd[0]))
-			err = hie_encrypt(ufs_mtk_hie_get_dev(), cmd->request, &info);
-		else
-			err = hie_decrypt(ufs_mtk_hie_get_dev(), cmd->request, &info);
-
-		if (err) {
-			err = -EIO;
-			clear_bit_unlock(tag, &hba->lrb_in_use);
-			dev_info(hba->dev, "%s: fail in crypto hook, req: %p\n", __func__, cmd->request);
-			goto out;
-		}
-	} else {
-		/* configuration for other disk encryption method (e.g., hw fde) or not encrypted */
-		ufs_mtk_hwfde_cfg_cmd(hba, cmd);
-	}
-
-	ufs_mtk_dbg_dump_scsi_cmd(hba, cmd, UFSHCD_DBG_PRINT_QCMD_EN);
+#ifdef CONFIG_MTK_HW_FDE
+	if (hw_crypto_en) {
+		lrbp->crypto_cfgid = 0;
+		lrbp->crypto_dunl = dunl;
+		lrbp->crypto_dunu = dunu;
+		lrbp->crypto_en = 1;
+	} else
+		lrbp->crypto_en = 0;
+#endif
 
 	/* form UPIU before issuing the command */
 	ufshcd_compose_upiu(hba, lrbp);
@@ -1745,7 +1751,7 @@ static int ufshcd_compose_dev_cmd(struct ufs_hba *hba,
 	lrbp->intr_cmd = true; /* No interrupt aggregation */
 	hba->dev_cmd.type = cmd_type;
 
-#if defined(CONFIG_MTK_HW_FDE) || defined(CONFIG_HIE)
+#ifdef CONFIG_MTK_HW_FDE
 	lrbp->crypto_en = 0;
 #endif
 
@@ -3680,22 +3686,6 @@ static void ufshcd_transfer_req_compl(struct ufs_hba *hba)
 						delta_us);
 				}
 			}
-
-			/*
-			 * Callback for hie dummy crypto.
-			 *
-			 * Dummy crypto use XOR as crypto methodology for hie logic verification:
-			 *
-			 * For write, XOR is applied on bio data buffer directly to emulate
-			 * "encryption" thus we need to "reverse it" (XOR buffer again)
-			 * after transfer done (written to disk) and before buffer is used
-			 * by upper users in the future.
-			 *
-			 * For read, XOR shall be applied on bio data buffer to emulate
-			 * "decryption".
-			 */
-			hie_req_end(req);
-
 			/* Do not touch lrbp after scsi done */
 			ufs_mtk_biolog_scsi_done_start(index);
 			cmd->scsi_done(cmd);
@@ -4503,10 +4493,6 @@ static int ufshcd_abort(struct scsi_cmnd *cmd)
 
 	ufshcd_hold(hba, false);
 
-	/* MTK Patch: debugging log for aborting cmd */
-	dev_info(hba->dev,
-		"abort: tag %d, cmd 0x%x\n", tag, (int)cmd->cmnd[0]);
-
 	reg = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
 	/* If command is already aborted/completed, return SUCCESS */
 	if (!(test_bit(tag, &hba->outstanding_reqs))) {
@@ -4539,7 +4525,7 @@ static int ufshcd_abort(struct scsi_cmnd *cmd)
 	scsi_print_command(cmd);
 	if (!hba->req_abort_count) {
 		ufshcd_print_host_regs(hba);
-		ufshcd_print_host_state(hba, 1, NULL, NULL, NULL);
+		ufshcd_print_host_state(hba, 1, NULL);
 		ufshcd_print_pwr_info(hba);
 		ufshcd_print_trs(hba, 1 << tag, true);
 		ufs_mtk_dbg_dump_scsi_cmd(hba, cmd, UFSHCD_DBG_PRINT_ABORT_CMD_EN);
@@ -4901,7 +4887,7 @@ static void ufshcd_init_icc_levels(struct ufs_hba *hba)
 #define SEC_PROTOCOL_CMD_SIZE 12
 #define SEC_PROTOCOL_RETRIES 3
 #define SEC_PROTOCOL_RETRIES_ON_RESET 10
-#define SEC_PROTOCOL_TIMEOUT msecs_to_jiffies(30000)
+#define SEC_PROTOCOL_TIMEOUT msecs_to_jiffies(5000)
 
 static int
 ufshcd_rpmb_security_out(struct scsi_device *sdev,
@@ -6463,7 +6449,7 @@ int ufshcd_runtime_suspend(struct ufs_hba *hba)
 
 	ret = ufshcd_suspend(hba, UFS_RUNTIME_PM);
 
-	dev_info(hba->dev, "rs,ret %d,%d us\n", ret, (int)ktime_to_us(ktime_sub(ktime_get(), start)));
+	dev_dbg(hba->dev, "rs,ret %d,%d us\n", ret, (int)ktime_to_us(ktime_sub(ktime_get(), start)));
 
 	return ret;
 }
@@ -6504,7 +6490,7 @@ int ufshcd_runtime_resume(struct ufs_hba *hba)
 		return 0;
 	else {
 		ret = ufshcd_resume(hba, UFS_RUNTIME_PM);
-		dev_info(hba->dev, "rr,ret %d,%d us\n", ret, (int)ktime_to_us(ktime_sub(ktime_get(), start)));
+		dev_dbg(hba->dev, "rr,ret %d,%d us\n", ret, (int)ktime_to_us(ktime_sub(ktime_get(), start)));
 		return ret;
 	}
 }

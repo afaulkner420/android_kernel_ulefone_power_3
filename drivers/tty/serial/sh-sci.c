@@ -1800,13 +1800,11 @@ static int sci_startup(struct uart_port *port)
 
 	dev_dbg(port->dev, "%s(%d)\n", __func__, port->line);
 
-	sci_request_dma(port);
-
 	ret = sci_request_irq(s);
-	if (unlikely(ret < 0)) {
-		sci_free_dma(port);
+	if (unlikely(ret < 0))
 		return ret;
-	}
+
+	sci_request_dma(port);
 
 	spin_lock_irqsave(&port->lock, flags);
 	sci_start_tx(port);
@@ -1836,8 +1834,8 @@ static void sci_shutdown(struct uart_port *port)
 	}
 #endif
 
-	sci_free_irq(s);
 	sci_free_dma(port);
+	sci_free_irq(s);
 }
 
 static unsigned int sci_scbrr_calc(struct sci_port *s, unsigned int bps,

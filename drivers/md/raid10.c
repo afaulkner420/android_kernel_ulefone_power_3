@@ -838,7 +838,7 @@ static int raid10_congested(struct mddev *mddev, int bits)
 		if (rdev && !test_bit(Faulty, &rdev->flags)) {
 			struct request_queue *q = bdev_get_queue(rdev->bdev);
 
-			ret |= bdi_congested(q->backing_dev_info, bits);
+			ret |= bdi_congested(&q->backing_dev_info, bits);
 		}
 	}
 	rcu_read_unlock();
@@ -946,8 +946,7 @@ static void wait_barrier(struct r10conf *conf)
 				    !conf->barrier ||
 				    (conf->nr_pending &&
 				     current->bio_list &&
-				     (!bio_list_empty(&current->bio_list[0]) ||
-				      !bio_list_empty(&current->bio_list[1]))),
+				     !bio_list_empty(current->bio_list)),
 				    conf->resync_lock);
 		conf->nr_waiting--;
 	}
@@ -1072,8 +1071,6 @@ static void __make_request(struct mddev *mddev, struct bio *bio)
 	int sectors_handled;
 	int max_sectors;
 	int sectors;
-
-	md_write_start(mddev, bio);
 
 	/*
 	 * Register the new request and wait if the reconstruction
@@ -1414,24 +1411,11 @@ retry_write:
 			mbio->bi_private = r10_bio;
 
 			atomic_inc(&r10_bio->remaining);
-
-			cb = blk_check_plugged(raid10_unplug, mddev,
-					       sizeof(*plug));
-			if (cb)
-				plug = container_of(cb, struct raid10_plug_cb,
-						    cb);
-			else
-				plug = NULL;
 			spin_lock_irqsave(&conf->device_lock, flags);
-			if (plug) {
-				bio_list_add(&plug->pending, mbio);
-				plug->pending_cnt++;
-			} else {
-				bio_list_add(&conf->pending_bio_list, mbio);
-				conf->pending_count++;
-			}
+			bio_list_add(&conf->pending_bio_list, mbio);
+			conf->pending_count++;
 			spin_unlock_irqrestore(&conf->device_lock, flags);
-			if (!plug)
+			if (!mddev_check_plugged(mddev))
 				md_wakeup_thread(mddev->thread);
 		}
 	}
@@ -1471,6 +1455,8 @@ static void make_request(struct mddev *mddev, struct bio *bio)
 		return;
 	}
 
+	md_write_start(mddev, bio);
+
 	do {
 
 		/*
@@ -1491,25 +1477,7 @@ static void make_request(struct mddev *mddev, struct bio *bio)
 			split = bio;
 		}
 
-		/*
-		 * If a bio is splitted, the first part of bio will pass
-		 * barrier but the bio is queued in current->bio_list (see
-		 * generic_make_request). If there is a raise_barrier() called
-		 * here, the second part of bio can't pass barrier. But since
-		 * the first part bio isn't dispatched to underlaying disks
-		 * yet, the barrier is never released, hence raise_barrier will
-		 * alays wait. We have a deadlock.
-		 * Note, this only happens in read path. For write path, the
-		 * first part of bio is dispatched in a schedule() call
-		 * (because of blk plug) or offloaded to raid10d.
-		 * Quitting from the function immediately can change the bio
-		 * order queued in bio_list and avoid the deadlock.
-		 */
 		__make_request(mddev, split);
-		if (split != bio && bio_data_dir(bio) == READ) {
-			generic_make_request(bio);
-			break;
-		}
 	} while (split != bio);
 
 	/* In case raid10d snuck in to freeze_array */
@@ -3711,8 +3679,8 @@ static int run(struct mddev *mddev)
 		 * maybe...
 		 */
 		stripe /= conf->geo.near_copies;
-		if (mddev->queue->backing_dev_info->ra_pages < 2 * stripe)
-			mddev->queue->backing_dev_info->ra_pages = 2 * stripe;
+		if (mddev->queue->backing_dev_info.ra_pages < 2 * stripe)
+			mddev->queue->backing_dev_info.ra_pages = 2 * stripe;
 	}
 
 	if (md_integrity_register(mddev))
@@ -4506,8 +4474,8 @@ static void end_reshape(struct r10conf *conf)
 		int stripe = conf->geo.raid_disks *
 			((conf->mddev->chunk_sectors << 9) / PAGE_SIZE);
 		stripe /= conf->geo.near_copies;
-		if (conf->mddev->queue->backing_dev_info->ra_pages < 2 * stripe)
-			conf->mddev->queue->backing_dev_info->ra_pages = 2 * stripe;
+		if (conf->mddev->queue->backing_dev_info.ra_pages < 2 * stripe)
+			conf->mddev->queue->backing_dev_info.ra_pages = 2 * stripe;
 	}
 	conf->fullsync = 0;
 }

@@ -41,11 +41,11 @@ TRACE_EVENT(xgf_intvl,
 	TP_ARGS(type, obj, start, end),
 
 	TP_STRUCT__entry(
-		__string(string,		type)
-		__field(void*,			obj)
-		__field(unsigned long long,	start)
-		__field(unsigned long long,	end)
-		__field(unsigned long long,	dur)
+		__string(	string,			type	)
+		__field(	void*,			obj	)
+		__field(	unsigned long long,	start	)
+		__field(	unsigned long long,	end	)
+		__field(	unsigned long long,	dur	)
 	),
 
 	TP_fast_assign(
@@ -61,7 +61,7 @@ TRACE_EVENT(xgf_intvl,
 			__entry->dur)
 );
 
-DECLARE_EVENT_CLASS(fpsgo_log_template,
+TRACE_EVENT(xgf_log,
 
 	TP_PROTO(char *log),
 
@@ -77,15 +77,6 @@ DECLARE_EVENT_CLASS(fpsgo_log_template,
 
 	TP_printk("%s", __get_str(msg))
 );
-
-DEFINE_EVENT(fpsgo_log_template, xgf_log,
-	     TP_PROTO(char *log),
-	     TP_ARGS(log));
-
-DEFINE_EVENT(fpsgo_log_template, minitop_log,
-	     TP_PROTO(char *log),
-	     TP_ARGS(log));
-
 #endif /* _TRACE_FPSGO_H */
 
 /* This part must be outside protection */

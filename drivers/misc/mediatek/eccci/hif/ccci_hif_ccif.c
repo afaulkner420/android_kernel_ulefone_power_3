@@ -80,18 +80,6 @@ static struct c2k_port c2k_ports[] = {
 	{NET6_CH_C2K, NET6_CH_C2K, CCCI_CCMNI6_TX, CCCI_CCMNI6_RX,},	/*network channel for CCMNI6 */
 	{NET7_CH_C2K, NET7_CH_C2K, CCCI_CCMNI7_TX, CCCI_CCMNI7_RX,},	/*network channel for CCMNI7 */
 	{NET8_CH_C2K, NET8_CH_C2K, CCCI_CCMNI8_TX, CCCI_CCMNI8_RX,},	/*network channel for CCMNI8 */
-	{NET10_CH_C2K, NET10_CH_C2K, CCCI_CCMNI10_TX, CCCI_CCMNI10_RX,},
-	{NET11_CH_C2K, NET11_CH_C2K, CCCI_CCMNI11_TX, CCCI_CCMNI11_RX,},
-	{NET12_CH_C2K, NET12_CH_C2K, CCCI_CCMNI12_TX, CCCI_CCMNI12_RX,},
-	{NET13_CH_C2K, NET13_CH_C2K, CCCI_CCMNI13_TX, CCCI_CCMNI13_RX,},
-	{NET14_CH_C2K, NET14_CH_C2K, CCCI_CCMNI14_TX, CCCI_CCMNI14_RX,},
-	{NET15_CH_C2K, NET15_CH_C2K, CCCI_CCMNI15_TX, CCCI_CCMNI15_RX,},
-	{NET16_CH_C2K, NET16_CH_C2K, CCCI_CCMNI16_TX, CCCI_CCMNI16_RX,},
-	{NET17_CH_C2K, NET17_CH_C2K, CCCI_CCMNI17_TX, CCCI_CCMNI17_RX,},
-	{NET18_CH_C2K, NET18_CH_C2K, CCCI_CCMNI18_TX, CCCI_CCMNI18_RX,},
-	{NET19_CH_C2K, NET19_CH_C2K, CCCI_CCMNI19_TX, CCCI_CCMNI19_RX,},
-	{NET20_CH_C2K, NET20_CH_C2K, CCCI_CCMNI20_TX, CCCI_CCMNI20_RX,},
-	{NET21_CH_C2K, NET21_CH_C2K, CCCI_CCMNI21_TX, CCCI_CCMNI21_RX,},
 	{MDLOG_CTRL_CH_C2K, MDLOG_CTRL_CH_C2K, CCCI_UART1_TX, CCCI_UART1_RX,},	/*mdlogger ctrl channel */
 	{MDLOG_CH_C2K, MDLOG_CH_C2K, CCCI_MD_LOG_TX, CCCI_MD_LOG_RX,},	/*mdlogger data channel */
 	{FS_CH_C2K, FS_CH_C2K, CCCI_FS_TX, CCCI_FS_RX,},	/*flashless channel, new */
@@ -123,19 +111,19 @@ static int tx_queue_buffer_size[QUEUE_NUM] = { 10 * 1024, 100 * 1024,
 	50 * 1024, 50 * 1024, 50 * 1024, 10 * 1024, 10 * 1024, 10 * 1024,
 };
 #else
-static int rx_queue_buffer_size[QUEUE_NUM] = { 80 * 1024, 80 * 1024,
-	40 * 1024, 80 * 1024, 20 * 1024, 20 * 1024, 64 * 1024, 0 * 1024,
+static int rx_queue_buffer_size[QUEUE_NUM] = { 80 * 1024, 93 * 1024,
+	40 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 64 * 1024, 0 * 1024,
 };
 
-static int tx_queue_buffer_size[QUEUE_NUM] = { 128 * 1024, 40 * 1024,
-	8 * 1024, 40 * 1024, 20 * 1024, 20 * 1024, 64 * 1024, 0 * 1024,
+static int tx_queue_buffer_size[QUEUE_NUM] = { 128 * 1024, 140 * 1024,
+	8 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 64 * 1024, 0 * 1024,
 };
-static int rx_exp_buffer_size[QUEUE_NUM] = { 12 * 1024, 32 * 1024,
-	8 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 8 * 1024, 0 * 1024,
+static int rx_exp_buffer_size[QUEUE_NUM] = { 12 * 1024, 40 * 1024,
+	40 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 40 * 1024, 0 * 1024,
 };
 
-static int tx_exp_buffer_size[QUEUE_NUM] = { 12 * 1024, 32 * 1024,
-	8 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 8 * 1024, 0 * 1024,
+static int tx_exp_buffer_size[QUEUE_NUM] = { 12 * 1024, 40 * 1024,
+	40 * 1024, 0 * 1024, 0 * 1024, 0 * 1024, 40 * 1024, 0 * 1024,
 };
 #endif
 static void md_ccif_dump(unsigned char *title, unsigned char hif_id)
@@ -266,11 +254,8 @@ static void md_ccif_sram_rx_work(struct work_struct *work)
 		i += 4;
 	}
 
-	if (atomic_cmpxchg(&md_ctrl->wakeup_src, 1, 0) == 1) {
-		md_ctrl->wakeup_count++;
-		CCCI_NOTICE_LOG(md_ctrl->md_id, TAG, "CCIF_MD wakeup source:(SRX_IDX/%d)(%u)\n",
-			ccci_h->channel, md_ctrl->wakeup_count);
-	}
+	if (atomic_cmpxchg(&md_ctrl->wakeup_src, 1, 0) == 1)
+		CCCI_NOTICE_LOG(md_ctrl->md_id, TAG, "CCIF_MD wakeup source:(SRX_IDX/%d)\n", ccci_h->channel);
 
 	ccci_hdr = *ccci_h;
 	ccci_md_check_rx_seq_num(md_ctrl->md_id, &md_ctrl->traffic_info, &ccci_hdr, 0);
@@ -487,11 +472,9 @@ static int ccif_rx_collect(struct md_ccif_queue *queue, int budget, int blocking
 				c2k_mem_dump(data_ptr, pkg_size);
 			}
 		}
-		if (atomic_cmpxchg(&md_ctrl->wakeup_src, 1, 0) == 1) {
-			md_ctrl->wakeup_count++;
-			CCCI_NOTICE_LOG(md_ctrl->md_id, TAG, "CCIF_MD wakeup source:(%d/%d/%x)(%u)\n",
-				queue->index, ccci_h->channel, ccci_h->reserved, md_ctrl->wakeup_count);
-		}
+		if (atomic_cmpxchg(&md_ctrl->wakeup_src, 1, 0) == 1)
+			CCCI_NOTICE_LOG(md_ctrl->md_id, TAG, "CCIF_MD wakeup source:(%d/%d/%x)\n",
+				queue->index, ccci_h->channel, ccci_h->reserved);
 
 		if (ccci_h->channel == CCCI_C2K_LB_DL)
 			atomic_set(&lb_dl_q, queue->index);
@@ -769,11 +752,6 @@ static void md_ccif_launch_work(struct md_ccif_ctrl *md_ctrl)
 	if (md_ctrl->channel_id & (1 << AP_MD_CCB_WAKEUP)) {
 		clear_bit(AP_MD_CCB_WAKEUP, &md_ctrl->channel_id);
 		CCCI_DEBUG_LOG(md_ctrl->md_id, TAG, "CCB wakeup\n");
-		if (atomic_cmpxchg(&md_ctrl->wakeup_src, 1, 0) == 1) {
-			md_ctrl->wakeup_count++;
-			CCCI_NOTICE_LOG(md_ctrl->md_id, TAG, "CCIF_MD wakeup source:(CCB)(%u)\n",
-				md_ctrl->wakeup_count);
-		}
 		ccci_port_queue_status_notify(md_ctrl->md_id, CCIF_HIF_ID, AP_MD_CCB_WAKEUP, -1, RX_IRQ);
 	}
 #endif
@@ -906,7 +884,6 @@ static int md_ccif_op_send_skb(unsigned char hif_id, int qno,
 			else {
 				ret = -CCCI_ERR_INVALID_LOGIC_CHANNEL_ID;
 				CCCI_ERROR_LOG(md_ctrl->md_id, TAG, "channel num error (%d)\n", ccci_to_c2k_ch);
-				spin_unlock_irqrestore(&queue->tx_lock, flags);
 				return ret;
 			}
 			if (ccci_h->data[1] == C2K_HB_MSG)
@@ -1156,7 +1133,7 @@ static struct ccci_hif_ops ccci_hif_ccif_ops = {
 static void ccif_hif_hw_init(struct md_ccif_ctrl *md_ctrl)
 {
 	struct md_hw_info *hw_info = (struct md_hw_info *)ccci_md_get_hw_info(md_ctrl->md_id);
-	int ret;
+	int idx, ret;
 	unsigned long ccif_irq_flags;
 
 	/*Copy HW info */
@@ -1182,6 +1159,11 @@ static void ccif_hif_hw_init(struct md_ccif_ctrl *md_ctrl)
 		return;
 	}
 
+	/*init CCIF */
+	ccif_write32(md_ctrl->ccif_ap_base, APCCIF_CON, 0x01);	/*arbitration */
+	ccif_write32(md_ctrl->ccif_ap_base, APCCIF_ACK, 0xFFFF);
+	for (idx = 0; idx < md_ctrl->sram_size / sizeof(u32); idx++)
+		ccif_write32(md_ctrl->ccif_ap_base, APCCIF_CHDATA + idx * sizeof(u32), 0);
 }
 
 int ccci_ccif_hif_init(unsigned char hif_id, unsigned char md_id)

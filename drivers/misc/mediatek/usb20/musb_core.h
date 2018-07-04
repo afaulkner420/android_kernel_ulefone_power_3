@@ -46,21 +46,19 @@
 #if CONFIG_MTK_GAUGE_VERSION == 30
 #include <mt-plat/charger_type.h>
 #else
+#ifndef CONFIG_FPGA_EARLY_PORTING
 #include <mt-plat/charging.h>
 #endif
+#endif
+#include <linux/clk.h>
 #if defined(CONFIG_MTK_SMART_BATTERY)
 extern CHARGER_TYPE mt_get_charger_type(void);
 #endif
-#include <linux/clk.h>
 
 extern struct clk *usbpll_clk;
 extern struct clk *usbmcu_clk;
 extern struct clk *usb_clk;
 extern struct clk *icusb_clk;
-
-#ifdef CONFIG_MTK_MUSB_PORT0_LOWPOWER_MODE
-extern bool musb_shutted;
-#endif
 
 /* to prevent 32 bit project misuse */
 #if defined(CONFIG_MTK_MUSB_DRV_36BIT) && !defined(CONFIG_64BIT)
@@ -81,10 +79,7 @@ extern int kernel_init_done;
 extern int musb_force_on;
 extern int musb_host_dynamic_fifo;
 extern int musb_host_dynamic_fifo_usage_msk;
-extern bool musb_host_db_enable;
-extern bool musb_host_db_workaround;
-extern long musb_host_db_delay_ns;
-extern long musb_host_db_workaround_cnt;
+extern unsigned musb_uart_debug;
 extern struct musb *mtk_musb;
 extern bool mtk_usb_power;
 extern ktime_t ktime_ready;
@@ -270,11 +265,6 @@ struct musb_platform_ops {
 
 	int (*adjust_channel_params)(struct dma_channel *channel,
 				      u16 packet_sz, u8 *mode, dma_addr_t *dma_addr, u32 *len);
-
-	void (*enable_clk)(struct musb *musb);
-	void (*disable_clk)(struct musb *musb);
-	void (*prepare_clk)(struct musb *musb);
-	void (*unprepare_clk)(struct musb *musb);
 };
 
 /*
@@ -636,30 +626,6 @@ static inline int musb_platform_exit(struct musb *musb)
 	return musb->ops->exit(musb);
 }
 
-static inline void musb_platform_enable_clk(struct musb *musb)
-{
-	if (musb->ops->enable_clk)
-		musb->ops->enable_clk(musb);
-}
-
-static inline void musb_platform_disable_clk(struct musb *musb)
-{
-	if (musb->ops->disable_clk)
-		musb->ops->disable_clk(musb);
-}
-
-static inline void musb_platform_prepare_clk(struct musb *musb)
-{
-	if (musb->ops->prepare_clk)
-		musb->ops->prepare_clk(musb);
-}
-
-static inline void musb_platform_unprepare_clk(struct musb *musb)
-{
-	if (musb->ops->unprepare_clk)
-		musb->ops->unprepare_clk(musb);
-}
-
 /* #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0) */
 #if 1
 static inline const char *otg_state_string(enum usb_otg_state state)
@@ -677,8 +643,4 @@ extern void usb_hal_dpidle_request(int mode);
 extern void register_usb_hal_dpidle_request(void (*function)(int));
 extern void register_usb_hal_disconnect_check(void (*function)(void));
 extern void wake_up_bat(void);
-extern void wait_tx_done(u8 epnum, int timeout_ns);
-extern int host_tx_refcnt_inc(int epnum);
-extern int host_tx_refcnt_dec(int epnum);
-extern void host_tx_refcnt_reset(int epnum);
 #endif				/* __MUSB_CORE_H__ */

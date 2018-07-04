@@ -37,26 +37,6 @@
 
 #include <mt-plat/mtk_blocktag.h>
 
-#define SPREAD_PRINTF(buff, size, evt, fmt, args...) \
-do { \
-	if (buff && size && *(size)) { \
-		unsigned long var = snprintf(*(buff), *(size), fmt, ##args); \
-		if (var > 0) { \
-			*(size) -= var; \
-			*(buff) += var; \
-		} \
-	} \
-	if (evt) \
-		seq_printf(evt, fmt, ##args); \
-	if (!buff && !evt) { \
-		pr_info(fmt, ##args); \
-	} \
-} while (0)
-
-/* max dump size is 300KB whitch can be adjusted */
-#define BLOCKIO_AEE_BUFFER_SIZE (300 * 1024)
-char blockio_aee_buffer[BLOCKIO_AEE_BUFFER_SIZE];
-
 /* debugfs dentries */
 struct dentry *mtk_btag_droot;
 struct dentry *mtk_btag_dlog;
@@ -92,19 +72,18 @@ unsigned long long mtk_btag_system_dram_size;
 struct page_pid_logger *mtk_btag_pagelogger;
 spinlock_t mtk_btag_pagelogger_lock;
 
-static size_t mtk_btag_seq_pidlog_usedmem(char **buff, unsigned long *size,
-	struct seq_file *seq)
+static size_t mtk_btag_seq_pidlog_usedmem(struct seq_file *seq)
 {
-	size_t size_l = 0;
+	size_t size = 0;
 
 	if (!IS_ERR_OR_NULL(mtk_btag_pagelogger)) {
-		size_l = (sizeof(struct page_pid_logger)*(mtk_btag_system_dram_size >> PAGE_SHIFT));
-		SPREAD_PRINTF(buff, size, seq, "page pid logger buffer: %llu entries * %zu = %zu bytes\n",
+		size = (sizeof(struct page_pid_logger)*(mtk_btag_system_dram_size >> PAGE_SHIFT));
+		seq_printf(seq, "page pid logger buffer: %llu entries * %zu = %zu bytes\n",
 			(mtk_btag_system_dram_size >> PAGE_SHIFT),
 			sizeof(struct page_pid_logger),
-			size_l);
+			size);
 	}
-	return size_l;
+	return size;
 }
 
 #define biolog_fmt "wl:%d%%,%lld,%lld,%d.vm:%lld,%lld,%lld,%lld,%lld.cpu:%llu,%llu,%llu,%llu,%llu,%llu,%llu.pid:%d,"
@@ -166,15 +145,11 @@ void mtk_btag_pidlog_map_sg(struct request_queue *q, struct bio *bio, struct bio
 	if (!mtk_btag_pagelogger || !bio || !bvec)
 		return;
 
-	page_offset = (unsigned long)(__page_to_pfn(bvec->bv_page)) -
-		(memblock_start_of_DRAM() >> PAGE_SHIFT);
+	page_offset = (unsigned long)(__page_to_pfn(bvec->bv_page)) - PHYS_PFN_OFFSET;
 	spin_lock_irqsave(&mtk_btag_pagelogger_lock, flags);
 	ppl = ((struct page_pid_logger *)mtk_btag_pagelogger) + page_offset;
 	tmp.pid1 = ppl->pid1;
 	tmp.pid2 = ppl->pid2;
-
-	ppl->pid1 = 0xFFFF;
-	ppl->pid2 = 0xFFFF;
 	spin_unlock_irqrestore(&mtk_btag_pagelogger_lock, flags);
 
 	mtk_btag_pidlog_add(q, bio, tmp.pid1, bvec->bv_len);
@@ -198,8 +173,7 @@ void mtk_btag_pidlog_submit_bio(struct bio *bio)
 		if (bvec.bv_page) {
 			unsigned long page_index;
 
-			page_index = (unsigned long)(__page_to_pfn(bvec.bv_page)) -
-				(memblock_start_of_DRAM() >> PAGE_SHIFT);
+			page_index = (unsigned long)(__page_to_pfn(bvec.bv_page)) - PHYS_PFN_OFFSET;
 			ppl = ((struct page_pid_logger *)mtk_btag_pagelogger) + page_index;
 			spin_lock_irqsave(&mtk_btag_pagelogger_lock, flags);
 			if (page_index < (mtk_btag_system_dram_size >> PAGE_SHIFT)) {
@@ -224,8 +198,7 @@ void mtk_btag_pidlog_write_begin(struct page *p)
 	if (!mtk_btag_pagelogger || !p)
 		return;
 
-	page_index = (unsigned long)(__page_to_pfn(p)) -
-		(memblock_start_of_DRAM() >> PAGE_SHIFT);
+	page_index = (unsigned long)(__page_to_pfn(p)) - PHYS_PFN_OFFSET;
 	ppl = ((struct page_pid_logger *)mtk_btag_pagelogger) + page_index;
 	spin_lock_irqsave(&mtk_btag_pagelogger_lock, flags);
 	if (page_index < (mtk_btag_system_dram_size >> PAGE_SHIFT)) {
@@ -493,40 +466,37 @@ void mtk_btag_task_timetag(char *buf, unsigned len, unsigned stage,
 EXPORT_SYMBOL_GPL(mtk_btag_task_timetag);
 
 
-void mtk_btag_seq_time(char **buff, unsigned long *size,
-	struct seq_file *seq, uint64_t time)
+void mtk_btag_seq_time(struct seq_file *seq, uint64_t time)
 {
 	uint32_t nsec;
 
 	nsec = do_div(time, 1000000000);
-	SPREAD_PRINTF(buff, size, seq, "[%5lu.%06lu]", (unsigned long)time,
-		(unsigned long)nsec/1000);
+	seq_printf(seq, "[%5lu.%06lu]", (unsigned long)time, (unsigned long)nsec/1000);
 }
 EXPORT_SYMBOL_GPL(mtk_btag_seq_time);
 
-static void mtk_btag_seq_trace(char **buff, unsigned long *size,
-	struct seq_file *seq, const char *name, struct mtk_btag_trace *tr)
+static void mtk_btag_seq_trace(struct seq_file *seq, const char *name, struct mtk_btag_trace *tr)
 {
 	int i;
 
 	if (tr->time <= 0)
 		return;
 
-	mtk_btag_seq_time(buff, size, seq, tr->time);
-	SPREAD_PRINTF(buff, size, seq, "%s.q:%d.", name, tr->qid);
+	mtk_btag_seq_time(seq, tr->time);
+	seq_printf(seq, "%s.q:%d.", name, tr->qid);
 
 	if (tr->throughput.r.usage)
-		SPREAD_PRINTF(buff, size, seq, biolog_fmt_rt,
+		seq_printf(seq, biolog_fmt_rt,
 			tr->throughput.r.speed,
 			tr->throughput.r.size,
 			tr->throughput.r.usage);
 	if (tr->throughput.w.usage)
-		SPREAD_PRINTF(buff, size, seq, biolog_fmt_wt,
+		seq_printf(seq, biolog_fmt_wt,
 			tr->throughput.w.speed,
 			tr->throughput.w.size,
 			tr->throughput.w.usage);
 
-	SPREAD_PRINTF(buff, size, seq, biolog_fmt,
+	seq_printf(seq, biolog_fmt,
 		tr->workload.percent,
 		tr->workload.usage,
 		tr->workload.period,
@@ -553,14 +523,14 @@ static void mtk_btag_seq_trace(char **buff, unsigned long *size,
 		if (pe->pid == 0)
 			break;
 
-		SPREAD_PRINTF(buff, size, seq, pidlog_fmt,
+		seq_printf(seq, pidlog_fmt,
 			pe->pid,
 			pe->w.count,
 			pe->w.length,
 			pe->r.count,
 			pe->r.length);
 	}
-	SPREAD_PRINTF(buff, size, seq, ".\n");
+	seq_puts(seq, ".\n");
 }
 
 /* get current trace in debugfs ring buffer */
@@ -595,8 +565,8 @@ static void mtk_btag_clear_trace(struct mtk_btag_ringtrace *rt)
 	spin_unlock_irqrestore(&rt->lock, flags);
 }
 
-static void mtk_btag_seq_debug_show_ringtrace(char **buff, unsigned long *size,
-	struct seq_file *seq, struct mtk_blocktag *btag)
+static void mtk_btag_seq_debug_show_ringtrace(struct seq_file *seq,
+	struct mtk_blocktag *btag)
 {
 	struct mtk_btag_ringtrace *rt = BTAG_RT(btag);
 	unsigned long flags;
@@ -608,12 +578,12 @@ static void mtk_btag_seq_debug_show_ringtrace(char **buff, unsigned long *size,
 	if (rt->index >= rt->max || rt->index < 0)
 		rt->index = 0;
 
-	SPREAD_PRINTF(buff, size, seq, "<%s: blocktag trace>\n", btag->name);
+	seq_printf(seq, "<%s: blocktag trace>\n", btag->name);
 
 	spin_lock_irqsave(&rt->lock, flags);
 	end = (rt->index > 0) ? rt->index-1 : rt->max-1;
 	for (i = rt->index;;) {
-		mtk_btag_seq_trace(buff, size, seq, btag->name, &rt->trace[i]);
+		mtk_btag_seq_trace(seq, btag->name, &rt->trace[i]);
 		if (i == end)
 			break;
 		i = (i >= rt->max-1) ? 0 : i+1;
@@ -622,45 +592,36 @@ static void mtk_btag_seq_debug_show_ringtrace(char **buff, unsigned long *size,
 }
 
 
-static size_t mtk_btag_seq_sub_show_usedmem(char **buff, unsigned long *size,
-	struct seq_file *seq, struct mtk_blocktag *btag)
+static size_t mtk_btag_seq_sub_show_usedmem(struct seq_file *seq,
+	struct mtk_blocktag *btag)
 {
 	size_t used_mem = 0;
-	size_t size_l;
+	size_t size;
 
-	SPREAD_PRINTF(buff, size, seq, "<%s: memory usage>\n", btag->name);
-	SPREAD_PRINTF(buff, size, seq, "%s blocktag: %zu bytes\n", btag->name,
-		sizeof(struct mtk_blocktag));
+	seq_printf(seq, "<%s: memory usage>\n", btag->name);
+	seq_printf(seq, "%s blocktag: %zu bytes\n", btag->name, sizeof(struct mtk_blocktag));
 	used_mem += sizeof(struct mtk_blocktag);
 
 	if (BTAG_RT(btag)) {
-		size_l = (sizeof(struct mtk_btag_trace) * BTAG_RT(btag)->max);
-		SPREAD_PRINTF(buff, size, seq,
-		"%s debug ring buffer: %d traces * %zu = %zu bytes\n",
+		size = (sizeof(struct mtk_btag_trace) * BTAG_RT(btag)->max);
+		seq_printf(seq, "%s debug ring buffer: %d traces * %zu = %zu bytes\n",
 			btag->name,
 			BTAG_RT(btag)->max,
 			sizeof(struct mtk_btag_trace),
-			size_l);
-		used_mem += size_l;
+			size);
+		used_mem += size;
 	}
 
 	if (BTAG_CTX(btag)) {
-		size_l = btag->ctx.size * btag->ctx.count;
-		SPREAD_PRINTF(buff, size, seq,
-			"%s queue context: %d contexts * %d = %zu bytes\n",
+		size = btag->ctx.size * btag->ctx.count;
+		seq_printf(seq, "%s queue context: %d contexts * %d = %zu bytes\n",
 			btag->name,
 			btag->ctx.count,
 			btag->ctx.size,
-			size_l);
-		used_mem += size_l;
+			size);
+		used_mem += size;
 	}
-
-	SPREAD_PRINTF(buff, size, seq, "%s aee buffer: %d bytes\n", btag->name,
-			BLOCKIO_AEE_BUFFER_SIZE);
-	used_mem += BLOCKIO_AEE_BUFFER_SIZE;
-
-	SPREAD_PRINTF(buff, size, seq,
-		"%s sub-total: %zu KB\n", btag->name, used_mem >> 10);
+	seq_printf(seq, "%s sub-total: %zu KB\n", btag->name, used_mem >> 10);
 	return used_mem;
 }
 
@@ -722,12 +683,12 @@ static int mtk_btag_seq_sub_show(struct seq_file *seq, void *v)
 	struct mtk_blocktag *btag = seq->private;
 
 	if (btag) {
-		mtk_btag_seq_debug_show_ringtrace(NULL, NULL, seq, btag);
+		mtk_btag_seq_debug_show_ringtrace(seq, btag);
 		if (btag->seq_show) {
 			seq_printf(seq, "<%s: context info>\n", btag->name);
-			btag->seq_show(NULL, NULL, seq);
+			btag->seq_show(seq);
 		}
-		mtk_btag_seq_sub_show_usedmem(NULL, NULL, seq, btag);
+		mtk_btag_seq_sub_show_usedmem(seq, btag);
 	}
 	return 0;
 }
@@ -900,56 +861,36 @@ init:
 		pr_info("[BLOCK_TAG] blockio: fail to allocate mtk_btag_pagelogger\n");
 }
 
-static void mtk_btag_seq_main_info(char **buff, unsigned long *size,
-	struct seq_file *seq)
+static int mtk_btag_seq_main_show(struct seq_file *seq, void *v)
 {
 	size_t used_mem = 0;
 	struct mtk_blocktag *btag, *n;
 
-	SPREAD_PRINTF(buff, size, seq, "[Trace]\n");
+	seq_puts(seq, "[Trace]\n");
 	mutex_lock(&mtk_btag_list_lock);
 	list_for_each_entry_safe(btag, n, &mtk_btag_list, list)
-		mtk_btag_seq_debug_show_ringtrace(buff, size, seq, btag);
+		mtk_btag_seq_debug_show_ringtrace(seq, btag);
 
-	SPREAD_PRINTF(buff, size, seq, "[Info]\n");
+	seq_puts(seq, "[Info]\n");
 	list_for_each_entry_safe(btag, n, &mtk_btag_list, list)
 		if (btag->seq_show) {
-			SPREAD_PRINTF(buff, size, seq, "<%s: context info>\n",
-					btag->name);
-			btag->seq_show(buff, size, seq);
+			seq_printf(seq, "<%s: context info>\n", btag->name);
+			btag->seq_show(seq);
 		}
 
-	SPREAD_PRINTF(buff, size, seq, "[Memory Usage]\n");
+	seq_puts(seq, "[Memory Usage]\n");
 	list_for_each_entry_safe(btag, n, &mtk_btag_list, list)
-		used_mem += mtk_btag_seq_sub_show_usedmem(buff, size,
-				seq, btag);
+		used_mem += mtk_btag_seq_sub_show_usedmem(seq, btag);
 	mutex_unlock(&mtk_btag_list_lock);
 
-	SPREAD_PRINTF(buff, size, seq, "<blocktag core>\n");
-	used_mem += mtk_btag_seq_pidlog_usedmem(buff, size, seq);
+	seq_puts(seq, "<blocktag core>\n");
+	used_mem += mtk_btag_seq_pidlog_usedmem(seq);
 
-	SPREAD_PRINTF(buff, size, seq, "--------------------------------\n");
-	SPREAD_PRINTF(buff, size, seq, "Total: %zu KB\n", used_mem >> 10);
-}
+	seq_puts(seq, "--------------------------------\n");
+	seq_printf(seq, "Total: %zu KB\n", used_mem >> 10);
 
-static int mtk_btag_seq_main_show(struct seq_file *seq, void *v)
-{
-	mtk_btag_seq_main_info(NULL, NULL, seq);
 	return 0;
 }
-
-void get_blockio_aee_buffer(unsigned long *vaddr, unsigned long *size)
-{
-	unsigned long free_size = BLOCKIO_AEE_BUFFER_SIZE;
-	char *buff;
-
-	buff = blockio_aee_buffer;
-	mtk_btag_seq_main_info(&buff, &free_size, NULL);
-	/* retrun start location */
-	*vaddr = (unsigned long)blockio_aee_buffer;
-	*size = BLOCKIO_AEE_BUFFER_SIZE - free_size;
-}
-EXPORT_SYMBOL(get_blockio_aee_buffer);
 
 static const struct seq_operations mtk_btag_seq_main_ops = {
 	.start  = mtk_btag_seq_debug_start,

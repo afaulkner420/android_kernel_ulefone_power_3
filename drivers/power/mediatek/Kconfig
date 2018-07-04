@@ -41,29 +41,9 @@ config CHARGER_RT9465
 	  It depends on config MTK_SMART_BATTERY
 	  and config MTK_SWCHR_SUPPORT.
 
-config CHARGER_RT9458
-	bool "Charger Driver for Richtek RT9458 Charger IC"
-	default n
-	depends on MTK_SMART_BATTERY && MTK_SWCHR_SUPPORT
-	help
-	  Say Y to enable
-	  Richtek RT9458 driver.
-	  It depends on config MTK_SMART_BATTERY
-	  and config MTK_SWCHR_SUPPORT.
-
-config CHARGER_HL7005
-	bool "Charger Driver for Halo HL7005 Charger IC"
-	default n
-	depends on MTK_SMART_BATTERY && MTK_SWCHR_SUPPORT
-	help
-	  Say Y to enable
-	  Halo HL7005 driver.
-	  It depends on config MTK_SMART_BATTERY
-	  and config MTK_SWCHR_SUPPORT.
-
 config RT9465_PWR_EN_TO_MT6336
 	bool "RT9465 PWR_EN pin's connection"
-	default n
+	default y
 	depends on CHARGER_RT9465
 	help
 	  This is used to indicate PWR_EN pin's connection.
@@ -264,17 +244,14 @@ config CUSTOM_BATTERY_CYCLE_AGING_DATA
 	  capacity aging factor.
 	  It is used for gas gauge calibration.
 
-#modify XLLSHLSS-5 by zhipeng.pan 20180111 start
 config MTK_JEITA_STANDARD_SUPPORT
 	bool "JEITA standard support"
-	depends on TRAN_CHARGER_EXTERN_JEITA
 	default n
 	help
 	  Set Yes if JEITA charging control is needed.
 	  MediaTek charging control flow supports
 	  JEITA standard and could provide more
 	  safety for charging function.
-#modify XLLSHLSS-5 by zhipeng.pan 20180111 end
 
 config BAT_LOW_TEMP_PROTECT_ENABLE
 	bool "Disable charging when low temperature"
@@ -365,60 +342,6 @@ config MTK_PUMP_EXPRESS_PLUS_30_SUPPORT
 	  to achive better charging ability,it reduce more IC heat than PE+
 	  Set Yes to enable PE+30.
 	  Set No to disable PE+30.
-
-#add XLLSHLSS-5 by zhipeng.pan 20171211 start
-config TRAN_CHARGER_OTG_LPO_SUPPORT
-	bool "CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT"
-	default n
-        help
-          set y to control otg in low battery capacity
-#add XLLSHLSS-5 by zhipeng.pan 20171211 end
-
-#add XLLSHLSS-5 by zhipeng.pan 20171214 start
-config TRAN_CHARGER_FUNCS_ADD
-	bool "transsion transsion add custom set"
-	default n
-	depends on TRAN_CHARGER_DIR
-	help
-	  the independent custom function add by transsion
-
-config TRAN_CHARGER_COULOMB_SUPPORT
-	bool "CONFIG_TRAN_CHARGER_COULOMB_SUPPORT"
-	default n
-        help
-          set y to create fg_coulomb node
-
-config TRAN_CHARGER_DIR
-	bool "CONFIG_TRAN_CHARGER_DIR"
-	default n
-	help
-	  set y to make tran_chg file
-
-config TRAN_CHARGER_AGING_SUPPORT
-	bool "CONFIG_TRAN_CHARGER_AGING_SUPPORT"
-	default n
-	depends on TRAN_CHARGER_FUNCS_ADD
-	help
-	  set y to enable charging control in aging test
-
-config TRAN_CHARGER_EXTERN_JEITA
-	bool "transsion jeita standard support"
-	depends on TRAN_CHARGER_DIR
-	default n
-	help
-	  Set Yes if extern jeita charging control is needed.
-	  transsion charging control flow supports
-	  transsion jeita standard and could provide more
-	  safety for charging function.
-
-config TRAN_CHARGER_CUR_FOR_TEMP_SUPPORT
-	bool "transsion drop temperature support"
-        depends on TRAN_CHARGER_EXTERN_JEITA
-	default n
-	help
-	  transsion drop temperature by drop charging current across
-	  backlignt,call and pcb temperature
-#add XLLSHLSS-5 by zhipeng.pan 20171214 end
 
 config MTK_BIF_SUPPORT
 	bool "Mediatek BIF battery driver"

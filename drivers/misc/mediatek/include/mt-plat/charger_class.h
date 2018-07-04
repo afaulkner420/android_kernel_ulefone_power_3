@@ -117,14 +117,6 @@ struct charger_ops {
 	int (*enable_otg)(struct charger_device *, bool en);
 	int (*enable_discharge)(struct charger_device *, bool en);
 	int (*set_boost_current_limit)(struct charger_device *, u32 uA);
-	//add XLLSHLSS-5 by zhipeng.pan 20171122 start
-	int (*set_boost_voltage)(struct charger_device *, u32 uV);
-	//add XLLSHLSS-5 by zhipeng.pan 20171122 end
-	//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-	#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-	int (*get_boost_status)(struct charger_device *);
-	#endif
-	//add XLLSHLSS-5 by zhipeng.pan 20171211 end
 
 	/* charger type detection */
 	int (*enable_chg_type_det)(struct charger_device *, bool en);
@@ -201,14 +193,6 @@ extern int charger_dev_enable_chg_type_det(struct charger_device *charger_dev, b
 extern int charger_dev_enable_otg(struct charger_device *charger_dev, bool en);
 extern int charger_dev_enable_discharge(struct charger_device *charger_dev, bool en);
 extern int charger_dev_set_boost_current_limit(struct charger_device *charger_dev, u32 uA);
-//add XLLSHLSS-5 by zhipeng.pan 20171122 start
-extern int charger_dev_set_boost_voltage(struct charger_device *charger_dev, u32 uV);
-//add XLLSHLSS-5 by zhipeng.pan 20171122 end
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-extern int charger_dev_get_boost_status(struct charger_device *charger_dev);
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
 extern int charger_dev_get_zcv(struct charger_device *charger_dev, u32 *uV);
 extern int charger_dev_run_aicl(struct charger_device *charger_dev, u32 *uA);
 extern int charger_dev_reset_eoc_state(struct charger_device *charger_dev);

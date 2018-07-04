@@ -89,7 +89,6 @@ static unsigned int scp_log_buf_maxlen_last[SCP_CORE_TOTAL];
 /*global value*/
 unsigned int r_pos_debug;
 unsigned int log_ctl_debug;
-static struct mutex scp_logger_mutex;
 
 /*
  * get log from scp when received a buf full notify
@@ -110,10 +109,10 @@ static void scp_logger_wakeup_handler(int id, void *data, unsigned int len)
 static size_t scp_A_get_last_log(size_t b_len)
 {
 	size_t ret = 0;
-	int scp_awake_flag;
 	unsigned int log_start_idx;
 	unsigned int log_end_idx;
 	unsigned int update_start_idx;
+	char *pre_scp_last_log_buf;
 	unsigned char *scp_last_log_buf = (unsigned char *)(SCP_TCM + scp_A_log_buf_addr_last);
 
 	/*pr_debug("[SCP] %s\n", __func__);*/
@@ -122,14 +121,9 @@ static size_t scp_A_get_last_log(size_t b_len)
 		pr_err("[SCP] %s(): logger has not been init\n", __func__);
 		return 0;
 	}
-	mutex_lock(&scp_logger_mutex);
-	/*SCP keep awake */
-	scp_awake_flag = 0;
-	if (scp_awake_lock(SCP_A_ID) == -1) {
-		scp_awake_flag = -1;
-		pr_debug("scp_A_get_last_log: awake scp fail\n");
-	}
 
+	/*SCP keep awake */
+	scp_awake_lock(SCP_A_ID);
 
 	log_start_idx = readl((void __iomem *)(SCP_TCM + scp_A_log_start_addr_last));
 	log_end_idx = readl((void __iomem *)(SCP_TCM + scp_A_log_end_addr_last));
@@ -138,14 +132,14 @@ static size_t scp_A_get_last_log(size_t b_len)
 		pr_debug("[SCP] b_len %zu > scp_log_buf_maxlen %d\n", b_len, scp_A_log_buf_maxlen_last);
 		b_len = scp_A_log_buf_maxlen_last;
 	}
-	/* handle sram error */
-	if (log_end_idx >= scp_A_log_buf_maxlen_last)
-		log_end_idx = 0;
 
 	if (log_end_idx >= b_len)
 		update_start_idx = log_end_idx - b_len;
 	else
 		update_start_idx = scp_A_log_buf_maxlen_last - (b_len - log_end_idx) + 1;
+
+	pre_scp_last_log_buf = scp_A_last_log;
+	scp_A_last_log = vmalloc(scp_A_log_buf_maxlen_last + 1);
 
 	/* read log from scp buffer */
 	ret = 0;
@@ -156,29 +150,23 @@ static size_t scp_A_get_last_log(size_t b_len)
 			ret++;
 			if (update_start_idx >= scp_A_log_buf_maxlen_last)
 				update_start_idx = update_start_idx - scp_A_log_buf_maxlen_last;
-
-			scp_A_last_log[ret] = '\0';
 		}
 	} else {
 		/* no buffer, just skip logs*/
 		update_start_idx = log_end_idx;
 	}
-
+	scp_A_last_log[ret] = '\0';
 
 	/*SCP release awake */
-	if (scp_awake_flag == 0) {
-		if (scp_awake_unlock(SCP_A_ID) == -1)
-			pr_debug("scp_A_get_last_log: awake unlock fail\n");
-	}
-
-	mutex_unlock(&scp_logger_mutex);
+	scp_awake_unlock(SCP_A_ID);
+	vfree(pre_scp_last_log_buf);
 	return ret;
 }
 
 ssize_t scp_A_log_read(char __user *data, size_t len)
 {
 	unsigned int w_pos, r_pos, datalen;
-	char *buf, *to_user_buf;
+	char *buf;
 
 	if (!scp_A_logger_inited)
 		return 0;
@@ -210,19 +198,10 @@ ssize_t scp_A_log_read(char __user *data, size_t len)
 	}
 
 	buf = ((char *) SCP_A_log_ctl) + SCP_A_log_ctl->buff_ofs + r_pos;
-	to_user_buf = vmalloc(len);
+
 	len = datalen;
 	/*memory copy from log buf*/
-	if (to_user_buf) {
-		memcpy_fromio(to_user_buf, buf, len);
-		if (copy_to_user(data, to_user_buf, len))
-			pr_debug("[SCP]copy to user buf failed..\n");
-
-		vfree(to_user_buf);
-	} else {
-		pr_debug("[SCP]create log buffer failed..\n");
-		goto error;
-	}
+	memcpy_fromio(data, buf, len);
 
 	r_pos += datalen;
 	if (r_pos >= DRAM_BUF_LEN)
@@ -275,13 +254,11 @@ static unsigned int scp_A_log_if_poll(struct file *file, poll_table *wait)
 	unsigned int ret = 0;
 
 	/* pr_debug("[SCP A] scp_A_log_if_poll\n"); */
-	if (!scp_A_logger_inited)
-		return 0;
 
 	if (!(file->f_mode & FMODE_READ))
 		return ret;
 
-	/*poll_wait(file, &scp_A_logwait, wait);*/
+	poll_wait(file, &scp_A_logwait, wait);
 
 	ret = scp_A_log_poll();
 
@@ -304,7 +281,7 @@ static unsigned int scp_A_log_enable_set(unsigned int enable)
 		retrytimes = SCP_IPI_RETRY_TIMES;
 		do {
 			ret = scp_ipi_send(IPI_LOGGER_ENABLE, &enable, sizeof(enable), 0, SCP_A_ID);
-			if (ret == SCP_IPI_DONE)
+			if (ret == DONE)
 				break;
 			retrytimes--;
 			udelay(100);
@@ -312,12 +289,12 @@ static unsigned int scp_A_log_enable_set(unsigned int enable)
 		/*
 		 *disable/enable logger flag
 		 */
-		if ((ret == SCP_IPI_DONE) && (enable == 1))
+		if ((ret == DONE) && (enable == 1))
 			SCP_A_log_ctl->enable = 1;
-		else if ((ret == SCP_IPI_DONE) && (enable == 0))
+		else if ((ret == DONE) && (enable == 0))
 			SCP_A_log_ctl->enable = 0;
 
-		if (ret != SCP_IPI_DONE) {
+		if (ret != DONE) {
 			pr_err("[SCP] scp_A_log_enable_set fail ret=%d\n", ret);
 			goto error;
 		}
@@ -345,7 +322,7 @@ static unsigned int scp_A_log_wakeup_set(unsigned int enable)
 		retrytimes = SCP_IPI_RETRY_TIMES;
 		do {
 			ret = scp_ipi_send(IPI_LOGGER_WAKEUP, &enable, sizeof(enable), 0, SCP_A_ID);
-			if (ret == SCP_IPI_DONE)
+			if (ret == DONE)
 				break;
 			retrytimes--;
 			udelay(100);
@@ -353,12 +330,12 @@ static unsigned int scp_A_log_wakeup_set(unsigned int enable)
 		/*
 		 *disable/enable logger flag
 		 */
-		if ((ret == SCP_IPI_DONE) && (enable == 1))
+		if ((ret == DONE) && (enable == 1))
 			scp_A_logger_wakeup_ap = 1;
-		else if ((ret == SCP_IPI_DONE) && (enable == 0))
+		else if ((ret == DONE) && (enable == 0))
 			scp_A_logger_wakeup_ap = 0;
 
-		if (ret != SCP_IPI_DONE) {
+		if (ret != DONE) {
 			pr_err("[SCP] scp_A_log_wakeup_set fail ret=%d\n", ret);
 			goto error;
 		}
@@ -434,8 +411,13 @@ static ssize_t scp_A_last_log_show(struct device *kobj, struct device_attribute 
 	scp_A_get_last_log(scp_A_log_buf_maxlen_last);
 	return sprintf(buf, "scp_A_log_buf_maxlen=%u, log=%s\n", scp_A_log_buf_maxlen_last, scp_A_last_log);
 }
+static ssize_t scp_A_last_log_store(struct device *kobj, struct device_attribute *attr, const char *buf, size_t n)
+{
+	scp_A_get_last_log(scp_A_log_buf_maxlen_last);
+	return n;
+}
 
-DEVICE_ATTR(scp_A_get_last_log, S_IRUGO, scp_A_last_log_show, NULL);
+DEVICE_ATTR(scp_A_get_last_log, S_IWUSR | S_IRUGO, scp_A_last_log_show, scp_A_last_log_store);
 
 /*
  * logger UT test
@@ -532,13 +514,12 @@ static void scp_A_logger_init_handler(int id, void *data, unsigned int len)
 	/* setting dram ctrl config to scp*/
 	/* scp side get wakelock, AP to write info to scp sram*/
 	mt_reg_sync_writel(scp_get_reserve_mem_phys(SCP_A_LOGGER_MEM_ID), (SCP_TCM + scp_A_log_dram_addr_last));
-	/* set init flag here*/
-	scp_A_logger_inited = 1;
+
 	spin_unlock_irqrestore(&scp_A_log_buf_spinlock, flags);
 
 	/*set a wq to enable scp logger*/
 	scp_logger_notify_work[SCP_A_ID].id = SCP_A_ID;
-	scp_schedule_logger_work(&scp_logger_notify_work[SCP_A_ID]);
+	scp_schedule_work(&scp_logger_notify_work[SCP_A_ID]);
 }
 
 /*
@@ -553,8 +534,8 @@ static void scp_logger_notify_ws(struct work_struct *ws)
 	unsigned int magic = 0x5A5A5A5A;
 	unsigned int retrytimes;
 	unsigned int scp_core_id = sws->id;
-	enum scp_ipi_status ret;
-	enum ipi_id scp_ipi_id;
+	ipi_status ret;
+	ipi_id scp_ipi_id;
 
 
 	scp_ipi_id = IPI_LOGGER_INIT_A;
@@ -567,26 +548,19 @@ static void scp_logger_notify_ws(struct work_struct *ws)
 	retrytimes = SCP_IPI_RETRY_TIMES;
 	do {
 		ret = scp_ipi_send(scp_ipi_id, &magic, sizeof(magic), 0, scp_core_id);
-		if ((retrytimes % 500) == 0)
-			pr_debug("[SCP]scp_logger_notify_ws ipi ret=%d\n", ret);
-
-		if (ret == SCP_IPI_DONE)
+		pr_debug("[SCP]scp_logger_notify_ws ipi ret=%u\n", ret);
+		if (ret == DONE)
 			break;
 		retrytimes--;
 		udelay(2000);
 	} while (retrytimes > 0);
 
 	/*enable logger flag*/
-	if (ret == SCP_IPI_DONE)
+	if (ret == DONE)
 		SCP_A_log_ctl->enable = 1;
-	else {
-		/*scp logger ipi init fail but still let logger dump*/
-		SCP_A_log_ctl->enable = 1;
+	else
 		pr_err("[SCP]logger initial fail, ipi ret=%d\n", ret);
-	}
-	/* malloc only ones */
-	if (!scp_A_last_log)
-		scp_A_last_log = vmalloc(scp_A_log_buf_maxlen_last + 1);
+
 }
 
 
@@ -602,17 +576,14 @@ int scp_logger_init(phys_addr_t start, phys_addr_t limit)
 	/*init wait queue*/
 	init_waitqueue_head(&scp_A_logwait);
 	scp_A_logger_wakeup_ap = 0;
-	mutex_init(&scp_logger_mutex);
+
 	/*init work queue*/
 	INIT_WORK(&scp_logger_notify_work[SCP_A_ID].work, scp_logger_notify_ws);
 
 	/*init dram ctrl table*/
 	last_ofs = 0;
-#ifdef CONFIG_ARM64
+
 	SCP_A_log_ctl = (struct log_ctrl_s *) start;
-#else
-	SCP_A_log_ctl = (struct log_ctrl_s *) (u32) start; /* plz fix origial ptr to phys_addr flow */
-#endif
 	SCP_A_log_ctl->base = PLT_LOG_ENABLE; /* magic */
 	SCP_A_log_ctl->enable = 0;
 	SCP_A_log_ctl->size = sizeof(*SCP_A_log_ctl);
@@ -654,16 +625,6 @@ error:
 
 }
 
-void scp_logger_uninit(void)
-{
-	char *tmp = scp_A_last_log;
-
-	scp_A_logger_inited = 0;
-	scp_A_last_log = NULL;
-	if (tmp)
-		vfree(tmp);
-}
-
 const struct file_operations scp_A_log_file_ops = {
 	.owner = THIS_MODULE,
 	.read = scp_A_log_if_read,
@@ -677,7 +638,7 @@ const struct file_operations scp_A_log_file_ops = {
  * NOTE: this function may be blocked
  * @param scp_core_id:  fill scp id to get last log
  */
-void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
+void scp_crash_log_move_to_buf(scp_core_id scp_id)
 {
 	int pos;
 	unsigned int ret;
@@ -698,11 +659,7 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
 
 	/*SCP keep awake */
 	mutex_lock(&scp_logger_mutex);
-	if (scp_awake_lock(scp_id) == -1) {
-		pr_debug("scp_crash_log_move_to_buf: awake scp fail\n");
-		mutex_unlock(&scp_logger_mutex);
-		return;
-	}
+	scp_awake_lock(scp_id);
 
 	log_start_idx = readl((void __iomem *)(SCP_TCM + scp_log_start_addr_last[scp_id]));
 	log_end_idx = readl((void __iomem *)(SCP_TCM + scp_log_end_addr_last[scp_id]));
@@ -730,14 +687,12 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
 			ret++;
 			if (log_start_idx >= scp_log_buf_maxlen_last[scp_id])
 				log_start_idx = log_start_idx - scp_log_buf_maxlen_last[scp_id];
-
-			scp_last_logger[ret] = '\0';
 		}
 	} else {
 		/* no buffer, just skip logs*/
 		log_start_idx = log_end_idx;
 	}
-
+	scp_last_logger[ret] = '\0';
 
 	if (ret != 0) {
 		/*get buffer w pos*/
@@ -773,9 +728,7 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
 	}
 
 	/*SCP release awake */
-	if (scp_awake_unlock(scp_id) == -1)
-		pr_debug("scp_crash_log_move_to_buf: awake unlock fail\n");
-
+	scp_awake_unlock(scp_id);
 	mutex_unlock(&scp_logger_mutex);
 	vfree(pre_scp_logger_buf);
 }
@@ -787,11 +740,10 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
  * NOTE: this function may be blocked
  * @param scp_core_id:  fill scp id to get last log
  */
-void scp_get_log(enum scp_core_id scp_id)
+void scp_get_log(scp_core_id scp_id)
 {
 	pr_debug("[SCP] %s\n", __func__);
 #if SCP_LOGGER_ENABLE
-	scp_A_get_last_log(SCP_AED_STR_LEN - 200);
 	/*move last log to dram*/
 	scp_crash_log_move_to_buf(scp_id);
 #endif
@@ -800,24 +752,11 @@ void scp_get_log(enum scp_core_id scp_id)
 /*
  * return scp last log
  */
-char *scp_get_last_log(enum scp_core_id id)
+char *scp_get_last_log(scp_core_id id)
 {
 	char *last_log;
 
 	last_log = scp_A_last_log;
 
 	return last_log;
-}
-
-/*
- * set scp_A_logger_inited
- */
-void scp_logger_init_set(unsigned int value)
-{
-	/*scp_A_logger_inited
-	 *  0: logger not init
-	 *  1: logger inited
-	 */
-	scp_A_logger_inited = value;
-
 }

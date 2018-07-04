@@ -15,7 +15,6 @@
 #include "cmdq_core.h"
 #include "cmdq_virtual.h"
 #include "smi_public.h"
-#include "cmdq_event_common.h"
 
 /* device tree */
 #include <linux/of.h>
@@ -24,8 +23,6 @@
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <mt-plat/mtk_lpae.h>
-#include <linux/vmalloc.h>
-#include <linux/slab.h>
 
 
 struct CmdqDeviceStruct {
@@ -89,6 +86,7 @@ void cmdq_dev_init_module_base_VA(void)
 
 void cmdq_dev_deinit_module_base_VA(void)
 {
+	cmdq_dev_free_module_base_VA(cmdq_dev_get_module_base_VA_MMSYS_CONFIG());
 	cmdq_mdp_get_func()->deinitModuleBaseVA();
 }
 
@@ -101,10 +99,8 @@ unsigned long cmdq_dev_alloc_reference_VA_by_name(const char *ref_name)
 	if (node) {
 		VA = (unsigned long)of_iomap(node, 0);
 		of_node_put(node);
-		CMDQ_LOG("DEV: VA ref(%s): 0x%lx\n", ref_name, VA);
-	} else {
-		CMDQ_ERR("DEV: cannot parse node name:%s\n", ref_name);
 	}
+	CMDQ_LOG("DEV: VA ref(%s): 0x%lx\n", ref_name, VA);
 	return VA;
 }
 
@@ -243,10 +239,11 @@ void cmdq_dev_init_MDP_PA(struct device_node *node)
 
 	module_pa_start = cmdq_dev_get_reference_PA("mm_mutex", 0);
 
-	if (!module_pa_start)
+	if (module_pa_start == 0) {
 		CMDQ_ERR("DEV: init mm_mutex PA fail!!\n");
-	else
+	} else {
 		pMDPBaseAddress[CMDQ_MDP_PA_BASE_MM_MUTEX] = module_pa_start;
+	}
 	CMDQ_MSG("MM_MUTEX PA: start = 0x%x\n", pMDPBaseAddress[CMDQ_MDP_PA_BASE_MM_MUTEX]);
 }
 
@@ -269,7 +266,7 @@ void cmdq_dev_get_subsys_by_name(struct device_node *node, enum CMDQ_SUBSYS_ENUM
 			break;
 		}
 
-		gceSubsysStruct[subsys].msb = gceSubsys[0] & gceSubsys[2];
+		gceSubsysStruct[subsys].msb = gceSubsys[0];
 		gceSubsysStruct[subsys].subsysID = gceSubsys[1];
 		gceSubsysStruct[subsys].mask = gceSubsys[2];
 		strncpy(gceSubsysStruct[subsys].grpName, grp_name, CMDQ_SUBSYS_GRPNAME_MAX-1);
@@ -294,19 +291,19 @@ void cmdq_dev_test_subsys_correctness_impl(enum CMDQ_SUBSYS_ENUM subsys)
 
 void cmdq_dev_init_subsys(struct device_node *node)
 {
-	u32 i;
-	struct cmdq_subsys_dts_name *subsys = cmdq_subsys_get_dts();
-
-	for (i = 0; i < cmdq_subsys_get_size(); i++)
-		if (subsys[i].name)
-			cmdq_dev_get_subsys_by_name(node, i, subsys[i].group,
-				subsys[i].name);
+#undef DECLARE_CMDQ_SUBSYS
+#define DECLARE_CMDQ_SUBSYS(name, val, grp, dts_name) \
+{	\
+	cmdq_dev_get_subsys_by_name(node, val, #grp, #dts_name);	\
+}
+#include "cmdq_subsys_common.h"
+#undef DECLARE_CMDQ_SUBSYS
 }
 
 void cmdq_dev_get_event_value_by_name(struct device_node *node, enum CMDQ_EVENT_ENUM event, const char *dts_name)
 {
-	s32 status;
-	s32 event_value = -1;
+	int status;
+	uint32_t event_value;
 
 	do {
 		if (event < 0 || event >= CMDQ_MAX_HW_EVENT_COUNT)
@@ -320,62 +317,49 @@ void cmdq_dev_get_event_value_by_name(struct device_node *node, enum CMDQ_EVENT_
 	} while (0);
 }
 
-void cmdq_dev_test_event_correctness_impl(enum CMDQ_EVENT_ENUM event,
-	const char *dts_name, const char *event_name)
+void cmdq_dev_test_event_correctness_impl(enum CMDQ_EVENT_ENUM event, const char *event_name)
 {
 	int32_t eventValue = cmdq_core_get_event_value(event);
 
 	if (eventValue >= 0 && eventValue < CMDQ_SYNC_TOKEN_MAX) {
 		/* print event name from device tree */
-		if (event < CMDQ_MAX_HW_EVENT_COUNT)
-			CMDQ_LOG("%s = %d\n", dts_name, eventValue);
-		else
-			CMDQ_LOG("%s = %d\n", event_name, eventValue);
+		CMDQ_LOG("%s = %d\n", event_name, eventValue);
 	}
 }
 
 void cmdq_dev_init_event_table(struct device_node *node)
 {
-	struct cmdq_event_table *events = cmdq_event_get_table();
-	u32 table_size = cmdq_event_get_table_size();
-	u32 i = 0;
-
-	for (i = 0; i < table_size; i++) {
-		if (events[i].event == CMDQ_MAX_HW_EVENT_COUNT)
-			break;
-		cmdq_dev_get_event_value_by_name(node, events[i].event, events[i].dts_name);
-	}
+#undef DECLARE_CMDQ_EVENT
+#define DECLARE_CMDQ_EVENT(name, val, dts_name) \
+{	\
+	cmdq_dev_get_event_value_by_name(node, val, #dts_name);	\
+}
+#include "cmdq_event_common.h"
+#undef DECLARE_CMDQ_EVENT
 }
 
 void cmdq_dev_test_dts_correctness(void)
 {
-	struct cmdq_event_table *events = cmdq_event_get_table();
-	struct cmdq_subsys_dts_name *subsys = cmdq_subsys_get_dts();
-	u32 i;
+#undef DECLARE_CMDQ_EVENT
+#define DECLARE_CMDQ_EVENT(name, val, dts_name) \
+{	\
+		cmdq_dev_test_event_correctness_impl(val, #name);	\
+}
+#include "cmdq_event_common.h"
+#undef DECLARE_CMDQ_EVENT
 
-	for (i = 0; i < cmdq_event_get_table_size(); i++)
-		cmdq_dev_test_event_correctness_impl(events[i].event,
-			events[i].dts_name, events[i].event_name);
-	for (i = 0; i < cmdq_subsys_get_size(); i++)
-		if (subsys[i].name)
-			cmdq_dev_test_subsys_correctness_impl(i);
+#undef DECLARE_CMDQ_SUBSYS
+#define DECLARE_CMDQ_SUBSYS(name, val, grp, dts_name) \
+{	\
+		cmdq_dev_test_subsys_correctness_impl(val);	\
+}
+#include "cmdq_subsys_common.h"
+#undef DECLARE_CMDQ_SUBSYS
 }
 
 void cmdq_dev_get_dts_setting(struct cmdq_dts_setting *dts_setting)
 {
 	s32 ret = -1;
-	u32 sram_size_cpr_64 = 0;
-
-	ret = of_property_read_u32(gCmdqDev.pDev->of_node, "sram_size_cpr_64",
-		&sram_size_cpr_64);
-	if (ret != 0 || !sram_size_cpr_64) {
-		dts_setting->cpr_size = gThreadCount * CMDQ_THR_FREE_CPR_MAX;
-		CMDQ_ERR("sram_size_cpr_64 not support, default:%u\n", dts_setting->cpr_size);
-	} else {
-		/* CPRs are 32bit register, device tree count in 64bit */
-		dts_setting->cpr_size = sram_size_cpr_64 * 2;
-		CMDQ_LOG("free CPR size:%u thread:%u\n", dts_setting->cpr_size, gThreadCount);
-	}
 
 	ret = of_property_read_u32(gCmdqDev.pDev->of_node,
 		"max_prefetch_cnt", &dts_setting->prefetch_thread_count);
@@ -388,7 +372,6 @@ void cmdq_dev_get_dts_setting(struct cmdq_dts_setting *dts_setting)
 			CMDQ_ERR("read prefetch size fail\n");
 		}
 	}
-
 	ret = of_property_read_u32(gCmdqDev.pDev->of_node, "ctl_int0",
 		&dts_setting->ctl_int0);
 	if (ret != 0) {
@@ -430,7 +413,6 @@ void cmdq_dev_init_device_tree(struct device_node *node)
 	int status;
 	u32 mmsys_dummy_reg_offset_value = 0;
 	u32 thread_count = 16;
-	struct cmdq_dts_setting *dts_setting = cmdq_core_get_dts_setting();
 
 	gThreadCount = 16;
 	gMMSYSDummyRegOffset = 0;
@@ -459,15 +441,6 @@ void cmdq_dev_init_device_tree(struct device_node *node)
 	}
 
 	gMMSYSDummyRegOffset = mmsys_dummy_reg_offset_value;
-
-	/* Initialize DTS Setting structure */
-	memset(dts_setting, 0x0, sizeof(struct cmdq_dts_setting));
-	/* Initialize setting for legacy chip */
-	dts_setting->prefetch_thread_count = 3;
-	dts_setting->prefetch_size = kzalloc(
-		sizeof(*dts_setting->prefetch_size) * gThreadCount,
-		GFP_KERNEL);
-	cmdq_dev_get_dts_setting(dts_setting);
 }
 
 void cmdq_dev_init(struct platform_device *pDevice)
@@ -487,9 +460,9 @@ void cmdq_dev_init(struct platform_device *pDevice)
 		gCmdqDev.clk_gce_timer = devm_clk_get(&pDevice->dev, "GCE_TIMER");
 
 		CMDQ_LOG
-		    ("[CMDQ] platform_dev dev:%p PA:%pa VA:%lx irqId:%d irqSecId:%d clk gce:0x%p timer:0x%p\n",
+		    ("[CMDQ] platform_dev: dev: %p, PA: %pa, VA: %lx, irqId: %d, irqSecId: %d\n",
 		     gCmdqDev.pDev, &gCmdqDev.regBasePA, gCmdqDev.regBaseVA, gCmdqDev.irqId,
-		     gCmdqDev.irqSecId, gCmdqDev.clk_gce, gCmdqDev.clk_gce_timer);
+		     gCmdqDev.irqSecId);
 	} while (0);
 
 	if (!enable_4G()) {
@@ -498,8 +471,6 @@ void cmdq_dev_init(struct platform_device *pDevice)
 		CMDQ_LOG("set dma mask result: %d\n", gCmdqDev.dma_mask_result);
 	}
 
-	/* map MMSYS VA */
-	cmdq_mdp_map_mmsys_VA();
 	/* init module VA */
 	cmdq_dev_init_module_base_VA();
 	/* init module clock */
@@ -512,8 +483,6 @@ void cmdq_dev_init(struct platform_device *pDevice)
 
 void cmdq_dev_deinit(void)
 {
-	/* unmap MMSYS VA */
-	cmdq_mdp_unmap_mmsys_VA();
 	cmdq_dev_deinit_module_base_VA();
 
 	/* deinit cmdq device dependent data */

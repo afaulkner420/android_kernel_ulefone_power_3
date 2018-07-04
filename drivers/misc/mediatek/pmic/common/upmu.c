@@ -31,30 +31,56 @@
 #include "include/pmic_bif.h"
 #include "include/pmic_auxadc.h"
 
-/*****************************************************************************
- * PMIC related define
- ******************************************************************************/
-#if !defined(CONFIG_FPGA_EARLY_PORTING) && defined(CONFIG_MTK_PMIC_WRAP_HAL)
-#include "pwrap_hal.h"
-#define CONFIG_PMIC_HW_ACCESS_EN
-#endif
-
 #ifdef CONFIG_MTK_AUXADC_INTF
 #include <mt-plat/mtk_auxadc_intf.h>
 #endif /* CONFIG_MTK_AUXADC_INTF */
 
-/*---IPI Mailbox define---*/
-#if defined(IPIMB)
-#include <mach/mtk_pmic_ipi.h>
+/*****************************************************************************
+ * PMIC read/write APIs
+ ******************************************************************************/
+#ifdef CONFIG_FPGA_EARLY_PORTING /* defined(CONFIG_FPGA_EARLY_PORTING) */
+    /* no CONFIG_PMIC_HW_ACCESS_EN in FPGA */
+#else
+#ifdef CONFIG_MTK_PMIC_WRAP_HAL
+#include "pwrap_hal.h"
+#define CONFIG_PMIC_HW_ACCESS_EN
+#else
+    /* no pwrap_hal.h */
+    /* no CONFIG_PMIC_HW_ACCESS_EN in EVB/PHONE */
 #endif
+#endif
+
+/*****************************************************************************
+ * PMIC related define
+ ******************************************************************************/
+static DEFINE_MUTEX(pmic_lock_mutex);
+#define PMIC_EINT_SERVICE
 
 /*****************************************************************************
  * PMIC read/write APIs
  ******************************************************************************/
-static DEFINE_MUTEX(pmic_access_mutex);
-static DEFINE_MUTEX(pmic_hk_mutex);
+#ifdef CONFIG_FPGA_EARLY_PORTING /*defined(CONFIG_FPGA_EARLY_PORTING)*/
+    /* no CONFIG_PMIC_HW_ACCESS_EN in FPGA */
+#else
+#ifdef CONFIG_MTK_PMIC_WRAP_HAL
+#define CONFIG_PMIC_HW_ACCESS_EN
+#else
+    /* no CONFIG_PMIC_HW_ACCESS_EN in EVB/PHONE*/
+#endif
+#endif
 
-static unsigned int pmic_read_device(unsigned int RegNum, unsigned int *val, unsigned int MASK, unsigned int SHIFT)
+/*---IPI Mailbox define---*/
+/*#define IPIMB*/
+#if defined(IPIMB)
+#include <mach/mtk_pmic_ipi.h>
+#endif
+static DEFINE_MUTEX(pmic_access_mutex);
+/*--- Global suspend state ---*/
+static bool pmic_suspend_state;
+/*
+ * pmic intf
+ */
+unsigned int pmic_read_interface(unsigned int RegNum, unsigned int *val, unsigned int MASK, unsigned int SHIFT)
 {
 	unsigned int return_value = 0;
 
@@ -80,19 +106,27 @@ static unsigned int pmic_read_device(unsigned int RegNum, unsigned int *val, uns
 	return return_value;
 }
 
-static unsigned int pmic_write_device(unsigned int RegNum, unsigned int val, unsigned int MASK, unsigned int SHIFT)
+unsigned int pmic_config_interface(unsigned int RegNum, unsigned int val, unsigned int MASK, unsigned int SHIFT)
 {
 	unsigned int return_value = 0;
+
 #if defined(CONFIG_PMIC_HW_ACCESS_EN)
 #ifndef IPIMB
 	unsigned int pmic_reg = 0;
 	unsigned int rdata;
+#endif
+	/*if ((pmic_suspend_state == true) && irqs_disabled())*/
+	if (preempt_count() > 0 || irqs_disabled() || system_state != SYSTEM_RUNNING || oops_in_progress)
+		return pmic_config_interface_nolock(RegNum, val, MASK, SHIFT);
+#ifndef IPIMB
+	mutex_lock(&pmic_access_mutex);
 
 	return_value = pwrap_read((RegNum), &rdata);
 	pmic_reg = rdata;
 	if (return_value != 0) {
 		pr_err("[%s] err ret=%d, Reg[0x%x] pmic_wrap read data fail, val=0x%x, MASK=0x%x, SHIFT=%d\n",
 			 __func__, return_value, RegNum, val, MASK, SHIFT);
+		mutex_unlock(&pmic_access_mutex);
 		return return_value;
 	}
 
@@ -105,11 +139,17 @@ static unsigned int pmic_write_device(unsigned int RegNum, unsigned int val, uns
 	if (return_value != 0) {
 		pr_err("[%s] err ret=%d, Reg[0x%x]=0x%x pmic_wrap write data fail, val=0x%x, MASK=0x%x, SHIFT=%d\n",
 			 __func__, return_value, RegNum, pmic_reg, val, MASK, SHIFT);
+		mutex_unlock(&pmic_access_mutex);
 		return return_value;
 	}
 
+	mutex_unlock(&pmic_access_mutex);
+
 #else /*---IPIMB---*/
+	mutex_lock(&pmic_access_mutex);
+
 	return_value = pmic_ipi_config_interface(RegNum, val, MASK, SHIFT, 1);
+
 	if (return_value)
 		pr_err("[%s]IPIMB write data fail with ret = %d, (0x%x,0x%x,0x%x,%d)\n", __func__,
 			return_value, RegNum, val, MASK, SHIFT);
@@ -117,6 +157,7 @@ static unsigned int pmic_write_device(unsigned int RegNum, unsigned int val, uns
 		PMICLOG("[%s]IPIMB write data =(0x%x,0x%x,0x%x,%d)\n", __func__,
 			RegNum, val, MASK, SHIFT);
 
+	mutex_unlock(&pmic_access_mutex);
 #endif /*---!IPIMB---*/
 
 #else
@@ -126,34 +167,60 @@ static unsigned int pmic_write_device(unsigned int RegNum, unsigned int val, uns
 	return return_value;
 }
 
-unsigned int pmic_read_interface(unsigned int RegNum, unsigned int *val, unsigned int MASK, unsigned int SHIFT)
-{
-	return pmic_read_device(RegNum, val, MASK, SHIFT);
-}
-
-unsigned int pmic_config_interface(unsigned int RegNum, unsigned int val, unsigned int MASK, unsigned int SHIFT)
-{
-	unsigned int return_value = 0;
-
-	if (preempt_count() > 0 || irqs_disabled() || system_state != SYSTEM_RUNNING || oops_in_progress)
-		return pmic_config_interface_nolock(RegNum, val, MASK, SHIFT);
-	mutex_lock(&pmic_access_mutex);
-	return_value = pmic_write_device(RegNum, val, MASK, SHIFT);
-	mutex_unlock(&pmic_access_mutex);
-
-	return return_value;
-}
-
 unsigned int pmic_read_interface_nolock(unsigned int RegNum, unsigned int *val, unsigned int MASK, unsigned int SHIFT)
 {
-	return pmic_read_device(RegNum, val, MASK, SHIFT);
+	return pmic_read_interface(RegNum, val, MASK, SHIFT);
 }
 
 unsigned int pmic_config_interface_nolock(unsigned int RegNum, unsigned int val, unsigned int MASK, unsigned int SHIFT)
 {
 	unsigned int return_value = 0;
 
-	return_value = pmic_write_device(RegNum, val, MASK, SHIFT);
+#if defined(CONFIG_PMIC_HW_ACCESS_EN)
+#ifndef IPIMB
+	unsigned int pmic_reg = 0;
+	unsigned int rdata;
+
+	/* pmic wrapper has spinlock protection. pmic do not to do it again */
+
+	return_value = pwrap_read((RegNum), &rdata);
+	pmic_reg = rdata;
+	if (return_value != 0) {
+		pr_err("[%s] err ret=%d, Reg[0x%x] pmic_wrap read data fail, val=0x%x, MASK=0x%x, SHIFT=%d\n",
+			 __func__, return_value, RegNum, val, MASK, SHIFT);
+		return return_value;
+	}
+	/*PMICLOG"[pmic_config_interface] Reg[%x]=0x%x\n", RegNum, pmic_reg); */
+
+	pmic_reg &= ~(MASK << SHIFT);
+	pmic_reg |= (val << SHIFT);
+	PMICLOG("[pmic_config_interface_nolock] (0x%x,0x%x,0x%x,0x%x,0x%x)\n", RegNum, val, MASK, SHIFT, pmic_reg);
+
+	return_value = pwrap_write((RegNum), pmic_reg);
+	if (return_value != 0) {
+		pr_err("[%s] err ret=%d, Reg[0x%x]=0x%x pmic_wrap write data fail, val=0x%x, MASK=0x%x, SHIFT=%d\n",
+			 __func__, return_value, RegNum, pmic_reg, val, MASK, SHIFT);
+		return return_value;
+	}
+	/*PMICLOG"[pmic_config_interface] write Reg[%x]=0x%x\n", RegNum, pmic_reg); */
+
+#else /*---IPIMB---*/
+	return_value = pmic_ipi_config_interface(RegNum, val, MASK, SHIFT, 0);
+
+	if (return_value)
+		pr_err("[%s]IPIMB write data fail with ret = %d, (0x%x,0x%x,0x%x,%d)\n", __func__,
+			return_value, RegNum, val, MASK, SHIFT);
+	else
+		PMICLOG("[%s]IPIMB write data =(0x%x,0x%x,0x%x,%d)\n", __func__,
+			RegNum, val, MASK, SHIFT);
+
+#endif /*---IPIMB---*/
+
+
+#else
+	PMICLOG("[pmic_config_interface_nolock] Can not access HW PMIC(FPGA?/PWRAP?)\n");
+#endif	/*defined(CONFIG_PMIC_HW_ACCESS_EN)*/
+
 	return return_value;
 }
 
@@ -167,7 +234,7 @@ unsigned short pmic_set_register_value(PMU_FLAGS_LIST_ENUM flagname, unsigned in
 		return 1;
 	}
 
-	ret = pmic_config_interface((unsigned int)(pFlag->offset), val,
+	ret = pmic_config_interface((pFlag->offset), (unsigned int)(val),
 		(unsigned int)(pFlag->mask), (unsigned int)(pFlag->shift));
 	if (ret != 0) {
 		pr_err("[%s] error ret: %d when set Reg[0x%x]=0x%x\n", __func__,
@@ -205,7 +272,7 @@ unsigned short pmic_set_register_value_nolock(PMU_FLAGS_LIST_ENUM flagname, unsi
 		return 1;
 	}
 
-	ret = pmic_config_interface_nolock((unsigned int)(pFlag->offset), val,
+	ret = pmic_config_interface_nolock((pFlag->offset), (unsigned int)(val),
 		(unsigned int)(pFlag->mask), (unsigned int)(pFlag->shift));
 	if (ret != 0) {
 		pr_err("[%s] error ret: %d when set Reg[0x%x]=0x%x\n", __func__,
@@ -243,39 +310,6 @@ unsigned short bc11_get_register_value(PMU_FLAGS_LIST_ENUM flagname)
 	return pmic_get_register_value(flagname);
 }
 
-unsigned short pmic_set_hk_reg_value(PMU_FLAGS_LIST_ENUM flagname, unsigned int val)
-{
-	const PMU_FLAG_TABLE_ENTRY *pFlag = &pmu_flags_table[flagname];
-	unsigned int ret = 0;
-
-	if (pFlag->flagname != flagname) {
-		pr_err("[%s]pmic flag idx error\n", __func__);
-		return 1;
-	}
-
-	if (preempt_count() > 0 || irqs_disabled() ||
-	    system_state != SYSTEM_RUNNING || oops_in_progress) {
-		ret = pmic_write_device(
-			(unsigned int)(pFlag->offset), val,
-			(unsigned int)(pFlag->mask),
-			(unsigned int)(pFlag->shift));
-	} else {
-		mutex_lock(&pmic_hk_mutex);
-		ret = pmic_write_device(
-			(unsigned int)(pFlag->offset), val,
-			(unsigned int)(pFlag->mask),
-			(unsigned int)(pFlag->shift));
-		mutex_unlock(&pmic_hk_mutex);
-	}
-	if (ret != 0) {
-		pr_err("[%s] error ret: %d when set Reg[0x%x]=0x%x\n", __func__,
-			 ret, (pFlag->offset), val);
-		return ret;
-	}
-
-	return 0;
-}
-
 unsigned int upmu_get_reg_value(unsigned int reg)
 {
 	unsigned int reg_val = 0;
@@ -302,6 +336,7 @@ void upmu_set_reg_value(unsigned int reg, unsigned int reg_val)
 #define Get_IS_EXT_SWCHR_EXIST _IOW('k', 22, int)
 #define Get_IS_EXT_BUCK2_EXIST _IOW('k', 23, int)
 #define Get_IS_EXT_BUCK3_EXIST _IOW('k', 24, int)
+#define Get_IS_POWER_OFF _IOW('k', 30, int)
 
 
 static struct class *pmic_class;
@@ -321,11 +356,7 @@ static long pmic_ftm_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	case Get_IS_EXT_BUCK_EXIST:
 		user_data_addr = (int *)arg;
 		ret = copy_from_user(adc_in_data, user_data_addr, 8);
-#ifdef CONFIG_MTK_EXTBUCK
 		adc_out_data[0] = is_ext_buck_exist();
-#else
-		adc_out_data[0] = 0;
-#endif
 		/*adc_out_data[0] = is_ext_buck_gpio_exist();*/
 		ret = copy_to_user(user_data_addr, adc_out_data, 8);
 		PMICLOG("[pmic_ftm_ioctl] Get_IS_EXT_BUCK_EXIST:%d\n", adc_out_data[0]);
@@ -354,11 +385,7 @@ static long pmic_ftm_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	case Get_IS_EXT_BUCK2_EXIST:
 		user_data_addr = (int *)arg;
 		ret = copy_from_user(adc_in_data, user_data_addr, 8);
-#ifdef CONFIG_MTK_EXTBUCK
 		adc_out_data[0] = is_ext_buck2_exist();
-#else
-		adc_out_data[0] = 0;
-#endif
 		ret = copy_to_user(user_data_addr, adc_out_data, 8);
 		PMICLOG("[pmic_ftm_ioctl] Get_IS_EXT_BUCK2_EXIST:%d\n", adc_out_data[0]);
 		break;
@@ -368,6 +395,12 @@ static long pmic_ftm_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 		adc_out_data[0] = 0;
 		ret = copy_to_user(user_data_addr, adc_out_data, 8);
 		PMICLOG("[pmic_ftm_ioctl] Get_IS_EXT_BUCK3_EXIST:%d\n", adc_out_data[0]);
+		break;
+	case Get_IS_POWER_OFF:
+#ifdef CONFIG_MTK_RTC
+		rtc_enable_k_eosc();
+#endif
+		PMIC_POWER_HOLD(0);
 		break;
 	default:
 		PMICLOG("[pmic_ftm_ioctl] Error ID\n");
@@ -451,7 +484,6 @@ void pmic_ftm_init(void)
 unsigned short is_battery_remove;
 unsigned short is_wdt_reboot_pmic;
 unsigned short is_wdt_reboot_pmic_chk;
-unsigned short g_vmodem_vosel;
 
 unsigned short is_battery_remove_pmic(void)
 {
@@ -473,44 +505,35 @@ void __attribute__ ((weak)) pmic_auxadc_resume(void)
 {
 }
 
-void __attribute__ ((weak)) record_md_vosel(void)
-{
-}
-
-void __attribute__ ((weak)) pmic_enable_smart_reset(unsigned char smart_en,
-	unsigned char smart_sdn_en)
-{
-	pr_notice("[%s] smart reset not support!\n", __func__);
-}
-
 static int pmic_mt_probe(struct platform_device *dev)
 {
 	PMICLOG("******** MT pmic driver probe!! ********\n");
 	/*get PMIC CID */
 	PMICLOG("PMIC CID = 0x%x\n", pmic_get_register_value(PMIC_SWCID));
-
-	record_md_vosel();
+	kernel_dump_exception_reg();
 
 	PMIC_INIT_SETTING_V1();
 	PMICLOG("[PMIC_INIT_SETTING_V1] Done\n");
 
+/*#if defined(CONFIG_FPGA_EARLY_PORTING)*/
+#if 0
+	PMICLOG("[PMIC_EINT_SETTING] disable when CONFIG_FPGA_EARLY_PORTING\n");
+#else
 	/*PMIC Interrupt Service*/
 	PMIC_EINT_SETTING();
 	PMICLOG("[PMIC_EINT_SETTING] Done\n");
+#endif
 
 	mtk_regulator_init(dev);
-	PMICLOG("[PMIC] mtk_regulator_init : done.\n");
 
 #ifdef CONFIG_MTK_AUXADC_INTF
 	mtk_auxadc_init();
 #else
 	pmic_auxadc_init();
 #endif /* CONFIG_MTK_AUXADC_INTF */
-	PMICLOG("[PMIC] pmic auxadc init : done.\n");
+	pr_debug("****[pmic_mt_init] Initialization : DONE !!\n");
 
 	pmic_throttling_dlpt_init();
-
-	PMICLOG("[PMIC] pmic_throttling_dlpt_init : done.\n");
 
 	pmic_debug_init(dev);
 	PMICLOG("[PMIC] pmic_debug_init : done.\n");
@@ -519,6 +542,8 @@ static int pmic_mt_probe(struct platform_device *dev)
 
 	if (IS_ENABLED(CONFIG_MTK_BIF_SUPPORT))
 		pmic_bif_init();
+
+	pmic_tracking_init();
 
 	return 0;
 }
@@ -538,6 +563,8 @@ static void pmic_mt_shutdown(struct platform_device *dev)
 
 static int pmic_mt_suspend(struct platform_device *dev, pm_message_t state)
 {
+	pmic_suspend_state = true;
+
 	PMICLOG("******** MT pmic driver suspend!! ********\n");
 
 	pmic_throttling_dlpt_suspend();
@@ -547,6 +574,8 @@ static int pmic_mt_suspend(struct platform_device *dev, pm_message_t state)
 
 static int pmic_mt_resume(struct platform_device *dev)
 {
+	pmic_suspend_state = false;
+
 	PMICLOG("******** MT pmic driver resume!! ********\n");
 
 	pmic_throttling_dlpt_resume();

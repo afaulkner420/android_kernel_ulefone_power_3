@@ -1,4 +1,0 @@
-
-config  TRANSSION_PEN
-        bool "hall for transsion solution"
-        default n

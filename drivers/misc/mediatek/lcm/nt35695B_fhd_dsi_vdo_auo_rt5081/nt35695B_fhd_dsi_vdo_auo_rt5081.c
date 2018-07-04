@@ -89,7 +89,6 @@ static const unsigned char LCD_MODULE_ID = 0x01;
 /* physical size in um */
 #define LCM_PHYSICAL_WIDTH									(74520)
 #define LCM_PHYSICAL_HEIGHT									(132480)
-#define LCM_DENSITY											(480)
 
 #define REGFLAG_DELAY		0xFFFC
 #define REGFLAG_UDELAY	0xFFFB
@@ -116,9 +115,9 @@ struct LCM_setting_table {
 static struct LCM_setting_table lcm_suspend_setting[] = {
 	{0x28, 0, {} },
 	{0x10, 0, {} },
-	{REGFLAG_DELAY, 80, {} },
+	{REGFLAG_DELAY, 120, {} },
 	{0x4F, 1, {0x01} },
-	{REGFLAG_DELAY, 20, {} }
+	{REGFLAG_DELAY, 120, {} }
 };
 
 static struct LCM_setting_table init_setting_cmd[] = {
@@ -1278,7 +1277,6 @@ static void lcm_get_params(LCM_PARAMS *params)
 	params->physical_height = LCM_PHYSICAL_HEIGHT/1000;
 	params->physical_width_um = LCM_PHYSICAL_WIDTH;
 	params->physical_height_um = LCM_PHYSICAL_HEIGHT;
-	params->density            = LCM_DENSITY;
 
 #if (LCM_DSI_CMD_MODE)
 	params->dsi.mode = CMD_MODE;

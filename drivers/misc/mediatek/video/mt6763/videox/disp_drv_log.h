@@ -58,13 +58,13 @@
 #define DISPPR_ERROR(string, args...) \
 	do {\
 		dprec_logger_pr(DPREC_LOGGER_ERROR, string, ##args);\
-		pr_debug("[DISP][%s #%d]ERROR:"string, __func__, __LINE__, ##args);\
+		pr_err("[DISP][%s #%d]ERROR:"string, __func__, __LINE__, ##args);\
 	} while (0)
 
 #define DISPWARN(string, args...) \
 	do { \
 		dprec_logger_pr(DPREC_LOGGER_ERROR, string, ##args);\
-		pr_debug("[DISP][%s #%d]warn:"string, __func__, __LINE__, ##args);\
+		pr_warn("[DISP][%s #%d]warn:"string, __func__, __LINE__, ##args);\
 	} while (0)
 
 /*#define DISPPR_FENCE(string, args...)  do { \*/
@@ -106,14 +106,14 @@
 #define DISPWARN(string, args...)					\
 	do {								\
 		dprec_logger_pr(DPREC_LOGGER_ERROR, string, ##args);	\
-		pr_debug("[DISP][%s #%d]warn:"string,			\
+		pr_warn("[DISP][%s #%d]warn:"string,			\
 				__func__, __LINE__, ##args); \
 	} while (0)
 
 #define DISPPR_ERROR(string, args...)					\
 	do {								\
 		dprec_logger_pr(DPREC_LOGGER_ERROR, string, ##args);	\
-		pr_debug("[DISP][%s #%d]ERROR:"string,			\
+		pr_err("[DISP][%s #%d]ERROR:"string,			\
 				__func__, __LINE__, ##args);		\
 	} while (0)
 
@@ -144,23 +144,14 @@
 
 #define DISPPR_HWOP(string, args...)
 
-#define DISP_AEE_FLAG (DB_OPT_DEFAULT | DB_OPT_MMPROFILE_BUFFER | \
-		DB_OPT_DISPLAY_HANG_DUMP | DB_OPT_DUMP_DISPLAY)
-
-#define aee_print(flag, string, args...) do {				\
+#define disp_aee_print(string, args...) do {				\
 	char disp_name[100];						\
 	snprintf(disp_name, 100, "[DISP]"string, ##args);		\
 	aee_kernel_warning_api(__FILE__, __LINE__,			\
-		flag, disp_name, "[DISP] error"string, ##args);		\
+		DB_OPT_DEFAULT | DB_OPT_MMPROFILE_BUFFER | DB_OPT_DISPLAY_HANG_DUMP | DB_OPT_DUMP_DISPLAY, \
+		disp_name, "[DISP] error"string, ##args);		\
 	pr_err("DISP error: "string, ##args);				\
 } while (0)
-
-#define disp_aee_print(string, args...) aee_print(DISP_AEE_FLAG, string, ##args)
-
-#define disp_aee_print_with_ftrace(string, args...) \
-			aee_print(DISP_AEE_FLAG | DB_OPT_FTRACE, string, ##args)
-
-
 
 #define disp_aee_db_print(string, args...) \
 	do { \

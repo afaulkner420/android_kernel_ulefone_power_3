@@ -16,7 +16,6 @@
 
 #define BATTERY_CV 4350000
 #define V_CHARGER_MAX 6500000				/* 6.5 V */
-#define V_CHARGER_MIN 4600000				/* 4.6 V */
 
 #define USB_CHARGER_CURRENT_SUSPEND			0		/* def CONFIG_USB_IF */
 #define USB_CHARGER_CURRENT_UNCONFIGURED	70000	/* 70mA */
@@ -58,19 +57,10 @@
 /* pe */
 #define PE_ICHG_LEAVE_THRESHOLD 1000 /* mA */
 #define TA_AC_12V_INPUT_CURRENT 3200000
-//modify XLLSHLSS-5 by zhipeng.pan 20171127 start
-#if defined(TRAN_X604) || defined(TRAN_X605)
-#define TA_AC_9V_INPUT_CURRENT	2000000
-#define TA_AC_7V_INPUT_CURRENT	2000000
-#define TA_9V_SUPPORT
-//#define TA_12V_SUPPORT
-#else
 #define TA_AC_9V_INPUT_CURRENT	3200000
 #define TA_AC_7V_INPUT_CURRENT	3200000
 #define TA_9V_SUPPORT
 #define TA_12V_SUPPORT
-#endif
-//modify XLLSHLSS-5 by zhipeng.pan 20171127 end
 
 /* pe2.0 */
 #define PE20_ICHG_LEAVE_THRESHOLD 1000 /* mA */

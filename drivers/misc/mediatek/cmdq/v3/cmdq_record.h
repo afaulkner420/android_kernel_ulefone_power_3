@@ -35,7 +35,7 @@ enum CMDQ_STACK_TYPE_ENUM {
 #define CMDQ_BIT_VAR			(1LL)
 #define CMDQ_TASK_CPR_INITIAL_VALUE	(0)
 #define CMDQ_REC_DEFAULT_PRIORITY	(100)
-#define CMDQ_REC_MAX_PRIORITY		(0x7FFFFFFF)
+#define CMDQ_REC_MAX_PRIORITY		(0xFFFFFFFF)
 
 struct cmdq_stack_node {
 	uint32_t position;
@@ -70,16 +70,13 @@ struct cmdqRecStruct {
 	u8 local_var_num;
 	struct cmdq_stack_node *if_stack_node;
 	struct cmdq_stack_node *while_stack_node;
-	CMDQ_VARIABLE arg_value;	/* temp data or poll value, wait_timeout start */
 	CMDQ_VARIABLE arg_source;	/* poll source, wait_timeout event */
+	CMDQ_VARIABLE arg_value;	/* poll value, wait_timeout start */
 	CMDQ_VARIABLE arg_timeout;	/* wait_timeout timeout */
 
 	/* profile marker */
 	struct cmdqProfileMarkerStruct profileMarker;
 
-	/* task property */
-	void *prop_addr;
-	u32 prop_size;
 	struct CmdqRecExtend ext;
 };
 
@@ -226,12 +223,12 @@ extern "C" {
  *     support only when secure OS enabled
  */
 	int32_t cmdq_op_write_reg_secure(struct cmdqRecStruct *handle, uint32_t addr,
-				   enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint64_t baseHandle,
+				   enum CMDQ_SEC_ADDR_METADATA_TYPE type, uint32_t baseHandle,
 				   uint32_t offset, uint32_t size, uint32_t port);
 	int32_t cmdqRecWriteSecure(struct cmdqRecStruct *handle,
 				   uint32_t addr,
 				   enum CMDQ_SEC_ADDR_METADATA_TYPE type,
-				   uint64_t baseHandle,
+				   uint32_t baseHandle,
 				   uint32_t offset, uint32_t size, uint32_t port);
 
 /**
@@ -951,12 +948,6 @@ extern "C" {
  */
 	int32_t cmdq_op_read_mem(struct cmdqRecStruct *handle, cmdqBackupSlotHandle h_backup_slot,
 				    uint32_t slot_index, CMDQ_VARIABLE *arg_out);
-/**
- * Hook metadata with task
- */
-	s32 cmdq_task_update_property(struct cmdqRecStruct *handle, void *prop_addr, u32 prop_size);
-
-
 
 #ifdef __cplusplus
 }

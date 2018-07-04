@@ -17,15 +17,6 @@
 #ifndef __FBT_CPU_H__
 #define __FBT_CPU_H__
 #include <mach/mtk_ppm_api.h>
-#include <linux/hrtimer.h>
-
-#define MAX_FREQ_BOUND_NUM 2
-
-#ifdef NR_FREQ_CPU
-struct fbt_cpu_dvfs_info {
-	unsigned int power[NR_FREQ_CPU];
-};
-#endif
 
 struct fbt_jerk {
 	int id;
@@ -62,21 +53,20 @@ extern int fbt_reset_asfc(int level);
 extern void fstb_game_mode_change(int is_game);
 
 extern int set_cpuset(int cluster);
-extern int prefer_idle_for_perf_idx(int idx, int prefer_idle);
+extern int set_idle_prefer(int enable);
+extern int update_userlimit_cpu_freq(int kicker, int num_cluster,
+		struct ppm_limit_data *freq_limit);
 extern unsigned int mt_cpufreq_get_freq_by_idx(int id, int idx);
 extern unsigned int mt_ppm_userlimit_freq_limit_by_others(
 		unsigned int cluster);
 extern void fbc_notify_game(int game);
-extern void fstb_queue_time_update(unsigned long long ts);
 
 void fbt_cpu_set_game_hint_cb(int is_game_mode);
 
 #ifdef CONFIG_MTK_FPSGO_FBT_GAME
 int switch_fbt_game(int);
-int switch_fbt_cpuset(int);
 #else
 static inline int switch_fbt_game(int en) { return 0; }
-static inline int switch_fbt_cpuset(int en) { return 0; }
 #endif
 
 #endif

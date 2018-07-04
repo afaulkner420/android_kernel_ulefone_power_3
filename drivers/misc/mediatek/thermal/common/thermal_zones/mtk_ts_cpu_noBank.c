@@ -31,7 +31,6 @@
 #include <linux/ktime.h>
 #include "mach/mtk_thermal.h"
 #include "mtk_thermal_timer.h"
-#include <mtk_ts_setting.h>
 
 #if defined(CONFIG_MTK_CLKMGR)
 #include <mach/mtk_clkmgr.h>
@@ -39,7 +38,6 @@
 #include <linux/clk.h>
 #endif
 
-#include <mtk_spm_vcore_dvfs.h>
 
 /* #include <mach/mt_wtd.h> */
 #include <mach/wd_api.h>
@@ -132,6 +130,8 @@ static int trip_temp[10] = { 117000, 100000, 85000, 75000, 65000, 55000, 45000, 
 static bool talking_flag;
 static int kernelmode;
 static int g_THERMAL_TRIP[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+static int temperature_switch;
 
 #if defined(TZCPU_SET_INIT_CFG)
 static int num_trip = TZCPU_INITCFG_NUM_TRIPS;
@@ -230,14 +230,6 @@ static void temp_valid_unlock(unsigned long *flags);
  *Weak functions
  *=============================================================
  */
-
-unsigned int  __attribute__((weak))
-mt_gpufreq_get_max_power(void)
-{
-	pr_notice("E_WF: %s doesn't exist\n", __func__);
-	return 0;
-}
-
 int __attribute__ ((weak))
 IMM_IsAdcInitReady(void)
 {
@@ -313,12 +305,8 @@ static void tscpu_fast_initial_sw_workaround(void)
 	int i = 0;
 	unsigned long flags;
 
-	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
+	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++)
 		tscpu_thermal_fast_init(i);
-	}
 
 	temp_valid_lock(&flags);
 	g_is_temp_valid = 0;
@@ -343,27 +331,6 @@ int tscpu_max_temperature(void)
 	}
 
 	return max;
-}
-
-int tscpu_min_temperature(void)
-{
-	int i, j, min = 0;
-
-	tscpu_dprintk("tscpu_get_temp(min) %s, %d\n", __func__, __LINE__);
-
-	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		for (j = 0; j < tscpu_g_tc[i].ts_number; j++) {
-			if (i == 0 && j == 0) {
-				min = tscpu_ts_temp[tscpu_g_tc[i].ts[j]];
-			} else {
-				if (min > tscpu_ts_temp[tscpu_g_tc[i].ts[j]])
-					min = tscpu_ts_temp[
-							tscpu_g_tc[i].ts[j]];
-			}
-		}
-	}
-
-	return min;
 }
 
 void set_taklking_flag(bool flag)
@@ -533,9 +500,6 @@ static int tscpu_get_temp(struct thermal_zone_device *thermal, int *t)
 	int temp_temp;
 	static int last_cpu_real_temp;
 #endif
-#ifdef THERMAL_LT_SET_OPP
-	int ts_temp;
-#endif
 
 #ifdef FAST_RESPONSE_ATM
 	curr_temp = tscpu_get_curr_max_ts_temp();
@@ -570,11 +534,6 @@ static int tscpu_get_temp(struct thermal_zone_device *thermal, int *t)
 
 	last_cpu_real_temp = curr_temp;
 	curr_temp = temp_temp;
-#endif
-
-#ifdef THERMAL_LT_SET_OPP
-		ts_temp = tscpu_min_temperature();
-		vcorefs_temp_opp_config(ts_temp);
 #endif
 
 	*t = (unsigned long)curr_temp;
@@ -810,20 +769,9 @@ static int tscpu_read_opp(struct seq_file *m, void *v)
 {
 	unsigned int cpu_power, gpu_power;
 	unsigned int gpu_loading = 0;
-#if defined(THERMAL_VPU_SUPPORT)
-	unsigned int vpu_power;
-#endif
 
 	cpu_power = apthermolmt_get_cpu_power_limit();
 	gpu_power = apthermolmt_get_gpu_power_limit();
-#if defined(THERMAL_VPU_SUPPORT)
-	vpu_power = apthermolmt_get_vpu_power_limit();
-#endif
-
-#if defined(THERMAL_VPU_SUPPORT)
-	seq_printf(m, "%d,",
-		   (int)((vpu_power != 0x7FFFFFFF) ? vpu_power : 0));
-#endif
 
 #if CPT_ADAPTIVE_AP_COOLER
 
@@ -874,6 +822,44 @@ static ssize_t tscpu_talking_flag_write(struct file *file, const char __user *bu
 	}
 
 	tscpu_dprintk("tscpu_talking_flag_write bad argument\n");
+	return -EINVAL;
+}
+
+static int tscpu_set_temperature_read(struct seq_file *m, void *v)
+{
+
+
+	seq_printf(m, "%d\n", temperature_switch);
+
+	return 0;
+}
+
+
+static ssize_t tscpu_set_temperature_write(struct file *file, const char __user *buffer,
+					   size_t count, loff_t *data)
+{
+	char desc[32];
+	int lv_tempe_switch;
+	int len = 0;
+
+	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
+	if (copy_from_user(desc, buffer, len))
+		return 0;
+
+	desc[len] = '\0';
+
+	tscpu_dprintk("tscpu_set_temperature_write\n");
+
+	if (kstrtoint(desc, 10, &lv_tempe_switch) == 0) {
+		temperature_switch = lv_tempe_switch;
+
+		tscpu_config_all_tc_hw_protect(temperature_switch, tc_mid_trip);
+
+		tscpu_dprintk("tscpu_set_temperature_write temperature_switch=%d\n",
+			      temperature_switch);
+		return count;
+	}
+	tscpu_warn("tscpu_set_temperature_write bad argument\n");
 	return -EINVAL;
 }
 
@@ -1588,6 +1574,21 @@ static const struct file_operations mtktscpu_read_temperature_fops = {
 	.release = single_release,
 };
 
+
+static int tscpu_set_temperature_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tscpu_set_temperature_read, NULL);
+}
+
+static const struct file_operations mtktscpu_set_temperature_fops = {
+	.owner = THIS_MODULE,
+	.open = tscpu_set_temperature_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = tscpu_set_temperature_write,
+	.release = single_release,
+};
+
 static int tscpu_talking_flag_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, tscpu_talking_flag_read, NULL);
@@ -1814,13 +1815,13 @@ void tscpu_workqueue_start_timer(void)
 	if (!isTimerCancelled)
 		return;
 
+	isTimerCancelled = 0;
 
 	if (down_trylock(&sem_mutex))
 		return;
 
 	if (!is_worktimer_en && thz_dev != NULL && interval != 0) {
 		mod_delayed_work(system_freezable_power_efficient_wq, &(thz_dev->poll_queue), 0);
-		isTimerCancelled = 0;
 
 		tscpu_dprintk("[tTimer] workqueue starting\n");
 		spin_lock(&timer_lock);
@@ -1833,16 +1834,16 @@ void tscpu_workqueue_start_timer(void)
 	if (!isTimerCancelled)
 		return;
 
+	isTimerCancelled = 0;
 
 	if (down_trylock(&sem_mutex))
 		return;
 
 	/* resume thermal framework polling when leaving deep idle */
-	if (thz_dev != NULL && interval != 0) {
+	if (thz_dev != NULL && interval != 0)
 		mod_delayed_work(system_freezable_power_efficient_wq,
 				&(thz_dev->poll_queue), round_jiffies(msecs_to_jiffies(1000)));
-		isTimerCancelled = 0;
-	}
+
 	up(&sem_mutex);
 #endif
 
@@ -1960,6 +1961,10 @@ static void tscpu_create_fs(void)
 		entry =
 		    proc_create("tzcpu_read_temperature", S_IRUGO, mtktscpu_dir,
 				&mtktscpu_read_temperature_fops);
+
+		entry =
+		    proc_create("tzcpu_set_temperature", S_IRUGO | S_IWUSR, mtktscpu_dir,
+				&mtktscpu_set_temperature_fops);
 
 		entry =
 		    proc_create("tzcpu_talking_flag", S_IRUGO | S_IWUSR, mtktscpu_dir,

@@ -42,7 +42,6 @@
 
 #include <vibrator.h>
 #include <vibrator_hal.h>
-#include <mt-plat/upmu_common.h>
 
 #define VERSION					        "v 0.1"
 #define VIB_DEVICE				"mtk_vibrator"
@@ -170,12 +169,6 @@ static void vibrator_enable(struct timed_output_dev *dev, int value)
 	queue_work(vibrator_queue, &vibrator_work);
 }
 
-static void vibrator_oc_handler(void)
-{
-	VIB_DEBUG("vibrator_oc_handler: disable vibr due to oc intr happened\n");
-	vibrator_enable(NULL, 0);
-}
-
 static enum hrtimer_restart vibrator_timer_func(struct hrtimer *timer)
 {
 	vibe_state = 0;
@@ -197,7 +190,6 @@ static const struct of_device_id vibr_of_ids[] = {
 
 static int vib_probe(struct platform_device *pdev)
 {
-	init_vibr_oc_handler(vibrator_oc_handler);
 	init_cust_vibrator_dtsi(pdev);
 	vibr_power_set();
 	return 0;

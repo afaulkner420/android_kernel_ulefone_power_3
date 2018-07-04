@@ -97,7 +97,7 @@ static bool i2s2_adc2_is_started;
 static int mtk_dai_i2s2_adc2_start(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct audio_digital_i2s DigtalI2SIn;
+	AudioDigtalI2S DigtalI2SIn;
 
 	if (!i2s2_adc2_is_started) {
 		pr_warn("%s(), rate = %d, format = %d, channel = %d\n",
@@ -194,13 +194,6 @@ static struct snd_soc_dai_ops mtk_dai_anc_record_ops = {
 	.trigger = mtk_dai_anc_record_trigger,
 };
 /* anc record */
-static int mtk_dai_stub_compress_new(struct snd_soc_pcm_runtime *rtd, int num)
-{
-#ifdef CONFIG_SND_SOC_COMPRESS
-	snd_soc_new_compress(rtd, num);
-#endif
-	return 0;
-}
 
 static struct snd_soc_dai_driver mtk_dai_stub_dai[] = {
 	{
@@ -546,20 +539,6 @@ static struct snd_soc_dai_driver mtk_dai_stub_dai[] = {
 			.rate_max = 44100,
 		},
 		.name = MT_SOC_FM_MRGTX_NAME,
-		.ops = &mtk_dai_stub_ops,
-	},
-	{
-		.playback = {
-			.stream_name = MT_SOC_OFFLOAD_STREAM_NAME,
-			.rates = SNDRV_PCM_RATE_8000_48000,
-			.formats = SND_SOC_ADV_MT_FMTS,
-			.channels_min = 1,
-			.channels_max = 2,
-			.rate_min = 8000,
-			.rate_max = 48000,
-		},
-		.compress_new = mtk_dai_stub_compress_new,
-		.name = MT_SOC_OFFLOAD_PLAYBACK_DAI_NAME,
 		.ops = &mtk_dai_stub_ops,
 	},
 	{

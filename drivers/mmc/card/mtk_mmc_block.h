@@ -69,10 +69,7 @@ struct mt_bio_context {
 	spinlock_t lock;
 	uint64_t period_start_t;
 	uint64_t period_end_t;
-	uint64_t period_busy;
-	uint64_t period_end_since_start_t;
-	uint64_t period_end_in_window_t;
-	uint64_t period_start_in_window_t;
+	uint64_t period_usage;
 	struct mt_bio_context_task task[MMC_BIOLOG_CONTEXT_TASKS];
 	struct mtk_btag_workload workload;
 	struct mtk_btag_throughput throughput;

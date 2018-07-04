@@ -14,7 +14,6 @@
 #ifndef __MTK_MEMINFO_H__
 #define __MTK_MEMINFO_H__
 #include <linux/cma.h>
-#include <linux/of_reserved_mem.h>
 
 /* physical offset */
 extern phys_addr_t get_phys_offset(void);
@@ -25,17 +24,14 @@ extern phys_addr_t get_memory_size(void);
 extern phys_addr_t mtk_get_max_DRAM_size(void);
 extern phys_addr_t get_zone_movable_cma_base(void);
 extern phys_addr_t get_zone_movable_cma_size(void);
-extern void *vmap_reserved_mem(phys_addr_t start, phys_addr_t size,
-		pgprot_t prot);
 #ifdef CONFIG_MTK_MEMORY_LOWPOWER
 extern phys_addr_t memory_lowpower_base(void);
 extern phys_addr_t memory_lowpower_size(void);
 extern struct single_cma_registration memory_lowpower_registration;
 #endif /* end CONFIG_MTK_MEMORY_LOWPOWER */
-extern int get_mntl_buf(u64 *base, u64 *size);
 
 #ifdef CONFIG_ZONE_MOVABLE_CMA
-extern phys_addr_t zmc_max_zone_dma_phys;
+#define ZMC_MAX_ZONE_DMA_PHYS (0xc0000000)
 #define ZMC_ALLOC_ALL 0x01 /* allocate all memory reserved from dts */
 
 /* Priority of ZONE_MOVABLE_CMA users */
@@ -51,7 +47,6 @@ struct single_cma_registration {
 	phys_addr_t align;
 	unsigned long flag;
 	const char *name;
-	int (*preinit)(struct reserved_mem *rmem);
 	void (*init)(struct cma *);
 	enum zmc_prio prio;
 };
@@ -71,9 +66,10 @@ extern int zmc_notifier_call_chain(unsigned long val, void *v);
 #endif
 
 #ifdef CONFIG_MTK_SVP
-extern bool memory_ssvp_inited(void);
+extern phys_addr_t memory_ssvp_cma_base(void);
+extern phys_addr_t memory_ssvp_cma_size(void);
 extern struct single_cma_registration memory_ssvp_registration;
-#endif /* end CONFIG_MTK_SVP */
+#endif /* end CONFIG_MTK_MEMORY_LOWPOWER */
 
 #ifdef CONFIG_MTK_DCS
 #define DCS_SCREENOFF_ONLY_MODE

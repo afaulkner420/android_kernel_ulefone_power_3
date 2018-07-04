@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -49,7 +49,6 @@ struct mt6370_pmu_rgbled_data {
 	.store = mt_led_##_name##_attr_store,\
 }
 
-//modify XLLSHLSS-5 by zhipeng.pan 20171214 start
 static const uint8_t rgbled_init_data[] = {
 	0x60, /* MT6370_PMU_REG_RGB1DIM: 0x82 */
 	0x60, /* MT6370_PMU_REG_RGB2DIM: 0x83 */
@@ -67,14 +66,13 @@ static const uint8_t rgbled_init_data[] = {
 	0x52, /* MT6370_PMU_REG_RGB3TR: 0x8F */
 	0x25, /* MT6370_PMU_REG_RGB3TF: 0x90 */
 	0x11, /* MT6370_PMU_REG_RGB3TONTOFF: 0x91 */
-	0xe0, /* MT6370_PMU_REG_RGBCHRINDDIM: 0x92 */  //0X60->0XE0
-	0x06, /* MT6370_PMU_REG_RGBCHRINDCTRL: 0x93 */ //0X07->0X06
+	0x60, /* MT6370_PMU_REG_RGBCHRINDDIM: 0x92 */
+	0x07, /* MT6370_PMU_REG_RGBCHRINDCTRL: 0x93 */
 	0x52, /* MT6370_PMU_REG_RGBCHRINDTR: 0x94 */
 	0x25, /* MT6370_PMU_REG_RGBCHRINDTF: 0x95 */
 	0x11, /* MT6370_PMU_REG_RGBCHRINDTONTOFF: 0x96 */
 	0xff, /* MT6370_PMU_REG_RGBOPENSHORTEN: 0x97 */
 };
-//modify XLLSHLSS-5 by zhipeng.pan 20171214 end
 
 static inline int mt6370_pmu_led_get_index(struct led_classdev *led_cdev)
 {
@@ -293,6 +291,8 @@ static int mt6370_pmu_led_blink_set(struct led_classdev *led_cdev,
 		*delay_on = *delay_off = 500;
 	if (!*delay_off)
 		mode_sel = MT6370_PMU_LED_REGMODE;
+    if (*delay_off <= 1000)
+        *delay_off = 1000;
 	if (mode_sel == MT6370_PMU_LED_PWMMODE) {
 		/* workaround, fix cc to pwm */
 		ret = mt6370_pmu_led_change_mode(led_cdev,
@@ -339,13 +339,7 @@ static struct mt6370_led_classdev mt6370_led_classdev[MT6370_PMU_MAXLED] = {
 	},
 	{
 		.led_dev =  {
-			//modify XLLSHLSS-5 by zhipeng.pan 20171229 start
-			#if defined(TRAN_X604)
-			.max_brightness = 2,
-			#else
 			.max_brightness = 3,
-			#endif
-			//modify XLLSHLSS-5 by zhipeng.pan 20171229 end
 			.brightness_set = mt6370_pmu_led_bright_set,
 			.brightness_get = mt6370_pmu_led_bright_get,
 			.blink_set = mt6370_pmu_led_blink_set,

@@ -58,6 +58,7 @@
 #include <linux/io.h>
 #include <asm/sizes.h>
 #include "val_types_private.h"
+#include "hal_types_private.h"
 #include "val_api_private.h"
 #include "val_log.h"
 #include "drv_api.h"
@@ -77,7 +78,7 @@
 #endif
 
 #define VDO_HW_WRITE(ptr, data)     mt_reg_sync_writel(data, ptr)
-#define VDO_HW_READ(ptr)            readl((void __iomem *)ptr)
+#define VDO_HW_READ(ptr)           (*((volatile unsigned int * const)(ptr)))
 
 #define VCODEC_DEVNAME     "Vcodec"
 #define VCODEC_DEV_MAJOR_NUMBER 160   /* 189 */
@@ -207,6 +208,8 @@ static unsigned int is_entering_suspend;
 VAL_ULONG_T KVA_VENC_IRQ_ACK_ADDR, KVA_VENC_IRQ_STATUS_ADDR, KVA_VENC_BASE;
 VAL_ULONG_T KVA_VDEC_MISC_BASE, KVA_VDEC_BASE, KVA_VDEC_GCON_BASE;
 VAL_UINT32_T VENC_IRQ_ID, VDEC_IRQ_ID;
+
+extern void __attribute__((weak)) met_mmsys_tag(const char *tag, unsigned int value);
 
 /* #define KS_POWER_WORKAROUND */
 
@@ -400,99 +403,6 @@ void venc_power_off(void)
 	mutex_unlock(&VencPWRLock);
 }
 
-void vdec_break(void)
-{
-	unsigned int i;
-
-	/* Step 1: set vdec_break */
-	VDO_HW_WRITE(KVA_VDEC_MISC_BASE + 64*4, 0x1);
-
-	/* Step 2: monitor status vdec_break_ok */
-	for (i = 0; i < 5000; i++) {
-		if ((VDO_HW_READ(KVA_VDEC_MISC_BASE + 65*4) & 0x11) == 0x11) {
-			/* Add one line comment for avoid kernel coding style, WARNING:BRACES: */
-			break;
-		}
-	}
-
-	if (i >= 5000) {
-		unsigned int j;
-		VAL_UINT32_T u4DataStatus = 0;
-
-		pr_info("[VCODEC][POTENTIAL ERROR] Leftover data access before powering down\n");
-
-		for (j = 68; j < 80; j++) {
-			u4DataStatus = VDO_HW_READ(KVA_VDEC_MISC_BASE+(j*4));
-			pr_info("[VCODEC][DUMP] MISC_%d = 0x%08x", j, u4DataStatus);
-		}
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(45*4));
-		pr_info("[VCODEC][DUMP] VLD_45 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(46*4));
-		pr_info("[VCODEC][DUMP] VLD_46 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(52*4));
-		pr_info("[VCODEC][DUMP] VLD_52 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(58*4));
-		pr_info("[VCODEC][DUMP] VLD_58 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(59*4));
-		pr_info("[VCODEC][DUMP] VLD_59 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(61*4));
-		pr_info("[VCODEC][DUMP] VLD_61 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(62*4));
-		pr_info("[VCODEC][DUMP] VLD_62 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(63*4));
-		pr_info("[VCODEC][DUMP] VLD_63 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_BASE+(71*4));
-		pr_info("[VCODEC][DUMP] VLD_71 = 0x%08x", u4DataStatus);
-		u4DataStatus = VDO_HW_READ(KVA_VDEC_MISC_BASE+(66*4));
-		pr_info("[VCODEC][DUMP] MISC_66 = 0x%08x", u4DataStatus);
-	}
-
-	/* Step 3: software reset */
-	VDO_HW_WRITE(KVA_VDEC_BASE + 66*4, 0x1);
-	VDO_HW_WRITE(KVA_VDEC_BASE + 66*4, 0x0);
-}
-
-void venc_break(void)
-{
-	unsigned int i;
-	VAL_ULONG_T VENC_SW_PAUSE   = KVA_VENC_BASE + 0xAC;
-	VAL_ULONG_T VENC_IRQ_STATUS = KVA_VENC_BASE + 0x5C;
-	VAL_ULONG_T VENC_SW_HRST_N  = KVA_VENC_BASE + 0xA8;
-	VAL_ULONG_T VENC_IRQ_ACK    = KVA_VENC_BASE + 0x60;
-
-	/* Step 1: raise pause hardware signal */
-	VDO_HW_WRITE(VENC_SW_PAUSE, 0x1);
-
-	/* Step 2: assume software can only tolerate 5000 APB read time. */
-	for (i = 0; i < 5000; i++) {
-		if (VDO_HW_READ(VENC_IRQ_STATUS) & 0x10) {
-			/* Add one line comment for avoid kernel coding style, WARNING:BRACES: */
-			break;
-		}
-	}
-
-	/* Step 3: Lower pause hardware signal and lower software hard reset signal */
-	if (i >= 5000) {
-		VDO_HW_WRITE(VENC_SW_PAUSE, 0x0);
-		VDO_HW_WRITE(VENC_SW_HRST_N, 0x0);
-		VDO_HW_READ(VENC_SW_HRST_N);
-	}
-
-	/* Step 4: Lower software hard reset signal and lower pause hardware signal */
-	else {
-		VDO_HW_WRITE(VENC_SW_HRST_N, 0x0);
-		VDO_HW_READ(VENC_SW_HRST_N);
-		VDO_HW_WRITE(VENC_SW_PAUSE, 0x0);
-	}
-
-	/* Step 5: Raise software hard reset signal */
-	VDO_HW_WRITE(VENC_SW_HRST_N, 0x1);
-	VDO_HW_READ(VENC_SW_HRST_N);
-	/* Step 6: Clear pause status */
-	VDO_HW_WRITE(VENC_IRQ_ACK, 0x10);
-}
-
-
 void dec_isr(void)
 {
 	VAL_RESULT_T    eValRet;
@@ -622,12 +532,18 @@ void enc_isr(void)
 
 static irqreturn_t video_intr_dlr(int irq, void *dev_id)
 {
+	if (met_mmsys_tag)
+		met_mmsys_tag("VDEC", grVcodecHWLock.eDriverType | 0x100);
+
 	dec_isr();
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t video_intr_dlr2(int irq, void *dev_id)
 {
+	if (met_mmsys_tag)
+		met_mmsys_tag("VENC", grVcodecHWLock.eDriverType | 0x100);
+
 	enc_isr();
 	return IRQ_HANDLED;
 }
@@ -1607,7 +1523,6 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 
 	case VCODEC_MB:
 	{
-		/* Allow user of kernel driver to issue mb() after register access*/
 		mb();
 	}
 	break;
@@ -1656,19 +1571,19 @@ static long vcodec_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned 
 
 #if IS_ENABLED(CONFIG_COMPAT)
 
-enum STRUCT_TYPE {
+typedef enum {
 	VAL_HW_LOCK_TYPE = 0,
 	VAL_POWER_TYPE,
 	VAL_ISR_TYPE,
 	VAL_MEMORY_TYPE
-};
+} STRUCT_TYPE;
 
-enum COPY_DIRECTION {
+typedef enum {
 	COPY_FROM_USER = 0,
 	COPY_TO_USER,
-};
+} COPY_DIRECTION;
 
-struct COMPAT_VAL_HW_LOCK_T {
+typedef struct COMPAT_VAL_HW_LOCK {
 	/* [IN]     The video codec driver handle */
 	compat_uptr_t       pvHandle;
 	/* [IN]     The size of video codec driver handle */
@@ -1685,9 +1600,9 @@ struct COMPAT_VAL_HW_LOCK_T {
 	compat_uint_t       eDriverType;
 	/* [IN]     True if this is a secure instance // MTK_SEC_VIDEO_PATH_SUPPORT */
 	char                bSecureInst;
-};
+} COMPAT_VAL_HW_LOCK_T;
 
-struct COMPAT_VAL_POWER_T {
+typedef struct COMPAT_VAL_POWER {
 	/* [IN]     The video codec driver handle */
 	compat_uptr_t       pvHandle;
 	/* [IN]     The size of video codec driver handle */
@@ -1702,9 +1617,9 @@ struct COMPAT_VAL_POWER_T {
 	compat_uint_t       u4ReservedSize;
 	/* [OUT]    The number of power user right now */
 	/* VAL_UINT32_T        u4L2CUser; */
-};
+} COMPAT_VAL_POWER_T;
 
-struct COMPAT_VAL_ISR_T {
+typedef struct COMPAT_VAL_ISR {
 	/* [IN]     The video codec driver handle */
 	compat_uptr_t       pvHandle;
 	/* [IN]     The size of video codec driver handle */
@@ -1723,9 +1638,9 @@ struct COMPAT_VAL_ISR_T {
 	compat_uint_t       u4IrqStatusNum;
 	/* [IN/OUT] The value of return registers when HW done */
 	compat_uint_t       u4IrqStatus[IRQ_STATUS_MAX_NUM];
-};
+} COMPAT_VAL_ISR_T;
 
-struct COMPAT_VAL_MEMORY_T {
+typedef struct COMPAT_VAL_MEMORY {
 	/* [IN]     The allocation memory type */
 	compat_uint_t       eMemType;
 	/* [IN]     The size of memory allocation */
@@ -1748,7 +1663,7 @@ struct COMPAT_VAL_MEMORY_T {
 	compat_uptr_t       pvReserved;
 	/* [IN]     The size of reserved parameter structure */
 	compat_ulong_t      u4ReservedSize;
-};
+} COMPAT_VAL_MEMORY_T;
 
 static int get_uptr_to_32(compat_uptr_t *p, void __user **uptr)
 {
@@ -1758,8 +1673,8 @@ static int get_uptr_to_32(compat_uptr_t *p, void __user **uptr)
 	return err;
 }
 static int compat_copy_struct(
-			enum STRUCT_TYPE eType,
-			enum COPY_DIRECTION eDirection,
+			STRUCT_TYPE eType,
+			COPY_DIRECTION eDirection,
 			void __user *data32,
 			void __user *data)
 {
@@ -1773,7 +1688,7 @@ static int compat_copy_struct(
 	case VAL_HW_LOCK_TYPE:
 	{
 		if (eDirection == COPY_FROM_USER) {
-			struct COMPAT_VAL_HW_LOCK_T __user *from32 = (struct COMPAT_VAL_HW_LOCK_T *)data32;
+			COMPAT_VAL_HW_LOCK_T __user *from32 = (COMPAT_VAL_HW_LOCK_T *)data32;
 			VAL_HW_LOCK_T __user *to = (VAL_HW_LOCK_T *)data;
 
 			err = get_user(p, &(from32->pvHandle));
@@ -1793,7 +1708,7 @@ static int compat_copy_struct(
 			err |= get_user(c, &(from32->bSecureInst));
 			err |= put_user(c, &(to->bSecureInst));
 		} else {
-			struct COMPAT_VAL_HW_LOCK_T __user *to32 = (struct COMPAT_VAL_HW_LOCK_T *)data32;
+			COMPAT_VAL_HW_LOCK_T __user *to32 = (COMPAT_VAL_HW_LOCK_T *)data32;
 			VAL_HW_LOCK_T __user *from = (VAL_HW_LOCK_T *)data;
 
 			err = get_uptr_to_32(&p, &(from->pvHandle));
@@ -1818,7 +1733,7 @@ static int compat_copy_struct(
 	case VAL_POWER_TYPE:
 	{
 		if (eDirection == COPY_FROM_USER) {
-			struct COMPAT_VAL_POWER_T __user *from32 = (struct COMPAT_VAL_POWER_T *)data32;
+			COMPAT_VAL_POWER_T __user *from32 = (COMPAT_VAL_POWER_T *)data32;
 			VAL_POWER_T __user *to = (VAL_POWER_T *)data;
 
 			err = get_user(p, &(from32->pvHandle));
@@ -1834,7 +1749,7 @@ static int compat_copy_struct(
 			err |= get_user(u, &(from32->u4ReservedSize));
 			err |= put_user(u, &(to->u4ReservedSize));
 		} else {
-			struct COMPAT_VAL_POWER_T __user *to32 = (struct COMPAT_VAL_POWER_T *)data32;
+			COMPAT_VAL_POWER_T __user *to32 = (COMPAT_VAL_POWER_T *)data32;
 			VAL_POWER_T __user *from = (VAL_POWER_T *)data;
 
 			err = get_uptr_to_32(&p, &(from->pvHandle));
@@ -1857,7 +1772,7 @@ static int compat_copy_struct(
 		int i = 0;
 
 		if (eDirection == COPY_FROM_USER) {
-			struct COMPAT_VAL_ISR_T __user *from32 = (struct COMPAT_VAL_ISR_T *)data32;
+			COMPAT_VAL_ISR_T __user *from32 = (COMPAT_VAL_ISR_T *)data32;
 			VAL_ISR_T __user *to = (VAL_ISR_T *)data;
 
 			err = get_user(p, &(from32->pvHandle));
@@ -1883,7 +1798,7 @@ static int compat_copy_struct(
 			return err;
 
 		} else {
-			struct COMPAT_VAL_ISR_T __user *to32 = (struct COMPAT_VAL_ISR_T *)data32;
+			COMPAT_VAL_ISR_T __user *to32 = (COMPAT_VAL_ISR_T *)data32;
 			VAL_ISR_T __user *from = (VAL_ISR_T *)data;
 
 			err = get_uptr_to_32(&p, &(from->pvHandle));
@@ -1912,7 +1827,7 @@ static int compat_copy_struct(
 	case VAL_MEMORY_TYPE:
 	{
 		if (eDirection == COPY_FROM_USER) {
-			struct COMPAT_VAL_MEMORY_T __user *from32 = (struct COMPAT_VAL_MEMORY_T *)data32;
+			COMPAT_VAL_MEMORY_T __user *from32 = (COMPAT_VAL_MEMORY_T *)data32;
 			VAL_MEMORY_T __user *to = (VAL_MEMORY_T *)data;
 
 			err = get_user(u, &(from32->eMemType));
@@ -1940,7 +1855,7 @@ static int compat_copy_struct(
 			err |= get_user(l, &(from32->u4ReservedSize));
 			err |= put_user(l, &(to->u4ReservedSize));
 			} else {
-			struct COMPAT_VAL_MEMORY_T __user *to32 = (struct COMPAT_VAL_MEMORY_T *)data32;
+			COMPAT_VAL_MEMORY_T __user *to32 = (COMPAT_VAL_MEMORY_T *)data32;
 
 			VAL_MEMORY_T __user *from = (VAL_MEMORY_T *)data;
 
@@ -1987,7 +1902,7 @@ static long vcodec_unlocked_compat_ioctl(struct file *file, unsigned int cmd, un
 	case VCODEC_ALLOC_NON_CACHE_BUFFER:
 	case VCODEC_FREE_NON_CACHE_BUFFER:
 	{
-		struct COMPAT_VAL_MEMORY_T __user *data32;
+		COMPAT_VAL_MEMORY_T __user *data32;
 		VAL_MEMORY_T __user *data;
 		int err;
 
@@ -2012,7 +1927,7 @@ static long vcodec_unlocked_compat_ioctl(struct file *file, unsigned int cmd, un
 	case VCODEC_LOCKHW:
 	case VCODEC_UNLOCKHW:
 	{
-		struct COMPAT_VAL_HW_LOCK_T __user *data32;
+		COMPAT_VAL_HW_LOCK_T __user *data32;
 		VAL_HW_LOCK_T __user *data;
 		int err;
 
@@ -2038,7 +1953,7 @@ static long vcodec_unlocked_compat_ioctl(struct file *file, unsigned int cmd, un
 	case VCODEC_INC_PWR_USER:
 	case VCODEC_DEC_PWR_USER:
 	{
-		struct COMPAT_VAL_POWER_T __user *data32;
+		COMPAT_VAL_POWER_T __user *data32;
 		VAL_POWER_T __user *data;
 		int err;
 
@@ -2064,7 +1979,7 @@ static long vcodec_unlocked_compat_ioctl(struct file *file, unsigned int cmd, un
 
 	case VCODEC_WAITISR:
 	{
-		struct COMPAT_VAL_ISR_T __user *data32;
+		COMPAT_VAL_ISR_T __user *data32;
 		VAL_ISR_T __user *data;
 		int err;
 
@@ -2131,33 +2046,6 @@ static int vcodec_release(struct inode *inode, struct file *file)
 	if (Driver_Open_Count == 0) {
 		mutex_lock(&HWLock);
 		gu4VdecLockThreadId = 0;
-
-		/* check if someone didn't unlockHW */
-		if (grVcodecHWLock.pvHandle != 0) {
-			pr_info("[ERROR] someone didn't unlockHW vcodec_release pid = %d, grVcodecHWLock.eDriverType %d grVcodecHWLock.pvHandle 0x%lx\n",
-				current->pid, grVcodecHWLock.eDriverType, (VAL_ULONG_T)grVcodecHWLock.pvHandle);
-			pr_info("[ERROR] VCODEC_SEL 0x%x\n",
-				VDO_HW_READ(KVA_VDEC_GCON_BASE + 0x20));
-
-			/* power off */
-			if (grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_MP4_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_HEVC_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_H264_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_MP1_MP2_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_VC1_ADV_DEC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_VP8_DEC) {
-				vdec_break();
-				vdec_power_off();
-			} else if (grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_H264_ENC ||
-				grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_HEVC_ENC) {
-				venc_break();
-				venc_power_off();
-			} else if (grVcodecHWLock.eDriverType == VAL_DRIVER_TYPE_JPEG_ENC) {
-				venc_power_off();
-			}
-		}
-
 		grVcodecHWLock.pvHandle = 0;
 		grVcodecHWLock.eDriverType = VAL_DRIVER_TYPE_NONE;
 		grVcodecHWLock.rLockedTime.u4Sec = 0;

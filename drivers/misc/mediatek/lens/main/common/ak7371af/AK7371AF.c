@@ -21,6 +21,7 @@
 #include <linux/delay.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
+#include <linux/time.h>
 
 #include "lens_info.h"
 
@@ -40,19 +41,15 @@ static struct i2c_client *g_pstAF_I2Cclient;
 static int *g_pAF_Opened;
 static spinlock_t *g_pAF_SpinLock;
 
-#if defined(CONFIG_MACH_MT6771)
-static unsigned int g_ACKErrorCnt = 5;
-#else
-static unsigned int g_ACKErrorCnt = 100;
-#endif
-
+static int g_TimeOutChk;
+static unsigned int g_PreTime;
 
 static unsigned long g_u4AF_INF;
 static unsigned long g_u4AF_MACRO = 1023;
 static unsigned long g_u4TargetPosition;
 static unsigned long g_u4CurrPosition;
 
-static inline void AFI2CSendFormat(struct stAF_MotorI2CSendCmd *pstMotor)
+static inline void AFI2CSendFormat(stAF_MotorI2CSendCmd *pstMotor)
 {
 	pstMotor->Resolution = 10;
 	pstMotor->SlaveAddr  = 0x18;
@@ -82,13 +79,13 @@ static inline void AFI2CSendFormat(struct stAF_MotorI2CSendCmd *pstMotor)
 	pstMotor->I2CFmt[1].Mask2[0] = 0xC0;
 }
 
-static inline int getAFI2CSendFormat(__user struct stAF_MotorI2CSendCmd *pstMotorI2CSendCmd)
+static inline int getAFI2CSendFormat(__user stAF_MotorI2CSendCmd *pstMotorI2CSendCmd)
 {
-	struct stAF_MotorI2CSendCmd stMotor;
+	stAF_MotorI2CSendCmd stMotor;
 
 	AFI2CSendFormat(&stMotor);
 
-	if (copy_to_user(pstMotorI2CSendCmd, &stMotor, sizeof(struct stAF_MotorI2CSendCmd)))
+	if (copy_to_user(pstMotorI2CSendCmd, &stMotor, sizeof(stAF_MotorI2CSendCmd)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	return 0;
@@ -100,9 +97,6 @@ static int s4AF_ReadReg(u8 a_uAddr, u16 *a_pu2Result)
 	char pBuff;
 	char puSendCmd[1];
 
-	if (g_ACKErrorCnt == 0)
-		return 0;
-
 	puSendCmd[0] = a_uAddr;
 
 	g_pstAF_I2Cclient->addr = AF_I2C_SLAVE_ADDR;
@@ -112,9 +106,6 @@ static int s4AF_ReadReg(u8 a_uAddr, u16 *a_pu2Result)
 	i4RetValue = i2c_master_send(g_pstAF_I2Cclient, puSendCmd, 1);
 
 	if (i4RetValue < 0) {
-		if (g_ACKErrorCnt > 0)
-			g_ACKErrorCnt--;
-
 		LOG_INF("I2C read - send failed!!\n");
 		return -1;
 	}
@@ -122,9 +113,6 @@ static int s4AF_ReadReg(u8 a_uAddr, u16 *a_pu2Result)
 	i4RetValue = i2c_master_recv(g_pstAF_I2Cclient, &pBuff, 1);
 
 	if (i4RetValue < 0) {
-		if (g_ACKErrorCnt > 0)
-			g_ACKErrorCnt--;
-
 		LOG_INF("I2C read - recv failed!!\n");
 		return -1;
 	}
@@ -139,9 +127,6 @@ static int s4AF_WriteReg(u16 a_u2Addr, u16 a_u2Data)
 
 	char puSendCmd[2] = { (char)a_u2Addr, (char)a_u2Data };
 
-	if (g_ACKErrorCnt == 0)
-		return 0;
-
 	g_pstAF_I2Cclient->addr = AF_I2C_SLAVE_ADDR;
 
 	g_pstAF_I2Cclient->addr = g_pstAF_I2Cclient->addr >> 1;
@@ -151,9 +136,6 @@ static int s4AF_WriteReg(u16 a_u2Addr, u16 a_u2Data)
 	/* LOG_INF("I2C Addr[0] = 0x%x , Data[0] = 0x%x\n", puSendCmd[0], puSendCmd[1]); */
 
 	if (i4RetValue < 0) {
-		if (g_ACKErrorCnt > 0)
-			g_ACKErrorCnt--;
-
 		LOG_INF("I2C write failed!!\n");
 		return -1;
 	}
@@ -161,9 +143,9 @@ static int s4AF_WriteReg(u16 a_u2Addr, u16 a_u2Data)
 	return 0;
 }
 
-static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
+static inline int getAFInfo(__user stAF_MotorInfo * pstMotorInfo)
 {
-	struct stAF_MotorInfo stMotorInfo;
+	stAF_MotorInfo stMotorInfo;
 
 	stMotorInfo.u4MacroPosition = g_u4AF_MACRO;
 	stMotorInfo.u4InfPosition = g_u4AF_INF;
@@ -177,7 +159,7 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 	else
 		stMotorInfo.bIsMotorOpen = 0;
 
-	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(struct stAF_MotorInfo)))
+	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(stAF_MotorInfo)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	return 0;
@@ -201,15 +183,15 @@ static inline int setVCMPos(unsigned long a_u4Position)
 		u8 i, j;
 		u8 Resolution, SlaveAddr;
 
-		struct stAF_MotorI2CSendCmd stMotor;
+		stAF_MotorI2CSendCmd stMotor;
 
 		AFI2CSendFormat(&stMotor);
 
 		Resolution = stMotor.Resolution;
 		SlaveAddr = stMotor.SlaveAddr;
 		for (i = 0; i < stMotor.I2CSendNum; i++) {
-			struct stAF_CCUI2CFormat stCCUFmt;
-			struct stAF_DrvI2CFormat *pstI2CFmt;
+			stAF_CCUI2CFormat stCCUFmt;
+			stAF_DrvI2CFormat *pstI2CFmt;
 
 			stCCUFmt.BufSize = 0;
 			pstI2CFmt = &stMotor.I2CFmt[i];
@@ -320,10 +302,9 @@ static inline int moveAF(unsigned long a_u4Position)
 		spin_unlock(g_pAF_SpinLock);
 	} else {
 		LOG_INF("set I2C failed when moving the motor\n");
-		ret = -1;
 	}
 
-	return ret;
+	return 0;
 }
 
 static inline int setAFInf(unsigned long a_u4Position)
@@ -349,7 +330,7 @@ long AK7371AF_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, unsigned l
 
 	switch (a_u4Command) {
 	case AFIOC_G_MOTORINFO:
-		i4RetValue = getAFInfo((__user struct stAF_MotorInfo *) (a_u4Param));
+		i4RetValue = getAFInfo((__user stAF_MotorInfo *) (a_u4Param));
 		break;
 
 	case AFIOC_T_MOVETO:
@@ -405,26 +386,31 @@ int AK7371AF_PowerDown(void)
 {
 	LOG_INF("+\n");
 	if (*g_pAF_Opened == 0) {
-		unsigned short data = 0;
-		int cnt = 0;
+		int Ret = 0;
 
-		while (1) {
-			data = 0;
+		if (g_TimeOutChk == 0) {
+			Ret = s4AF_WriteReg(0x02, 0x20);
+			LOG_INF("Write I2C to set powerdonw\n");
+		} else {
+			struct timespec mTS;
+			unsigned int CurTime;
 
-			s4AF_WriteReg(0x02, 0x20);
+			mTS = CURRENT_TIME;
+			CurTime = (unsigned int)mTS.tv_sec;
 
-			s4AF_ReadReg(0x02, &data);
-
-			LOG_INF("Addr : 0x02 , Data : %x\n", data);
-
-			if (data == 0x20 || cnt == 1)
-				break;
-
-			cnt++;
+			if (CurTime - g_PreTime > 300) {
+				g_PreTime = CurTime;
+				g_TimeOutChk = 0;
+			}
 		}
-	} else if (*g_pAF_Opened == 2) {
-		*g_pAF_Opened = 1;
-		LOG_INF("reopen driver init\n");
+
+		if (Ret < 0) {
+			struct timespec mTS;
+
+			mTS = CURRENT_TIME;
+			g_PreTime = (unsigned int)mTS.tv_sec;
+			g_TimeOutChk = 1;
+		}
 	}
 	LOG_INF("-\n");
 
@@ -436,12 +422,6 @@ int AK7371AF_SetI2Cclient(struct i2c_client *pstAF_I2Cclient, spinlock_t *pAF_Sp
 	g_pstAF_I2Cclient = pstAF_I2Cclient;
 	g_pAF_SpinLock = pAF_SpinLock;
 	g_pAF_Opened = pAF_Opened;
-
-	#if defined(CONFIG_MACH_MT6771)
-	g_ACKErrorCnt = 5;
-	#else
-	g_ACKErrorCnt = 100;
-	#endif
 
 	return 1;
 }

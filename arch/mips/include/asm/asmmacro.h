@@ -135,7 +135,6 @@
 	ldc1	$f28, THREAD_FPR28(\thread)
 	ldc1	$f30, THREAD_FPR30(\thread)
 	ctc1	\tmp, fcr31
-	.set	pop
 	.endm
 
 	.macro	fpu_restore_16odd thread

@@ -116,12 +116,8 @@ static int fgauge_set_info(struct gauge_device *gauge_dev, enum gauge_info ginfo
 		pmic_config_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x1);
 	else if (ginfo == GAUGE_MONITER_PLCHG_STATUS)
 		pmic_config_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x2);
-	else if (ginfo == GAUGE_IS_NVRAM_FAIL_MODE)
-		pmic_config_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x4);
-	else if (ginfo == GAUGE_CON0_SOC) {
-		value = value / 100;
-		pmic_config_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x007F, 0x9);
-	} else
+
+	else
 		ret = -1;
 
 	return 0;
@@ -137,10 +133,7 @@ static int fgauge_get_info(struct gauge_device *gauge_dev, enum gauge_info ginfo
 		pmic_read_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x1);
 	else if (ginfo == GAUGE_MONITER_PLCHG_STATUS)
 		pmic_read_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x2);
-	else if (ginfo == GAUGE_IS_NVRAM_FAIL_MODE)
-		pmic_read_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x0001, 0x4);
-	else if (ginfo == GAUGE_CON0_SOC)
-		pmic_read_interface(PMIC_RG_SYSTEM_INFO_CON0_ADDR, value, 0x007F, 0x9);
+
 	else
 		ret = -1;
 
@@ -256,7 +249,7 @@ static void read_fg_hw_info_Iavg(struct gauge_device *gauge_dev, int *is_iavg_va
 		fg_iavg_reg_27_16 = pmic_get_register_value(PMIC_FG_IAVG_27_16);
 		fg_iavg_reg_15_00 = pmic_get_register_value(PMIC_FG_IAVG_15_00);
 		fg_iavg_reg = fg_iavg_reg_27_16;
-		fg_iavg_reg = ((long long)fg_iavg_reg << 16) + fg_iavg_reg_15_00;
+		fg_iavg_reg = (fg_iavg_reg << 16) + fg_iavg_reg_15_00;
 		sign_bit = (fg_iavg_reg_27_16 & 0x800) >> 11;
 
 		if (sign_bit) {
@@ -321,7 +314,7 @@ static signed int fg_get_current_iavg(struct gauge_device *gauge_dev, int *data)
 		fg_iavg_reg_27_16 = pmic_get_register_value(PMIC_FG_IAVG_27_16);
 		fg_iavg_reg_15_00 = pmic_get_register_value(PMIC_FG_IAVG_15_00);
 		fg_iavg_reg = fg_iavg_reg_27_16;
-		fg_iavg_reg = ((long long)fg_iavg_reg << 16) + fg_iavg_reg_15_00;
+		fg_iavg_reg = (fg_iavg_reg << 16) + fg_iavg_reg_15_00;
 		sign_bit = (fg_iavg_reg_27_16 & 0x800) >> 11;
 
 		if (sign_bit) {
@@ -715,7 +708,7 @@ static int fgauge_get_average_current(struct gauge_device *gauge_dev, int *data,
 		fg_iavg_reg_27_16 = pmic_get_register_value(PMIC_FG_IAVG_27_16);
 		fg_iavg_reg_15_00 = pmic_get_register_value(PMIC_FG_IAVG_15_00);
 		fg_iavg_reg = fg_iavg_reg_27_16;
-		fg_iavg_reg = ((long long)fg_iavg_reg << 16) + fg_iavg_reg_15_00;
+		fg_iavg_reg = (fg_iavg_reg << 16) + fg_iavg_reg_15_00;
 		sign_bit = (fg_iavg_reg_27_16 & 0x800) >> 11;
 
 		if (sign_bit) {
@@ -1207,13 +1200,6 @@ int read_hw_ocv(struct gauge_device *gauge_dev, int *data)
 		}
 	}
 
-	/* final chance to check hwocv */
-	if (_hw_ocv < 30000) {
-		bm_err("[read_hw_ocv] ERROR, _hw_ocv=%d, force use swocv\n", _hw_ocv);
-		_hw_ocv = _sw_ocv;
-		_hw_ocv_src = FROM_SW_OCV;
-	}
-
 	*data = _hw_ocv;
 
 	charger_zcv = _hw_ocv_chgin;
@@ -1305,8 +1291,15 @@ int fgauge_set_coulomb_interrupt1_ht(struct gauge_device *gauge_dev, int car_val
 		uvalue32_CAR, uvalue32_CAR_MSB, (pmic_get_register_value(PMIC_FG_CAR_15_00)),
 		(pmic_get_register_value(PMIC_FG_CAR_31_16)));
 
-	/* recovery */
+/*
+ *(5)	 (Read other data)
+ *(6)	 Clear status to 0
+*/
 	ret = pmic_config_interface(MT6356_FGADC_CON1, 0x0008, 0x000F, 0x0);
+/*
+ *(7)	 Keep i2c read when status = 0 (0x08)
+ * while ( fg_get_sw_clear_status() != 0 )
+*/
 	m = 0;
 	while (fg_get_data_ready_status() != 0) {
 		m++;
@@ -1316,8 +1309,9 @@ int fgauge_set_coulomb_interrupt1_ht(struct gauge_device *gauge_dev, int car_val
 			break;
 		}
 	}
+	/*(8)	 Recover original settings */
 	ret = pmic_config_interface(MT6356_FGADC_CON1, 0x0000, 0x000F, 0x0);
-	/* recovery done */
+
 
 	/* gap to register-base */
 #if defined(__LP64__) || defined(_LP64)
@@ -1438,8 +1432,15 @@ int fgauge_set_coulomb_interrupt1_lt(struct gauge_device *gauge_dev, int car_val
 		uvalue32_CAR, uvalue32_CAR_MSB, (pmic_get_register_value(PMIC_FG_CAR_15_00)),
 		(pmic_get_register_value(PMIC_FG_CAR_31_16)));
 
-	/* recovery */
+/*
+ *(5)	 (Read other data)
+ *(6)	 Clear status to 0
+*/
 	ret = pmic_config_interface(MT6356_FGADC_CON1, 0x0008, 0x000F, 0x0);
+/*
+ *(7)	 Keep i2c read when status = 0 (0x08)
+ * while ( fg_get_sw_clear_status() != 0 )
+*/
 	m = 0;
 	while (fg_get_data_ready_status() != 0) {
 		m++;
@@ -1449,8 +1450,9 @@ int fgauge_set_coulomb_interrupt1_lt(struct gauge_device *gauge_dev, int car_val
 			break;
 		}
 	}
+	/*(8)	 Recover original settings */
 	ret = pmic_config_interface(MT6356_FGADC_CON1, 0x0000, 0x000F, 0x0);
-	/* recovery done */
+
 
 	/* gap to register-base */
 #if defined(__LP64__) || defined(_LP64)
@@ -2535,8 +2537,7 @@ static int fgauge_enable_car_tune_value_calibration(struct gauge_device *gauge_d
 		bm_err("[444]sum_all %lld temp_sum %lld avg_cnt %d current_from_ADC %lld\n",
 			sum_all, temp_sum, avg_cnt, current_from_ADC);
 
-		if (avg_cnt != 0)
-			do_div(temp_sum, avg_cnt);
+		do_div(temp_sum, avg_cnt);
 		current_from_ADC = temp_sum;
 
 		bm_err("[555]sum_all %lld temp_sum %lld avg_cnt %d current_from_ADC %lld\n",
@@ -2564,18 +2565,17 @@ static int fgauge_enable_car_tune_value_calibration(struct gauge_device *gauge_d
 
 		/* Move 100 from denominator to cali_car_tune's numerator */
 		/*cali_car_tune = meta_input_cali_current * 1000 / dvalue;*/
-		if (dvalue != 0) {
-			cali_car_tune = meta_input_cali_current * 1000 * 100 / dvalue;
+		cali_car_tune = meta_input_cali_current * 1000 * 100 / dvalue;
 
-			bm_err("[777]dvalue %d fg_cust_data.r_fg_value %d cali_car_tune %d\n",
-				dvalue, gauge_dev->fg_cust_data->r_fg_value, cali_car_tune);
-			*car_tune_value = cali_car_tune;
+		bm_err("[777]dvalue %d fg_cust_data.r_fg_value %d cali_car_tune %d\n",
+			dvalue, gauge_dev->fg_cust_data->r_fg_value, cali_car_tune);
+		*car_tune_value = cali_car_tune;
 
-			bm_err(
-				"[fgauge_meta_cali_car_tune_value][%d] meta:%d, adc:%lld, UNI_FGCUR:%d, r_fg_value:%d\n",
-				cali_car_tune, meta_input_cali_current, current_from_ADC,
-				UNIT_FGCURRENT, gauge_dev->fg_cust_data->r_fg_value);
-		}
+		bm_err(
+			"[fgauge_meta_cali_car_tune_value][%d] meta:%d, adc:%lld, UNI_FGCUR:%d, r_fg_value:%d\n",
+			cali_car_tune, meta_input_cali_current, current_from_ADC,
+			UNIT_FGCURRENT, gauge_dev->fg_cust_data->r_fg_value);
+
 		return 0;
 	}
 

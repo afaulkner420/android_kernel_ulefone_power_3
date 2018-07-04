@@ -97,7 +97,6 @@
 #include <sound/jack.h>
 #include <linux/debugfs.h>
 #include "mtk-soc-codec-63xx.h"
-#include "mtk-soc-speaker-amp.h"
 
 #include "mtk-hw-component.h"
 #if defined(CONFIG_SND_SOC_CS43130)
@@ -199,36 +198,30 @@ static ssize_t mt_soc_debug_write(struct file *f, const char __user *buf,
 	char *token4 = NULL;
 	char *token5 = NULL;
 	char *temp = NULL;
-	char *str_begin = NULL;
 
 	unsigned long regaddr = 0;
 	unsigned long regvalue = 0;
 	char delim[] = " ,";
 
-	if (!count) {
-		pr_debug("%s(), count is 0, return directly\n", __func__);
-		goto exit;
-	}
+	memset_io((void *)InputString, 0, MAX_DEBUG_WRITE_INPUT);
 
 	if (count > MAX_DEBUG_WRITE_INPUT)
 		count = MAX_DEBUG_WRITE_INPUT;
-
-	memset_io((void *)InputString, 0, MAX_DEBUG_WRITE_INPUT);
 
 	if (copy_from_user((InputString), buf, count))
 		pr_warn("%s(), copy_from_user fail, mt_soc_debug_write count = %zu, temp = %s\n",
 			__func__, count, InputString);
 
-	str_begin = kstrndup(InputString, MAX_DEBUG_WRITE_INPUT - 1, GFP_KERNEL);
-	if (!str_begin) {
+	temp = kstrndup(InputString, MAX_DEBUG_WRITE_INPUT, GFP_KERNEL);
+	if (!temp) {
 		pr_warn("%s(), kstrdup fail\n", __func__);
 		goto exit;
 	}
-	temp = str_begin;
 
 	pr_debug("copy_from_user mt_soc_debug_write count = %zu, temp = %s, pointer = %p\n",
 		count, InputString, InputString);
 	token1 = strsep(&temp, delim);
+	pr_debug("token1\n");
 	pr_debug("token1 = %s\n", token1);
 	token2 = strsep(&temp, delim);
 	pr_debug("token2 = %s\n", token2);
@@ -299,7 +292,7 @@ static ssize_t mt_soc_debug_write(struct file *f, const char __user *buf,
 	}
 	AudDrv_Clk_Off();
 
-	kfree(str_begin);
+	kfree(temp);
 exit:
 	return count;
 }
@@ -412,14 +405,6 @@ static struct snd_soc_dai_link mt_soc_dai_common[] = {
 		.cpu_dai_name   = MT_SOC_I2S0DL1_NAME,
 		.platform_name  = MT_SOC_I2S0DL1_PCM,
 		.codec_dai_name = MT_SOC_CODEC_I2S0TXDAI_NAME,
-		.codec_name = MT_SOC_CODEC_NAME,
-	},
-	{
-		.name = "DEEP_BUFFER_DL_OUTPUT",
-		.stream_name = MT_SOC_DEEP_BUFFER_DL_STREAM_NAME,
-		.cpu_dai_name = "snd-soc-dummy-dai",
-		.platform_name = MT_SOC_DEEP_BUFFER_DL_PCM,
-		.codec_dai_name = MT_SOC_CODEC_DEEPBUFFER_TX_DAI_NAME,
 		.codec_name = MT_SOC_CODEC_NAME,
 	},
 	{
@@ -542,14 +527,6 @@ static struct snd_soc_dai_link mt_soc_dai_common[] = {
 		.codec_dai_name = MT_SOC_CODEC_TXDAI2_NAME,
 		.codec_name = MT_SOC_CODEC_NAME,
 	},
-	{
-		.name = "MultiMedia_DL3",
-		.stream_name = MT_SOC_DL3_STREAM_NAME,
-		.cpu_dai_name   = "snd-soc-dummy-dai",
-		.platform_name  = "snd-soc-dummy",
-		.codec_dai_name = MT_SOC_CODEC_OFFLOAD_NAME,
-		.codec_name = MT_SOC_CODEC_NAME,
-	},
 #ifdef CONFIG_SND_SOC_MTK_BTCVSD
 	{
 		.name = "BTCVSD_RX",
@@ -578,16 +555,14 @@ static struct snd_soc_dai_link mt_soc_dai_common[] = {
 		.codec_name = MT_SOC_CODEC_DUMMY_NAME,
 	},
 #endif
-#ifdef CONFIG_MTK_AUDIO_TUNNELING_SUPPORT
 	{
 		.name = "OFFLOAD",
 		.stream_name = MT_SOC_OFFLOAD_STREAM_NAME,
-		.cpu_dai_name = MT_SOC_OFFLOAD_PLAYBACK_DAI_NAME,
-		.platform_name = MT_SOC_PLAYBACK_OFFLOAD,
+		.cpu_dai_name	= "snd-soc-dummy-dai",
+		.platform_name	= "snd-soc-dummy",
 		.codec_dai_name = MT_SOC_CODEC_OFFLOAD_NAME,
 		.codec_name = MT_SOC_CODEC_NAME,
 	},
-#endif
 #ifdef _NON_COMMON_FEATURE_READY
 	{
 		.name = "PCM_ANC",
@@ -685,6 +660,11 @@ static struct snd_soc_dai_link mt_soc_extspk_dai[] = {
 #ifdef CONFIG_SND_SOC_MAX98926
 		.codec_dai_name = "max98926-aif1",
 		.codec_name = "MAX98926_MT",
+#elif defined(CONFIG_SND_SOC_RT5509)
+		.codec_dai_name = "rt5509-aif1",
+		.codec_name = "RT5509_MT_0",
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = true,
 #elif defined(CONFIG_SND_SOC_CS35L35)
 		.codec_dai_name = "cs35l35-pcm",
 		.codec_name = "cs35l35.2-0040",
@@ -727,34 +707,11 @@ static void get_ext_dai_codec_name(void)
 	get_exthp_dai_codec_name(mt_soc_exthp_dai);
 }
 
-static void update_extspk_dai(void)
-{
-	int amp_type = get_amp_index();
-
-	switch (amp_type) {
-	case RICHTEK_RT5509:
-		mt_soc_extspk_dai[0].codec_dai_name = "rt5509-aif1";
-		mt_soc_extspk_dai[0].codec_name = "RT5509_MT_0";
-		mt_soc_extspk_dai[0].ignore_suspend = 1;
-		mt_soc_extspk_dai[0].ignore_pmdown_time = true;
-		break;
-	default:
-		break;
-	}
-
-	pr_info("%s, amp_type = %d, codec dai name = %s, codec name = %s\n",
-		__func__, amp_type, mt_soc_extspk_dai[0].codec_dai_name,
-		mt_soc_extspk_dai[0].codec_name);
-
-}
-
 static int mt_soc_snd_init(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = &mt_snd_soc_card_mt;
 	int ret;
 	int daiLinkNum = 0;
-
-	update_extspk_dai();
 
 	get_ext_dai_codec_name();
 	pr_debug("mt_soc_snd_init dai_link = %p\n", mt_snd_soc_card_mt.dai_link);

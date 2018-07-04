@@ -151,17 +151,8 @@ static void __spin_lock_debug(raw_spinlock_t *lock)
 	unsigned long long t1, t2, t3;
 	struct task_struct *owner = NULL;
 
-	if (is_logbuf_lock(lock)) { /* ignore to debug logbuf_lock */
-		for (i = 0; i < loops; i++) {
-			if (arch_spin_trylock(&lock->raw_lock))
-				return;
-			__delay(1);
-		}
-		return;
-	}
-
 #ifdef CONFIG_PREEMPT_MONITOR
-	/* MT_trace_spin_lock_start(lock); */
+	MT_trace_spin_lock_start(lock);
 #endif
 
 	t1 = sched_clock();
@@ -171,7 +162,7 @@ static void __spin_lock_debug(raw_spinlock_t *lock)
 		for (i = 0; i < loops; i++) {
 			if (arch_spin_trylock(&lock->raw_lock)) {
 #ifdef CONFIG_PREEMPT_MONITOR
-				/* MT_trace_spin_lock_end(lock); */
+				MT_trace_spin_lock_end(lock);
 #endif
 				return;
 			}
@@ -188,6 +179,8 @@ static void __spin_lock_debug(raw_spinlock_t *lock)
 		if (oops_in_progress != 0)
 			continue;  /* in exception follow, printk maybe spinlock error */
 
+		if (is_logbuf_lock(lock))	/*block by logbuf lock */
+			continue;
 		/* lockup suspected: */
 		if (lock->owner && lock->owner != SPINLOCK_OWNER_INIT)
 			owner = lock->owner;

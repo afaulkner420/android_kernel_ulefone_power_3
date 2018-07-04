@@ -23,6 +23,7 @@
 #include <linux/smp.h>
 #include <linux/types.h>
 #include <linux/irqchip/arm-gic.h>
+
 #include "mtk_sys_cirq.h"
 #include <mt-plat/sync_write.h>
 #include <mt-plat/mtk_io.h>
@@ -38,6 +39,11 @@
 #include <linux/irqchip/arm-gic-v3.h>
 #include <linux/irqchip/mtk-gic-extend.h>
 
+#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
+static struct cirq_events cirq_all_events;
+static unsigned int already_cloned;
+#endif
+
 void __iomem *SYS_CIRQ_BASE;
 static unsigned int CIRQ_IRQ_NUM;
 static unsigned int CIRQ_SPI_START;
@@ -48,13 +54,35 @@ unsigned long long flush_t1;
 unsigned long long flush_t2;
 #endif
 
-
-
-
-#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
-static struct cirq_events cirq_all_events;
-static unsigned int already_cloned;
+#ifdef CONFIG_MTK_SYSIRQ
+static inline struct irq_data *get_gic_irq_data(struct irq_data *d)
+{
+	return d->parent_data;
+}
 #endif
+
+
+static inline unsigned int gic_irq(struct irq_data *d)
+{
+#ifdef CONFIG_MTK_SYSIRQ
+	d = get_gic_irq_data(d);
+#endif
+	return d->hwirq;
+}
+
+static inline unsigned int virq_to_hwirq(unsigned int virq)
+{
+	struct irq_desc *desc;
+	unsigned int hwirq;
+
+	desc = irq_to_desc(virq);
+
+	WARN_ON(!desc);
+
+	hwirq = gic_irq(&desc->irq_data);
+
+	return hwirq;
+}
 
 /*
  *Define Data Structure
@@ -130,6 +158,7 @@ void mt_cirq_ack_all(void)
 		pend_vec = mt_irq_get_pending_vec(CIRQ_SPI_START+i*32);
 		mask_vec = mt_cirq_get_mask_vec(i);
 		/* those should be acked are: "not (pending & not masked)",
+		 * so is equal to "not pending | masked" by De Morgan's Law
 		 */
 		ack_vec = (~pend_vec) | mask_vec;
 		writel_relaxed(ack_vec, CIRQ_ACK_BASE + (i * 4));
@@ -328,7 +357,6 @@ void mt_cirq_enable(void)
 }
 EXPORT_SYMBOL(mt_cirq_enable);
 
-
 #ifndef CONFIG_FAST_CIRQ_CLONE_FLUSH
 /*
  * mt_cirq_get_pending: Get the specified SYS_CIRQ pending
@@ -375,7 +403,6 @@ void mt_cirq_flush(void)
 #ifdef LATENCY_CHECK
 	flush_t1 = sched_clock();
 #endif
-
 #ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
 	cirq_fast_sw_flush();
 	mt_cirq_mask_all();
@@ -465,15 +492,12 @@ void mt_cirq_flush(void)
 	mt_cirq_mask_all();
 	mt_cirq_ack_all();
 #endif
-
 #ifdef LATENCY_CHECK
 	flush_t2 = sched_clock();
 	pr_notice("[CIRQ] clone takes %llu ns\n", clone_t2 - clone_t1);
 	pr_notice("[CIRQ] flush takes %llu ns\n", flush_t2 - flush_t1);
 #endif
-
 	return;
-
 }
 EXPORT_SYMBOL(mt_cirq_flush);
 
@@ -556,7 +580,6 @@ void mt_cirq_clone_mask(void)
 			mt_cirq_mask(cirq_num);
 	}
 }
-
 #ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
 #ifdef FAST_CIRQ_DEBUG
 static void dump_cirq_reg(struct cirq_reg *r)
@@ -620,12 +643,6 @@ static int setup_cirq_settings(void)
 	return 0;
 }
 
-void set_wakeup_sources(u32 *list, u32 num_of_events)
-{
-	cirq_all_events.num_of_events = num_of_events;
-	cirq_all_events.wakeup_events = list;
-}
-EXPORT_SYMBOL(set_wakeup_sources);
 
 static void collect_all_wakeup_events(void)
 {
@@ -639,9 +656,7 @@ static void collect_all_wakeup_events(void)
 	unsigned int irq_offset;
 	unsigned int irq_mask;
 
-	if (cirq_all_events.wakeup_events == NULL ||
-			cirq_all_events.num_of_events == 0)
-		return;
+	cirq_all_events.num_of_events = get_wakeup_sources((u32 **)&cirq_all_events.wakeup_events);
 	for (i = 0; i < cirq_all_events.num_of_events; i++) {
 		if (cirq_all_events.wakeup_events[i] > 0) {
 			gic_irq = virq_to_hwirq(cirq_all_events.wakeup_events[i]);
@@ -651,6 +666,7 @@ static void collect_all_wakeup_events(void)
 			mask = 0x1 << cirq_offset;
 			irq_offset = gic_irq % 32;
 			irq_mask = 0x1 << irq_offset;
+
 			/*
 			* CIRQ default masks all, so we only get the mask for CIRQ_MASK_CLR
 			*/
@@ -675,7 +691,6 @@ static void collect_all_wakeup_events(void)
 	}
 }
 
-
 #ifdef FAST_CIRQ_DEBUG
 void debug_setting_dump(void)
 {
@@ -685,7 +700,7 @@ void debug_setting_dump(void)
 
 	list_for_each(cur, &cirq_all_events.used_reg_head) {
 		event = list_entry(cur, struct cirq_reg, the_link);
-		pr_info("[CIRQ] reg%d,  write cirq pol 0x%x, sen 0x%x, mask 0x%x",
+		pr_info("[CIRQ] reg%d,  write pol 0x%x, sen 0x%x, mask 0x%x",
 			 event->reg_num, event->pol, event->sen, event->mask);
 		pr_info("[CIRQ] &%p = 0x%x, &%p = 0x%x, &%p = 0x%x\n",
 			CIRQ_POL_SET_BASE + (event->reg_num << 2), readl(CIRQ_POL_BASE + (event->reg_num << 2)),
@@ -696,7 +711,6 @@ void debug_setting_dump(void)
 }
 EXPORT_SYMBOL(debug_setting_dump);
 #endif
-
 
 static void __cirq_fast_clone(void)
 {
@@ -781,7 +795,6 @@ static void cirq_fast_sw_flush(void)
 
 #endif
 
-
 /*
  * mt_cirq_clone_gic: Copy the setting from GIC to SYS_CIRQ
  */
@@ -799,7 +812,6 @@ void mt_cirq_clone_gic(void)
 	if (cirq_clone_flush_check_val)
 		mt_cirq_dump_reg();
 #endif
-
 #ifdef LATENCY_CHECK
 	clone_t2 = sched_clock();
 #endif
@@ -1168,8 +1180,6 @@ int __init mt_cirq_init(void)
 	if (ret == 0)
 		pr_debug
 		("[CIRQ] CIRQ create sysfs file for pattern list setup...\n");
-
-
 #ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
 	setup_cirq_settings();
 	pr_debug("[CIRQ] cirq wakeup source structure init done\n");

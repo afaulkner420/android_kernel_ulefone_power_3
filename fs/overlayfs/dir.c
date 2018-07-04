@@ -12,7 +12,6 @@
 #include <linux/xattr.h>
 #include <linux/security.h>
 #include <linux/cred.h>
-#include <linux/atomic.h>
 #include "overlayfs.h"
 
 void ovl_cleanup(struct inode *wdir, struct dentry *wdentry)
@@ -36,10 +35,8 @@ struct dentry *ovl_lookup_temp(struct dentry *workdir, struct dentry *dentry)
 {
 	struct dentry *temp;
 	char name[20];
-	static atomic_t temp_id = ATOMIC_INIT(0);
 
-	/* counter is allowed to wrap, since temp dentries are ephemeral */
-	snprintf(name, sizeof(name), "#%x", atomic_inc_return(&temp_id));
+	snprintf(name, sizeof(name), "#%lx", (unsigned long) dentry);
 
 	temp = lookup_one_len(name, workdir, strlen(name));
 	if (!IS_ERR(temp) && temp->d_inode) {

@@ -59,11 +59,10 @@
 #include "mtk-soc-pcm-platform.h"
 #include <linux/ftrace.h>
 
-static int fast_dl_hdoutput;
-static struct afe_mem_control_t *pMemControl;
+static AFE_MEM_CONTROL_T *pMemControl;
 static struct snd_dma_buffer *Dl2_Playback_dma_buf;
 
-static unsigned int UnderflowTime;
+static uint32 UnderflowTime;
 
 static bool StartCheckTime;
 static unsigned long PrevTime;
@@ -71,42 +70,8 @@ static unsigned long NowTime;
 
 #ifdef AUDIO_DL2_ISR_COPY_SUPPORT
 static const int ISRCopyMaxSize = 256*2*4;     /* 256 frames, stereo, 32bit */
-static struct afe_dl_isr_copy_t ISRCopyBuffer = {0};
+static AFE_DL_ISR_COPY_T ISRCopyBuffer = {0};
 #endif
-
-const char * const fast_dl_hd_output[] = {"Off", "On"};
-
-static const struct soc_enum fast_dl_enum[] = {
-	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(fast_dl_hd_output), fast_dl_hd_output),
-};
-
-static int fast_dl_hdoutput_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	pr_debug("%s() = %d\n", __func__, fast_dl_hdoutput);
-	ucontrol->value.integer.value[0] = fast_dl_hdoutput;
-	return 0;
-}
-
-static int fast_dl_hdoutput_set(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	/* pr_debug("%s()\n", __func__); */
-	if (ucontrol->value.enumerated.item[0] >
-	    ARRAY_SIZE(fast_dl_hd_output)) {
-		pr_warn("return -EINVAL\n");
-		return -EINVAL;
-	}
-
-	fast_dl_hdoutput = ucontrol->value.integer.value[0];
-
-	if (GetMemoryPathEnable(Soc_Aud_Digital_Block_MEM_HDMI) == true) {
-		pr_debug("return HDMI enabled\n");
-		return 0;
-	}
-
-	return 0;
-}
 
 static int dataTransfer(void *dest, const void *src, uint32_t size);
 
@@ -145,13 +110,8 @@ static bool mPrepareDone;
 #define USE_PERIODS_MIN     512
 #define USE_PERIODS_MAX     8192
 
-static const struct snd_kcontrol_new fast_dl_controls[] = {
-	SOC_ENUM_EXT("fast_dl_hd_Switch", fast_dl_enum[0],
-		    fast_dl_hdoutput_get, fast_dl_hdoutput_set),
-};
-
 static struct snd_pcm_hardware mtk_pcm_dl2_hardware = {
-	.info = (SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_NO_PERIOD_WAKEUP |
+	.info = (SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_RESUME | SNDRV_PCM_INFO_MMAP_VALID),
 	.formats = SND_SOC_ADV_MT_FMTS,
 	.rates = SOC_HIGH_USE_RATE,
@@ -172,7 +132,7 @@ static int mtk_pcm_dl2_stop(struct snd_pcm_substream *substream)
 
 	StartCheckTime = false;
 	if (unlikely(get_LowLatencyDebug())) {
-		struct afe_block_t *Afe_Block = &pMemControl->rBlock;
+		AFE_BLOCK_T *Afe_Block = &pMemControl->rBlock;
 
 		if (Afe_Block->u4DataRemained < 0) {
 			pr_warn("%s, dl2 underflow\n", __func__);
@@ -183,7 +143,7 @@ static int mtk_pcm_dl2_stop(struct snd_pcm_substream *substream)
 
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_MEM_DL2, false);
 
-	irq_remove_substream_user(substream, irq_request_number(Soc_Aud_Digital_Block_MEM_DL2));
+	irq_remove_user(substream, irq_request_number(Soc_Aud_Digital_Block_MEM_DL2));
 
 	/* here start digital part */
 	SetIntfConnection(Soc_Aud_InterCon_DisConnect,
@@ -203,7 +163,7 @@ static snd_pcm_uframes_t mtk_pcm_dl2_pointer(struct snd_pcm_substream *substream
 	kal_int32 HW_Cur_ReadIdx = 0;
 	kal_uint32 Frameidx = 0;
 	kal_int32 Afe_consumed_bytes = 0;
-	struct afe_block_t *Afe_Block = &pMemControl->rBlock;
+	AFE_BLOCK_T *Afe_Block = &pMemControl->rBlock;
 	unsigned long flags;
 
 	/* struct snd_pcm_runtime *runtime = substream->runtime; */
@@ -344,8 +304,7 @@ static int mtk_pcm_dl2_open(struct snd_pcm_substream *substream)
 
 static int mtk_soc_pcm_dl2_close(struct snd_pcm_substream *substream)
 {
-	pr_debug("%s, mPrepareDone = %d, fast_dl_hdoutput = %d\n",
-		 __func__, mPrepareDone, fast_dl_hdoutput);
+	pr_debug("%s\n", __func__);
 
 	if (mPrepareDone == true) {
 		/* stop DAC output */
@@ -358,14 +317,6 @@ static int mtk_soc_pcm_dl2_close(struct snd_pcm_substream *substream)
 			Afe_Set_Reg(AFE_I2S_CON3, 0x0, 0x1);
 
 		RemoveMemifSubStream(Soc_Aud_Digital_Block_MEM_DL2, substream);
-
-		if (fast_dl_hdoutput == true) {
-			/* here to close APLL */
-			if (!mtk_soc_always_hd) {
-				DisableAPLLTunerbySampleRate(substream->runtime->rate);
-				DisableALLbySampleRate(substream->runtime->rate);
-			}
-		}
 
 		EnableAfe(false);
 		mPrepareDone = false;
@@ -386,15 +337,14 @@ static int mtk_pcm_dl2_prepare(struct snd_pcm_substream *substream)
 {
 	bool mI2SWLen = Soc_Aud_I2S_WLEN_WLEN_16BITS;
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned int u32AudioI2S = 0;
+	uint32 u32AudioI2S = 0;
 
 	pr_debug("%s\n", __func__);
 
 	if (mPrepareDone == false) {
-		pr_debug(
-			"%s format = %d SNDRV_PCM_FORMAT_S32_LE = %d SNDRV_PCM_FORMAT_U32_LE = %d, fast_dl_hdoutput = %d\n",
-			__func__, runtime->format, SNDRV_PCM_FORMAT_S32_LE,
-			SNDRV_PCM_FORMAT_U32_LE, fast_dl_hdoutput);
+		pr_warn
+		    ("%s format = %d SNDRV_PCM_FORMAT_S32_LE = %d SNDRV_PCM_FORMAT_U32_LE = %d\n",
+		     __func__, runtime->format, SNDRV_PCM_FORMAT_S32_LE, SNDRV_PCM_FORMAT_U32_LE);
 		SetMemifSubStream(Soc_Aud_Digital_Block_MEM_DL2, substream);
 		set_memif_pbuf_size(Soc_Aud_Digital_Block_MEM_DL2, MEMIF_PBUF_SIZE_32_BYTES);
 
@@ -432,18 +382,6 @@ static int mtk_pcm_dl2_prepare(struct snd_pcm_substream *substream)
 		u32AudioI2S = SampleRateTransform(runtime->rate, Soc_Aud_Digital_Block_I2S_OUT_2) << 8;
 		u32AudioI2S |= Soc_Aud_I2S_FORMAT_I2S << 3; /* use I2s format */
 		u32AudioI2S |= mI2SWLen << 1;
-
-		if (fast_dl_hdoutput == true) {
-			/* here to open APLL */
-			if (!mtk_soc_always_hd) {
-				EnableALLbySampleRate(runtime->rate);
-				EnableAPLLTunerbySampleRate(runtime->rate);
-			}
-			u32AudioI2S |= Soc_Aud_LOW_JITTER_CLOCK << 12; /* Low jitter mode */
-		} else {
-			u32AudioI2S &=	~(Soc_Aud_LOW_JITTER_CLOCK << 12);
-		}
-
 		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2) == false) {
 			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_2, true);
 			Afe_Set_Reg(AFE_I2S_CON3, u32AudioI2S | 1, AFE_MASK_ALL);
@@ -454,7 +392,7 @@ static int mtk_pcm_dl2_prepare(struct snd_pcm_substream *substream)
 		/* start I2S DAC out */
 		if (GetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC) == false) {
 			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
-			SetI2SDacOut(substream->runtime->rate, fast_dl_hdoutput, mI2SWLen);
+			SetI2SDacOut(substream->runtime->rate, false, mI2SWLen);
 			SetI2SDacEnable(true);
 		} else {
 			SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);
@@ -488,9 +426,9 @@ static int mtk_pcm_dl2_start(struct snd_pcm_substream *substream)
 #endif
 
 	/* here to set interrupt */
-	irq_add_substream_user(substream,
-			       irq_request_number(Soc_Aud_Digital_Block_MEM_DL2),
-			       runtime->rate, runtime->period_size);
+	irq_add_user(substream,
+		     irq_request_number(Soc_Aud_Digital_Block_MEM_DL2),
+		     runtime->rate, runtime->period_size);
 
 	SetSampleRate(Soc_Aud_Digital_Block_MEM_DL2, runtime->rate);
 	SetChannels(Soc_Aud_Digital_Block_MEM_DL2, runtime->channels);
@@ -520,7 +458,7 @@ static int mtk_pcm_dl2_trigger(struct snd_pcm_substream *substream, int cmd)
 	return -EINVAL;
 }
 
-static int mtk_pcm_dl2_copy_(void __user *dst, snd_pcm_uframes_t *size, struct afe_block_t *Afe_Block, bool bCopy)
+static int mtk_pcm_dl2_copy_(void __user *dst, snd_pcm_uframes_t *size, AFE_BLOCK_T *Afe_Block, bool bCopy)
 {
 	int copy_size = 0, Afe_WriteIdx_tmp;
 	unsigned long flags;
@@ -712,7 +650,7 @@ exit:
 
 void mtk_dl2_copy_l(void)
 {
-	struct afe_block_t Afe_Block = pMemControl->rBlock;
+	AFE_BLOCK_T Afe_Block = pMemControl->rBlock;
 	snd_pcm_uframes_t count = ISRCopyBuffer.u4BufferSize;
 
 	if (unlikely(!ISRCopyBuffer.u4BufferSize || !ISRCopyBuffer.pBufferIndx))
@@ -732,7 +670,7 @@ static int mtk_pcm_dl2_copy(struct snd_pcm_substream *substream,
 			int channel, snd_pcm_uframes_t pos,
 			void __user *dst, snd_pcm_uframes_t count)
 {
-	struct afe_block_t *Afe_Block = &pMemControl->rBlock;
+	AFE_BLOCK_T *Afe_Block = &pMemControl->rBlock;
 	int remainCount = 0;
 	int ret = 0;
 	int retryCount = 0;
@@ -791,13 +729,9 @@ retry:
 			ISRCopyBuffer.u4IsrConsumeSize = 0;
 
 		if (unlikely(remainCount)) {
-			if ((++retryCount) > 1) {
-				pr_debug("%s, retryCount %d, remainCount %d, count %d\n", __func__,
-					retryCount, remainCount, (int)count);
-				if (retryCount > 5)
-					goto exit;
-			}
 			count = remainCount;
+			if ((++retryCount) > 1)
+				pr_warn("%s, retryCount %d\n", __func__, retryCount);
 			goto retry;
 		}
 	}
@@ -832,7 +766,7 @@ static int mtk_pcm_dl2_copy(struct snd_pcm_substream *substream,
 			int channel, snd_pcm_uframes_t pos,
 			void __user *dst, snd_pcm_uframes_t count)
 {
-	struct afe_block_t *Afe_Block = &pMemControl->rBlock;
+	AFE_BLOCK_T *Afe_Block = &pMemControl->rBlock;
 
 	/* get total bytes to copy */
 	count = audio_frame_to_bytes(substream, count);
@@ -872,7 +806,6 @@ static struct snd_pcm_ops mtk_dl2_ops = {
 	.copy = mtk_pcm_dl2_copy,
 	.silence = mtk_pcm_dl2_silence,
 	.page = mtk_pcm_dl2_page,
-	.mmap = mtk_pcm_mmap,
 };
 
 static struct snd_soc_platform_driver mtk_soc_platform = {
@@ -913,10 +846,6 @@ static int mtk_soc_dl2_probe(struct platform_device *pdev)
 static int mtk_asoc_dl2_probe(struct snd_soc_platform *platform)
 {
 	PRINTK_AUD_DL2("mtk_asoc_dl2_probe\n");
-
-	snd_soc_add_platform_controls(platform, fast_dl_controls,
-				      ARRAY_SIZE(fast_dl_controls));
-
 	/* allocate dram */
 	AudDrv_Allocate_mem_Buffer(platform->dev, Soc_Aud_Digital_Block_MEM_DL2,
 				   Dl2_MAX_BUFFER_SIZE);

@@ -3,8 +3,8 @@
 #
 
 obj-$(CONFIG_GOODIX_FINGERPRINT) += goodix/
+obj-$(CONFIG_BLESTECH_FINGERPRINT) += blestech/
+obj-$(CONFIG_BLESTECH_TEE_FINGERPRINT) += blestech_tee/
 obj-$(CONFIG_FPC_FINGERPRINT) += fpc/
-#add OSODEV-1176 by chengwenwu 20171123 start
-obj-$(CONFIG_SUNWAVE_TEE_FINGERPRINT) += sunwave_fp_tee/
-obj-$(CONFIG_GOODIX_TEE_FINGERPRINT) += goodix_fp_tee/
-#add OSODEV-1176 by chengwenwu 20171123 end
+obj-$(CONFIG_MICROARRAY_FINGERPRINT) += microarray/
+obj-$(CONFIG_SUNWAVECORP_FINGERPRINT) += sunwavecorp/

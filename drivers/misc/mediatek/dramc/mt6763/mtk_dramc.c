@@ -36,7 +36,7 @@
 #include <mt-plat/sync_write.h>
 #include <mtk_spm_vcore_dvfs.h>
 
-#include <mt_emi_api.h>
+#include "emi_bwl.h"
 #include "mtk_dramc.h"
 #include "dramc.h"
 
@@ -635,7 +635,6 @@ int enter_pasr_dpd_config(unsigned char segment_rank0,
 		mb(); /* flush memory */
 #endif
 		udelay(2);
-
 		writel(readl(u4rg_38) & 0xFFFFFFFD, u4rg_38); /* DCMEN2 = 0 */
 		writel(readl(u4rg_38) & 0xBFFFFFFF, u4rg_38); /* PHYCLKDYNGEN = 0 */
 		writel(readl(u4rg_38) | 0x04000000, u4rg_38); /* MIOCKCTRLOFF = 1 */
@@ -1139,7 +1138,6 @@ unsigned int get_dram_data_rate(void)
 
 	return u4DataRate;
 }
-EXPORT_SYMBOL(get_dram_data_rate);
 
 unsigned int read_dram_temperature(unsigned char channel)
 {
@@ -1337,7 +1335,7 @@ void zqcs_timer_callback(unsigned long data)
 	if (mt_spm_base_get()) {
 		if (spm_vcorefs_get_md_srcclkena()) {
 			spm_request_dvfs_opp(0, OPP_1);
-			for (timeout = 170; timeout; timeout--) {
+			for (timeout = 100; timeout; timeout--) {
 				if (get_dram_data_rate() == 3000)
 					break;
 				udelay(1);
@@ -1611,9 +1609,7 @@ static int dram_probe(struct platform_device *pdev)
 
 	if ((DRAM_TYPE == TYPE_LPDDR4) || (DRAM_TYPE == TYPE_LPDDR4X)) {
 		low_freq_counter = 10;
-		init_timer_deferrable(&zqcs_timer);
-		zqcs_timer.function = zqcs_timer_callback;
-		zqcs_timer.data = 0;
+		setup_deferrable_timer_on_stack(&zqcs_timer, zqcs_timer_callback, 0);
 		if (mod_timer(&zqcs_timer, jiffies + msecs_to_jiffies(280)))
 			pr_info("[DRAMC Driver] Error in ZQCS mod_timer\n");
 	}

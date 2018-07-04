@@ -142,7 +142,7 @@ enum IMGSENSOR_RETURN imgsensor_i2c_buffer_mode(int enable)
 	struct IMGSENSOR_I2C_INST *pinst = &gi2c.inst[IMGSENSOR_I2C_BUFF_MODE_DEV];
 	enum   IMGSENSOR_RETURN    ret   = IMGSENSOR_RETURN_SUCCESS;
 
-	PK_DBG("i2c_buf_mode_en %d\n", enable);
+	PK_PR_ERR("i2c_buf_mode_en %d\n", enable);
 
 	ret = (enable) ?
 		hw_trig_i2c_enable(pinst->pi2c_client->adapter) :

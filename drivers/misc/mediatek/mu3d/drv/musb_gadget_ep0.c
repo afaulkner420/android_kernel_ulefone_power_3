@@ -44,11 +44,6 @@
 #include "mtk-phy-asic.h"
 #endif
 
-#ifdef CONFIG_PHY_MTK_SSUSB
-#include "mtk-ssusb-hal.h"
-#endif
-
-
 /* ep0 is always musb->endpoints[0].ep_in */
 #define	next_ep0_request(musb)	next_in_request(&(musb)->endpoints[0])
 
@@ -95,11 +90,8 @@ __releases(musb->lock) __acquires(musb->lock)
 	int retval;
 
 	os_printk(K_DEBUG, "%s\n", __func__);
-	if (!musb->gadget_driver || !musb->softconnect) {
-		os_printk(K_NOTICE, "%s, driver<%p>, softconn<%d>\n",
-				__func__, musb->gadget_driver, musb->softconnect);
+	if (!musb->gadget_driver)
 		return -EOPNOTSUPP;
-	}
 	spin_unlock(&musb->lock);
 	retval = musb->gadget_driver->setup(&musb->g, ctrlrequest);
 
@@ -492,7 +484,7 @@ __releases(musb->lock) __acquires(musb->lock)
 						pr_debug("TEST_J\n");
 						/* TEST_J */
 						musb->test_mode_nr = TEST_J_MODE;
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#ifdef CONFIG_PROJECT_PHY
 						usb20_rev6_setting(0, false);
 #endif
 						break;
@@ -500,7 +492,7 @@ __releases(musb->lock) __acquires(musb->lock)
 						/* TEST_K */
 						pr_debug("TEST_K\n");
 						musb->test_mode_nr = TEST_K_MODE;
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#ifdef CONFIG_PROJECT_PHY
 						usb20_rev6_setting(0, false);
 #endif
 						break;

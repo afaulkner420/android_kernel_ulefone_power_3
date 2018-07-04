@@ -70,9 +70,6 @@ int fence_clean_up_task_wakeup;
 
 static struct ion_client *ion_client;
 
-/* prepare present fence index */
-unsigned int prepare_present_fence_idx[MAX_SESSION_COUNT];
-
 /* how many counters prior to current timeline real-time counter */
 #define FENCE_STEP_COUNTER         (1)
 #define MTK_FB_NO_ION_FD        ((int)(~0U>>1))
@@ -749,11 +746,10 @@ int disp_sync_init(void)
 		session_info = &_disp_fence_context[i];
 		session_info->session_id = 0xffffffff;
 	}
-/*
-*
+
 	DISPMSG("Fence timeline idx: present = %d, output = %d\n",
 		disp_sync_get_present_timeline_id(), disp_sync_get_output_timeline_id());
-*/
+
 	mtkfb_ion_init();
 
 	return 0;
@@ -909,51 +905,6 @@ void mtkfb_release_layer_fence(unsigned int session_id, unsigned int layer_id)
 	mtkfb_release_fence(session_id, layer_id, fence);
 }
 
-int mtkfb_release_present_fence(unsigned int session_id, unsigned int fence_idx)
-{
-	struct disp_sync_info *layer_info = NULL;
-	unsigned int timeline_id = 0;
-	int fence_increment = 0;
-
-	timeline_id = disp_sync_get_present_timeline_id(session_id);
-	layer_info = _get_sync_info(session_id, timeline_id);
-	if (layer_info == NULL) {
-		DISPERR("layer_info is null\n");
-		if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY)
-			mmprofile_log_ex(ddp_mmp_get_events()->primary_present_fence_release,
-					       MMPROFILE_FLAG_PULSE, -1, 0x5a5a5a5a);
-		return -1;
-	}
-
-	mutex_lock(&layer_info->sync_lock);
-	fence_increment = fence_idx - layer_info->timeline->value;
-
-	if (fence_increment >= 2)
-		DISPPR_FENCE("Warning, R/%s%d/L%d/timeline idx:%d/fence:%d\n",
-			disp_session_mode_spy(session_id),
-			DISP_SESSION_DEV(session_id), timeline_id,
-			layer_info->timeline->value, fence_idx);
-
-	if (fence_increment > 0) {
-		timeline_inc(layer_info->timeline, fence_increment);
-		DISPPR_FENCE("RL+/%s%d/L%d/id%d\n", disp_session_mode_spy(session_id),
-		     DISP_SESSION_DEV(session_id), timeline_id, fence_idx);
-	}
-
-	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY)
-		mmprofile_log_ex(ddp_mmp_get_events()->primary_present_fence_release,
-					MMPROFILE_FLAG_PULSE, fence_idx, fence_increment);
-
-	mutex_unlock(&layer_info->sync_lock);
-	return 0;
-}
-
-void mtkfb_release_present_timeline_fence(unsigned int session_id)
-{
-	mtkfb_release_present_fence(session_id,
-						prepare_present_fence_idx[DISP_SESSION_TYPE(session_id) - 1]);
-}
-
 void mtkfb_release_session_fence(unsigned int session_id)
 {
 	struct disp_session_sync_info *session_sync_info = NULL;
@@ -982,16 +933,11 @@ int disp_sync_get_output_interface_timeline_id(void)
 	return DISP_SESSION_OUTPUT_INTERFACE_TIMELINE_ID;
 }
 
-int disp_sync_get_present_timeline_id(unsigned int session_id)
+int disp_sync_get_present_timeline_id(void)
 {
-	if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_PRIMARY)
-		return DISP_SESSION_PRIMARY_PRESENT_TIMELINE_ID;
-	else if (DISP_SESSION_TYPE(session_id) == DISP_SESSION_EXTERNAL)
-		return DISP_SESSION_EXTERNAL_PRESENT_TIMELINE_ID;
-
-	DISPERR("session id is wrong, session=0x%x!!\n", session_id);
-	return -1;
+	return DISP_SESSION_PRESENT_TIMELINE_ID;
 }
+
 
 int disp_sync_get_cached_layer_info(unsigned int session_id, unsigned int timeline_idx,
 				    unsigned int *layer_en, unsigned long *addr,
@@ -1328,9 +1274,9 @@ unsigned int disp_sync_buf_cache_sync(unsigned int session_id, unsigned int time
 }
 
 
-unsigned int ___disp_sync_query_buf_info(unsigned int session_id, unsigned int timeline_id,
+static unsigned int __disp_sync_query_buf_info(unsigned int session_id, unsigned int timeline_id,
 				      unsigned int idx, unsigned long *mva, unsigned int *size,
-				      void **va, int need_sync)
+				      int need_sync)
 {
 	struct mtkfb_fence_buf_info *buf = NULL;
 	unsigned long dst_mva = 0;
@@ -1350,21 +1296,6 @@ unsigned int ___disp_sync_query_buf_info(unsigned int session_id, unsigned int t
 			/* use local variable here to avoid polluted pointer */
 			dst_mva = buf->mva;
 			dst_size = buf->size;
-
-			if (va) {
-				if (buf->va)
-					*va = (void *)buf->va;
-				else {
-					void *tmp_va;
-
-					tmp_va = ion_map_kernel(ion_client, buf->hnd);
-					if (!IS_ERR_OR_NULL(tmp_va)) {
-						*va = tmp_va;
-						buf->va = (unsigned long)tmp_va;
-					}
-				}
-			}
-
 			break;
 		}
 	}
@@ -1393,14 +1324,6 @@ unsigned int ___disp_sync_query_buf_info(unsigned int session_id, unsigned int t
 
 	return 0;
 }
-
-static unsigned int __disp_sync_query_buf_info(unsigned int session_id, unsigned int timeline_id,
-				      unsigned int idx, unsigned long *mva, unsigned int *size,
-				      int need_sync)
-{
-	return ___disp_sync_query_buf_info(session_id, timeline_id, idx, mva, size, NULL, need_sync);
-}
-
 
 unsigned int disp_sync_query_buf_info(unsigned int session_id, unsigned int timeline_id,
 				      unsigned int idx, unsigned long *mva, unsigned int *size)

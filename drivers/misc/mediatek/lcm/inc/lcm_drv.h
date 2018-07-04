@@ -14,9 +14,15 @@
 #ifndef __LCM_DRV_H__
 #define __LCM_DRV_H__
 
+/* Vanzo:yucheng on: Sat, 15 Oct 2016 15:07:51 +0800
+ * Modify for system porting
+ */
+#ifndef BUILD_LK
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
+#endif
+// End of Vanzo: yucheng
 
 #ifndef ARY_SIZE
 #define ARY_SIZE(x) (sizeof((x)) / sizeof((x[0])))
@@ -95,12 +101,13 @@ typedef enum {
 } LCM_IOCTL;
 
 /* DBI related enumerations */
+
 typedef enum {
-	LCM_DBI_CLOCK_FREQ_125M = 0,
-	LCM_DBI_CLOCK_FREQ_104M,
-	LCM_DBI_CLOCK_FREQ_78M,
+	LCM_DBI_CLOCK_FREQ_104M = 0,
 	LCM_DBI_CLOCK_FREQ_52M,
-	LCM_DBI_CLOCK_FREQ_26M
+	LCM_DBI_CLOCK_FREQ_26M,
+	LCM_DBI_CLOCK_FREQ_13M,
+	LCM_DBI_CLOCK_FREQ_7M
 } LCM_DBI_CLOCK_FREQ;
 
 
@@ -166,9 +173,9 @@ typedef enum {
 } LCM_DPI_FORMAT;
 
 typedef enum {
-	LCM_SERIAL_CLOCK_FREQ_125M = 0,
-	LCM_SERIAL_CLOCK_FREQ_78M,
-	LCM_SERIAL_CLOCK_FREQ_104M
+	LCM_SERIAL_CLOCK_FREQ_104M = 0,
+	LCM_SERIAL_CLOCK_FREQ_26M,
+	LCM_SERIAL_CLOCK_FREQ_52M
 } LCM_SERIAL_CLOCK_FREQ;
 
 typedef enum {
@@ -297,15 +304,6 @@ typedef struct {
 	LCM_DBI_DATA_WIDTH width;
 } LCM_DBI_DATA_FORMAT;
 
-typedef enum {
-	LCM_DBI_C_3WIRE = 1,
-	LCM_DBI_C_4WIRE = 2,
-} LCM_DBI_C_WIRE_NUM;
-
-typedef enum {
-	LCM_DBI_C_1DATA_PIN = 1,
-	LCM_DBI_C_2DATA_PIN = 2,
-} LCM_DBI_C_DATA_PIN_NUM;
 
 typedef struct {
 	LCM_POLARITY cs_polarity;
@@ -330,9 +328,6 @@ typedef struct {
 	unsigned int sif_div2;
 	unsigned int sif_hw_cs;
 /* ////////////////////////////////// */
-
-	LCM_DBI_C_WIRE_NUM wire_num;
-	LCM_DBI_C_DATA_PIN_NUM datapin_num;
 } LCM_DBI_SERIAL_PARAMS;
 
 
@@ -403,7 +398,6 @@ typedef struct {
 
 
 typedef struct {
-	LCM_CTRL ctrl;
 	/* common parameters for serial & parallel interface */
 	unsigned int port;
 	LCM_DBI_CLOCK_FREQ clock_freq;
@@ -590,8 +584,7 @@ typedef struct {
 	unsigned int rg_bir;
 	unsigned int rg_bic;
 	unsigned int rg_bp;
-	unsigned int PLL_CLOCK;	/* PLL_CLOCK = (int) PLL_CLOCK */
-	unsigned int data_rate; /* data_rate = PLL_CLOCK x 2 */
+	unsigned int PLL_CLOCK;
 	unsigned int PLL_CK_VDO;
 	unsigned int PLL_CK_CMD;
 	unsigned int dsi_clock;
@@ -645,20 +638,6 @@ typedef struct {
 	unsigned int PHY_SEL3;
 } LCM_DSI_PARAMS;
 
-/* add XLLSHLSS-3 by wangtao for *#88# flicker test 20171211 start*/
-typedef enum
-{
-	LCM_INVERSIONE_ONE_DOT=1,
-	LCM_INVERSIONE_TWO_DOT=2,
-	LCM_INVERSIONE_THREE_DOT=3,
-	LCM_INVERSIONE_FOUR_DOT=4,
-	LCM_INVERSIONE_EIGHT_DOT=5,
-	LCM_INVERSIONE_COLUMN=6,
-	LCM_INVERSIONE_ROW=7,
-	LCM_INVERSIONE_ZIG_ZAG=8,
-	//TODO new
-} LCM_INV_MODE;
-/* add XLLSHLSS-3 by wangtao for *#88# flicker test 20171211 end*/
 /* --------------------------------------------------------------------------- */
 
 typedef struct {
@@ -673,7 +652,6 @@ typedef struct {
 	unsigned int height;
 	unsigned int virtual_width;
 	unsigned int virtual_height;
-	unsigned int density;
 	unsigned int io_select_mode;	/* DBI or DPI should select IO mode according to chip spec */
 
 	/* particular parameters */
@@ -691,14 +669,9 @@ typedef struct {
 
 #ifdef CONFIG_MTK_ROUND_CORNER_SUPPORT
 	unsigned int round_corner_en;
-	unsigned int full_content;
 	unsigned int corner_pattern_width;
 	unsigned int corner_pattern_height;
-	unsigned int corner_pattern_height_bot;
 #endif
-/* add XLLSHLSS-3 by wangtao for *#88# flicker test 20171211 start*/
-	LCM_INV_MODE inversion;  //lcm inversione type
-/* add XLLSHLSS-3 by wangtao for *#88# flicker test 20171211 end*/
 } LCM_PARAMS;
 
 
@@ -902,18 +875,7 @@ typedef struct {
 	void (*set_pwm_for_mix)(int enable);
 
 	void (*aod)(int enter);
-/* add by tao.wang for x604 project time optimization mechansim start */
-#if defined(CONFIG_TRAN_LCM_TIME_OPT_ENABLE)
-	void (*set_dis_on)(void);
-#endif
-/* add by tao.wang for x604 project time optimization mechansim end */
 } LCM_DRIVER;
-
-/* add XLLSHLSS-3 by tao.wang start */
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-	extern unsigned int lcm_bias_vol;
-#endif
-/* add XLLSHLSS-3 by tao.wang end */
 
 #if	defined(CONFIG_ARCH_MT6735) ||\
 	defined(CONFIG_ARCH_MT6735M) ||\
@@ -935,10 +897,7 @@ extern LCM_DSI_MODE_CON lcm_dsi_mode;
 extern int display_bias_enable(void);
 extern int display_bias_disable(void);
 extern int display_bias_regulator_init(void);
-/*add by zhangkun for set avdd && avee voltage value --begin--*/
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-extern int tran_display_bias_enable(int vol);
-#endif
-/*add by zhangkun for set avdd && avee voltage value --end--*/
+
+
 
 #endif /* __LCM_DRV_H__ */

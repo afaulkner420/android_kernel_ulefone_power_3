@@ -27,6 +27,7 @@
 #ifdef CONFIG_MTK_SCHED_MON_DEFAULT_ENABLE
 #include "mtk_sched_mon.h"
 #endif
+/* #include <mt_cpufreq.h> */
 
 #define BOOT_STR_SIZE 256
 #define BUF_COUNT 12
@@ -178,6 +179,7 @@ static void bootup_finish(void)
 	set_logtoomuch_enable(1);
 }
 
+/* extern void (*set_intact_mode)(void); */
 static void mt_bootprof_switch(int on)
 {
 	mutex_lock(&bootprof_lock);
@@ -240,12 +242,9 @@ static int mt_bootprof_show(struct seq_file *m, void *v)
 
 	if (bootprof_pl_t > 0 && bootprof_lk_t > 0) {
 		SEQ_printf(m, "%10d        : %s\n", bootprof_pl_t, "preloader");
-		if (bootprof_logo_t > 0) {
-			SEQ_printf(m, "%10d        : %s (%s: %d)\n",
-			bootprof_lk_t, "lk", "Start->Show logo", bootprof_logo_t);
-		} else {
-			SEQ_printf(m, "%10d        : %s\n", bootprof_lk_t, "lk");
-		}
+		if (bootprof_logo_t > 0)
+			SEQ_printf(m, "%10d        : %s\n", bootprof_logo_t, "first logo");
+		SEQ_printf(m, "%10d        : %s\n", bootprof_lk_t, "lk");
 		/* SEQ_printf(m, "%10d        : %s\n",
 		 * gpt_boot_time() - bootprof_pl_t - bootprof_lk_t, "lk->Kernel");
 		 */
@@ -301,6 +300,7 @@ static int __init init_boot_prof(void)
 	pe = proc_create("bootprof", 0664, NULL, &mt_bootprof_fops);
 	if (!pe)
 		return -ENOMEM;
+	/* set_intact_mode = NULL; */
 	return 0;
 }
 

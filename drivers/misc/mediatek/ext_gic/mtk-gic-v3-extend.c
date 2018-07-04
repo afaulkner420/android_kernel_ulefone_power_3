@@ -1,5 +1,5 @@
 /*
- t* Copyright (c) 2015 MediaTek Inc.
+ * Copyright (c) 2015 MediaTek Inc.
  * Author: Mars.Cheng <mars.cheng@mediatek.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,27 +32,14 @@
 #include <linux/irqchip/mtk-gic-extend.h>
 #include <linux/io.h>
 #include <mt-plat/mtk_secure_api.h>
-#ifdef CONFIG_CPU_PM
-#include <linux/cpu_pm.h>
-#endif
-#ifdef CONFIG_PM_SLEEP
-#include <linux/syscore_ops.h>
-#endif
 
 #define IOMEM(x)        ((void __force __iomem *)(x))
 /* for cirq use */
 void __iomem *GIC_DIST_BASE;
 void __iomem *INT_POL_CTL0;
 void __iomem *INT_POL_CTL1;
-void __iomem *MCUSYS_BASE_SWMODE;
 static void __iomem *GIC_REDIST_BASE;
 static u32 reg_len_pol0;
-
-unsigned int __attribute__((weak)) irq_sw_mode_support(void)
-{
-	return 0;
-}
-
 
 #ifndef readq
 /* for some kernel config, readq might not be defined, ex aarch32 */
@@ -66,6 +53,25 @@ static inline u64 readq(const void __iomem *addr)
 	return ret;
 }
 #endif
+
+static inline unsigned int gic_irq(struct irq_data *d)
+{
+	return d->hwirq;
+}
+
+static inline unsigned int virq_to_hwirq(unsigned int virq)
+{
+	struct irq_desc *desc;
+	unsigned int hwirq;
+
+	desc = irq_to_desc(virq);
+
+	WARN_ON(!desc);
+
+	hwirq = gic_irq(&desc->irq_data);
+
+	return hwirq;
+}
 
 #ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
 void __iomem *get_dist_base(void)
@@ -310,25 +316,6 @@ u32 mt_irq_get_pending_vec(u32 start_irq)
 	return pending_vec;
 }
 
-#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
-u32 mt_irq_get_en_hw(unsigned int hwirq)
-{
-	void __iomem *base;
-	u32 bit = 1 << (hwirq % 32);
-
-	if (hwirq >= 32) {
-		base = GIC_DIST_BASE + GIC_DIST_ENABLE_SET;
-	} else {
-		gic_populate_rdist(&base);
-		base += SZ_64K;
-		base = base + GIC_DIST_ENABLE_SET;
-	}
-
-	return (readl_relaxed(base + (hwirq/32)*4) & bit) ?
-		1 : 0;
-}
-#endif
-
 void mt_irq_set_pending_hw(unsigned int hwirq)
 {
 	void __iomem *base;
@@ -343,6 +330,25 @@ void mt_irq_set_pending_hw(unsigned int hwirq)
 
 	writel(bit, base + GIC_DIST_PENDING_SET + (hwirq/32)*4);
 }
+
+#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
+u32 mt_irq_get_en_hw(unsigned int hwirq)
+{
+	void __iomem *base;
+	u32 bit = 1 << (hwirq % 32);
+
+	if (hwirq >= 32) {
+		base = GIC_DIST_BASE + GIC_DIST_ENABLE_SET;
+	} else {
+		gic_populate_rdist(&base);
+		base += SZ_64K;
+		base = GIC_DIST_BASE + GIC_DIST_ENABLE_SET;
+	}
+
+	return (readl_relaxed(base + (hwirq/32)*4) & bit) ?
+		1 : 0;
+}
+#endif
 
 void mt_irq_set_pending(unsigned int irq)
 {
@@ -479,7 +485,7 @@ char *mt_irq_dump_status_buf(int irq, char *buf)
 int mt_irq_dump_cpu(int irq)
 {
 	int rc;
-	unsigned long result;
+	unsigned int result;
 
 	irq = virq_to_hwirq(irq);
 
@@ -555,114 +561,6 @@ void _mt_irq_set_polarity(unsigned int hwirq, unsigned int polarity)
 	_mt_set_pol_reg(base + reg*4, value);
 }
 
-#define GIC_INT_MASK (MCUSYS_BASE_SWMODE + 0x5e8)
-#define GIC500_ACTIVE_SEL_SHIFT 3
-#define GIC500_ACTIVE_SEL_MASK (0x7 << GIC500_ACTIVE_SEL_SHIFT)
-#define GIC500_ACTIVE_CPU_SHIFT 16
-#define GIC500_ACTIVE_CPU_MASK (0xff << GIC500_ACTIVE_CPU_SHIFT)
-static spinlock_t domain_lock;
-int print_en;
-
-int add_cpu_to_prefer_schedule_domain(unsigned long cpu)
-{
-	unsigned long domain;
-
-	if (irq_sw_mode_support() != 1)
-		return 0;
-
-	spin_lock(&domain_lock);
-	domain = ioread32(GIC_INT_MASK);
-	domain = domain | (1 << (cpu + GIC500_ACTIVE_CPU_SHIFT));
-	iowrite32(domain, GIC_INT_MASK);
-	spin_unlock(&domain_lock);
-	return 0;
-}
-
-int remove_cpu_from_prefer_schedule_domain(unsigned long cpu)
-{
-	unsigned long domain;
-
-	if (irq_sw_mode_support() != 1)
-		return 0;
-
-	spin_lock(&domain_lock);
-	domain = ioread32(GIC_INT_MASK);
-	domain = domain & ~(1 << (cpu + GIC500_ACTIVE_CPU_SHIFT));
-	iowrite32(domain, GIC_INT_MASK);
-	spin_unlock(&domain_lock);
-	return 0;
-}
-
-#ifdef CONFIG_CPU_PM
-static int gic_sched_pm_notifier(struct notifier_block *self,
-			       unsigned long cmd, void *v)
-{
-	unsigned int cur_cpu = smp_processor_id();
-
-	if (cmd == CPU_PM_EXIT)
-		remove_cpu_from_prefer_schedule_domain(cur_cpu);
-	else if (cmd == CPU_PM_ENTER)
-		add_cpu_to_prefer_schedule_domain(cur_cpu);
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block gic_sched_pm_notifier_block = {
-	.notifier_call = gic_sched_pm_notifier,
-};
-
-static void gic_sched_pm_init(void)
-{
-	cpu_pm_register_notifier(&gic_sched_pm_notifier_block);
-}
-
-#else
-static inline void gic_cpu_pm_init(void) { }
-#endif /* CONFIG_CPU_PM */
-
-#ifdef CONFIG_HOTPLUG_CPU
-static int gic_sched_hotplug_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
-{
-	switch (action) {
-	case CPU_STARTING:
-		add_cpu_to_prefer_schedule_domain((unsigned long)hcpu);
-		break;
-	case CPU_DYING:
-		remove_cpu_from_prefer_schedule_domain((unsigned long)hcpu);
-		break;
-	default:
-		break;
-	}
-	return NOTIFY_OK;
-}
-
-struct notifier_block gic_sched_nfb = {
-	.notifier_call = gic_sched_hotplug_callback
-};
-
-static void gic_sched_hoplug_init(void)
-{
-	register_cpu_notifier(&gic_sched_nfb);
-}
-#else
-static void gic_sched_hoplug_init(void){};
-#endif
-
-void irq_sw_mode_init(void)
-{
-	struct device_node *node;
-
-	if (irq_sw_mode_support() != 1) {
-		pr_notice("### IRQ SW mode not support ###\n");
-		return;
-	}
-	node = of_find_compatible_node(NULL, NULL, "mediatek,mcucfg");
-	MCUSYS_BASE_SWMODE = of_iomap(node, 0);
-	spin_lock_init(&domain_lock);
-	gic_sched_pm_init();
-	gic_sched_hoplug_init();
-}
-
 int __init mt_gic_ext_init(void)
 {
 	struct device_node *node;
@@ -696,8 +594,6 @@ int __init mt_gic_ext_init(void)
 		reg_len_pol0 = 0;
 
 	pr_warn("### gic-v3 init done. ###\n");
-	irq_sw_mode_init();
-	pr_notice("### gic-v3 scheduled pm init done ###\n");
 
 	return 0;
 }

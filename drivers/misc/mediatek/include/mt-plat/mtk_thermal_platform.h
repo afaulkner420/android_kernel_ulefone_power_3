@@ -15,7 +15,7 @@
 #define _MTK_THERMAL_PLATFORM_H
 
 #include <linux/thermal.h>
-#include <mt-plat/charging.h>
+#include <mtk_thermal_typedefs.h>
 
 extern
 int mtk_thermal_get_cpu_info(int *nocores, int **cpufreq, int **cpuloading);
@@ -82,7 +82,7 @@ struct SPA_T {
 extern struct SPA_T thermal_spa_t;
 /* --- SPA parameters --- */
 
-enum ta_daemon_crtl_cmd_to_kernel {
+typedef enum {
 	TA_DAEMON_CMD_GET_INIT_FLAG = 0,
 	TA_DAEMON_CMD_SET_DAEMON_PID,
 	TA_DAEMON_CMD_NOTIFY_DAEMON,
@@ -92,7 +92,7 @@ enum ta_daemon_crtl_cmd_to_kernel {
 	TA_DAEMON_CMD_GET_TI,
 
 	TA_DAEMON_CMD_TO_KERNEL_NUMBER
-}; /*must sync userspace/kernel: TA_DAEMON_CTRL_CMD_FROM_USER*/
+} TA_DAEMON_CTRL_CMD_TO_KERNEL; /*must sync userspace/kernel: TA_DAEMON_CTRL_CMD_FROM_USER*/
 
 #define TAD_NL_MSG_T_HDR_LEN 12
 #define TAD_NL_MSG_MAX_LEN 2048

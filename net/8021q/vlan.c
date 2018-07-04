@@ -278,8 +278,7 @@ static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 	return 0;
 
 out_free_newdev:
-	if (new_dev->reg_state == NETREG_UNINITIALIZED)
-		free_netdev(new_dev);
+	free_netdev(new_dev);
 	return err;
 }
 
@@ -291,10 +290,6 @@ static void vlan_sync_address(struct net_device *dev,
 	/* May be called without an actual change */
 	if (ether_addr_equal(vlan->real_dev_addr, dev->dev_addr))
 		return;
-
-	/* vlan continues to inherit address of lower device */
-	if (vlan_dev_inherit_address(vlandev, dev))
-		goto out;
 
 	/* vlan address was different from the old address and is equal to
 	 * the new address */
@@ -308,7 +303,6 @@ static void vlan_sync_address(struct net_device *dev,
 	    !ether_addr_equal(vlandev->dev_addr, dev->dev_addr))
 		dev_uc_add(dev, vlandev->dev_addr);
 
-out:
 	ether_addr_copy(vlan->real_dev_addr, dev->dev_addr);
 }
 
@@ -665,7 +659,7 @@ static struct sk_buff **vlan_gro_receive(struct sk_buff **head,
 
 	skb_gro_pull(skb, sizeof(*vhdr));
 	skb_gro_postpull_rcsum(skb, vhdr, sizeof(*vhdr));
-	pp = call_gro_receive(ptype->callbacks.gro_receive, head, skb);
+	pp = ptype->callbacks.gro_receive(head, skb);
 
 out_unlock:
 	rcu_read_unlock();

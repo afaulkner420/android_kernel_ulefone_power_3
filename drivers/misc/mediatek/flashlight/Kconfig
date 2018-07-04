@@ -1,6 +1,3 @@
-#
-# Flashlight device configuration
-#
 
 config MTK_FLASHLIGHT
 	tristate "Mediatek flashlight driver"
@@ -19,7 +16,7 @@ config MTK_FLASHLIGHT_LED191
 	help
 		This is flashlight led191 gpio driver for camera.
 
-		Say Y here if you want a driver IC with GPIO interface.
+		Say Y here if you want a dummy driver IC with GPIO interface.
 		Select this only if your board has this IC.
 
 		Say M here if you want to compile this driver as a module.
@@ -47,31 +44,6 @@ config MTK_FLASHLIGHT_LM3643
 		Select this only if your board has this IC.
 
 		Say M here if you want to compile this driver as a module.
-
-config MTK_FLASHLIGHT_LM3644
-	tristate "Mediatek flashlight with driver IC (TI LM3644)"
-	depends on MTK_FLASHLIGHT
-	default n
-	help
-		This is for the flashlight driver IC (TI LM3644).
-
-		Say Y here if you want a flashlight driver IC LM3644.
-		Select this only if your board has this IC.
-
-		Say M here if you want to compile this driver as a module.
-# add by ming.liao@reallytek.com for X604 20171127 start
-config MTK_FLASHLIGHT_LM3648
-	tristate "Mediatek flashlight with driver IC (TI LM3648)"
- 	depends on MTK_FLASHLIGHT
- 	default n
- 	help
-		This is for the flashlight driver IC (TI LM3648).
- 
-		Say Y here if you want a flashlight driver IC LM3648.
-		Select this only if your board has this IC.
-
-		Say M here if you want to compile this driver as a module.
-# add by ming.liao@reallytek.com for X604 20171127 start
 
 config MTK_FLASHLIGHT_RT4505
 	tristate "Mediatek flashlight with driver IC (Richtek RT4505)"
@@ -105,18 +77,6 @@ config MTK_FLASHLIGHT_MT6336
 		This is for the flashlight driver IC (Mediatek MT6336).
 
 		Say Y here if you want a flashlight driver IC MT6336.
-		Select this only if your board has this IC.
-
-		Say M here if you want to compile this driver as a module.
-
-config MTK_FLASHLIGHT_MT6370
-	tristate "Mediatek flashlight with driver IC (Mediatek MT6370)"
-	depends on MTK_FLASHLIGHT && RT_FLASHLIGHT
-	default n
-	help
-		This is for the flashlight driver IC (Mediatek MT6370).
-
-		Say Y here if you want a flashlight driver IC MT6370.
 		Select this only if your board has this IC.
 
 		Say M here if you want to compile this driver as a module.
@@ -179,26 +139,13 @@ config MTK_FLASHLIGHT_PT_STRICT
 		situations.
 
 config MTK_FLASHLIGHT_DLPT
-    bool "Mediatek flashlight dynamic low power throttling"
+    bool "Mediatek flashlight dl power throttling"
 	depends on MTK_FLASHLIGHT
 	default n
 	help
-		This is for flashlight dynamic low power throttling.
+		This is for flashlight dl power throttling.
 
 		Dynamic low power throttling is a mechanism to monitor
 		the current of battary dynamicly. It will start by request
 		and notice user by kernel notifier.
 
-# modify XLLWHLSE-4 bring up flashlight in x605 by luyan.ye 20180118 start
-config MTK_FLASHLIGHT_AW3644
-	tristate "Mediatek flashlight with driver IC (TI AW3644)"
- 	depends on MTK_FLASHLIGHT
- 	default n
- 	help
-		This is for the flashlight driver IC (TI AW3644).
-
-		Say Y here if you want a flashlight driver IC AW3644.
-		Select this only if your board has this IC.
-
-		Say M here if you want to compile this driver as a module.
-# modify XLLWHLSE-4 bring up flashlight in x605 by luyan.ye 20180118 end

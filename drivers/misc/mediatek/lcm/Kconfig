@@ -23,24 +23,3 @@ config MTK_LCM_DEVICE_TREE_SUPPORT
 	  Please also turn on MTK_LCM_DEVICE_TREE_SUPPORT in ProjectConfig.mk.
 	  If not define MTK_LCM_DEVICE_TREE_SUPPORT
 	  there will not connect between display driver and LCM devices.
-
-#add by zhangkun for set avdd && avee voltage value --begin--
-config TRAN_LCM_SET_VOLTAGE
-	bool "Enble LCM set voltage"
-	default n
-	help
-	  define LCM driver config to enable LCM auto set voltage.
-	  To set LCM voltage  which you can set different value.
-	  Please make sure CONFIG_TRAN_LCM_SET_VOLTAGE in
-	  xxxxxx_defconfig.mk for transsion.
-#add by zhangkun for set avdd && avee voltage value --end--
-#add by tao.wang for x604 project time optimization mechanism start
-config TRAN_LCM_TIME_OPT_ENABLE
-	bool "Enble LCM TIME OPTIMIZE MACHANISM"
-	default n
-	help
-	  define LCM driver config to enable LCM TIME OPTIMIZE function.
-	  Enable this function can take advantage of the time that display driver
-	  executes as the time of LCM 0x11 delay time.The purpose of this function
-	  is to accelerate wake-up time.
-#add by tao.wang for x604 project time optimization mechanism end

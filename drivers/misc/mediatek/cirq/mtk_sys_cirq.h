@@ -94,7 +94,7 @@ static void cirq_fast_sw_flush(void);
 struct cirq_reg {
 	unsigned int reg_num;
 	unsigned int used;
-	unsigned long mask;
+	unsigned int mask;
 	unsigned int pol;
 	unsigned int sen;
 	unsigned long pending;
@@ -112,10 +112,13 @@ struct cirq_events {
 	struct list_head used_reg_head;
 };
 
-/*#define FAST_CIRQ_DEBUG*/
-/*#define LATENCY_CHECK*/
+extern u32 get_wakeup_sources(u32 **list);
+
+/* #define FAST_CIRQ_DEBUG */
+/* #define LATENCY_CHECK */
 #ifdef FAST_CIRQ_DEBUG
 void debug_setting_dump(void);
 #endif
 #endif
+
 #endif  /*!__CIRQ_H__ */

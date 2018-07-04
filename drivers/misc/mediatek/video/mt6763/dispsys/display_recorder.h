@@ -116,7 +116,7 @@ enum DPREC_LOGGER_ENUM {
 
 #define LOGGER_BUFFER_SIZE (16 * 1024)
 #define ERROR_BUFFER_COUNT 2
-#define FENCE_BUFFER_COUNT 22
+#define FENCE_BUFFER_COUNT 30
 #define DEBUG_BUFFER_COUNT 8
 #define DUMP_BUFFER_COUNT 4
 #define STATUS_BUFFER_COUNT 1
@@ -136,17 +136,7 @@ struct dprec_logger {
 	unsigned long long ts_start;
 	unsigned long long ts_trigger;
 	unsigned long long count;
-	unsigned long long total_fps;
-	unsigned long long layer_fps[8];
 };
-
-struct dprec_logger_fps {
-	unsigned long long total_fps;
-	unsigned long long layer_fps[8];
-	unsigned long long ts_start_update;
-	unsigned long long ts_end_update;
-};
-
 
 struct fpsEx {
 	unsigned long long fps;
@@ -155,13 +145,6 @@ struct fpsEx {
 	unsigned long long avg;
 	unsigned long long max_period;
 	unsigned long long min_period;
-};
-
-struct fps_debug {
-	unsigned long long total_fps_high;
-	unsigned long long total_fps_low;
-	unsigned long long layer_fps_high[8];
-	unsigned long long layer_fps_low[8];
 };
 
 struct dprec_logger_event {
@@ -189,8 +172,7 @@ extern unsigned int gCaptureRdmaLayerEnable;
 extern unsigned int gCapturePriLayerDownX;
 extern unsigned int gCapturePriLayerDownY;
 extern unsigned int gCapturePriLayerNum;
-extern struct dprec_logger logger[DPREC_LOGGER_NUM];
-int _primary_monitor_fps_thread(void *data);
+
 
 void dprec_event_op(enum DPREC_EVENT event);
 void dprec_reg_op(void *cmdq, unsigned int reg, unsigned int val, unsigned int mask);
@@ -205,9 +187,6 @@ void dprec_logger_reset_all(void);
 int dprec_logger_get_result_string(enum DPREC_LOGGER_ENUM source, char *stringbuf, int strlen);
 int dprec_logger_get_result_string_all(char *stringbuf, int strlen);
 int dprec_logger_get_result_value(enum DPREC_LOGGER_ENUM source, struct fpsEx *fps);
-void caculate_fps(void);
-
-
 void dprec_stub_irq(unsigned int irq_bit);
 void dprec_stub_event(enum DISP_PATH_EVENT event);
 unsigned int dprec_get_vsync_count(void);
@@ -259,22 +238,10 @@ unsigned long disp_get_tracing_mark(void);
 	preempt_enable();\
 } while (0)
 
-#define _DISP_TRACE_CNT(tgid, cnt, fmt, args...) do {\
-	preempt_disable();\
-	event_trace_printk(disp_get_tracing_mark(), "C|%d|"fmt"|%d\n",\
-			   in_interrupt() ? 0 : tgid, ##args, cnt);\
-	preempt_enable();\
-} while (0)
-
-#define DISP_TRACE_CNT(cnt, fmt, args...) \
-	_DISP_TRACE_CNT(current->tgid, cnt, fmt, args...)
-
 #else
 
 #define DISP_SYSTRACE_BEGIN(fmt, args...)
 #define DISP_SYSTRACE_END()
-#define _DISP_TRACE_CNT(tgid, cnt, fmt, args...)
-#define DISP_TRACE_CNT(cnt, fmt, args...)
 #endif
 
 #endif

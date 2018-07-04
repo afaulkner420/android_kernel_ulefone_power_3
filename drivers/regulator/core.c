@@ -1519,7 +1519,6 @@ static int regulator_resolve_supply(struct regulator_dev *rdev)
 		ret = regulator_enable(rdev->supply);
 		if (ret < 0) {
 			_regulator_put(rdev->supply);
-			rdev->supply = NULL;
 			return ret;
 		}
 	}
@@ -4274,13 +4273,12 @@ static void regulator_summary_show_subtree(struct seq_file *s,
 	seq_puts(s, "\n");
 
 	list_for_each_entry(consumer, &rdev->consumer_list, list) {
-		if (consumer->dev && consumer->dev->class == &regulator_class)
+		if (consumer->dev->class == &regulator_class)
 			continue;
 
 		seq_printf(s, "%*s%-*s ",
 			   (level + 1) * 3 + 1, "",
-			   30 - (level + 1) * 3,
-			   consumer->dev ? dev_name(consumer->dev) : "deviceless");
+			   30 - (level + 1) * 3, dev_name(consumer->dev));
 
 		switch (rdev->desc->type) {
 		case REGULATOR_VOLTAGE:

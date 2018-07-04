@@ -89,7 +89,7 @@ static int btcvsd_tx_timestamp_get(unsigned int __user *data, unsigned int size)
 
 	get_tx_timestamp(&time_buffer_info_tx);
 
-	LOGBT("%s(), timestamp_us:%llu, data_count_equi_time:%llu, sizeof(time_buffer_info) = %lu",
+	LOGBT("%s(), timestamp_us:%llu, data_count_equi_time:%llu, sizeof(time_buffer_info) = %d",
 	      __func__,
 	      time_buffer_info_tx.timestamp_us, time_buffer_info_tx.data_count_equi_time,
 	      sizeof(struct time_buffer_info));
@@ -389,7 +389,7 @@ static int mtk_btcvsd_tx_probe(struct platform_device *pdev)
 
 	/* init */
 	if (!isProbeDone) {
-		memset((void *)&BT_CVSD_Mem, 0, sizeof(struct cvsd_memblock));
+		memset((void *)&BT_CVSD_Mem, 0, sizeof(CVSD_MEMBLOCK_T));
 		isProbeDone = 1;
 	}
 

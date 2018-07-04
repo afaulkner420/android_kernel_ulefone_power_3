@@ -50,13 +50,9 @@ struct aac_common aac_config = {
 
 static inline int aac_is_msix_mode(struct aac_dev *dev)
 {
-	u32 status = 0;
+	u32 status;
 
-	if (dev->pdev->device == PMC_DEVICE_S6 ||
-		dev->pdev->device == PMC_DEVICE_S7 ||
-		dev->pdev->device == PMC_DEVICE_S8) {
-		status = src_readl(dev, MUnit.OMR);
-	}
+	status = src_readl(dev, MUnit.OMR);
 	return (status & AAC_INT_MODE_MSIX);
 }
 

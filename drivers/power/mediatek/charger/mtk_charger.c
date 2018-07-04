@@ -78,20 +78,13 @@ static DEFINE_MUTEX(consumer_mutex);
 
 #define USE_FG_TIMER 1
 
-bool is_disable_charger(void)
-{
-	if (pinfo == NULL)
-		return true;
 
-	if (pinfo->disable_charger == true || IS_ENABLED(CONFIG_POWER_EXT))
-		return true;
-	else
-		return false;
-}
+/*=============== fix me==================*/
+
 
 void BATTERY_SetUSBState(int usb_state_value)
 {
-	if (is_disable_charger()) {
+	if (IS_ENABLED(CONFIG_POWER_EXT)) {
 		chr_err("[BATTERY_SetUSBState] in FPGA/EVB, no service\r\n");
 	} else {
 		if ((usb_state_value < USB_SUSPEND) || ((usb_state_value > USB_CONFIGURED))) {
@@ -241,7 +234,6 @@ struct charger_consumer *charger_manager_get_by_name(struct device *dev,
 
 	return puser;
 }
-EXPORT_SYMBOL(charger_manager_get_by_name);
 
 int charger_manager_enable_high_voltage_charging(struct charger_consumer *consumer,
 	bool en)
@@ -284,7 +276,6 @@ int charger_manager_enable_high_voltage_charging(struct charger_consumer *consum
 
 	return 0;
 }
-EXPORT_SYMBOL(charger_manager_enable_high_voltage_charging);
 
 int charger_manager_enable_power_path(struct charger_consumer *consumer,
 	int idx, bool en)
@@ -345,7 +336,9 @@ static int _charger_manager_enable_charging(struct charger_consumer *consumer,
 			return -ENOTSUPP;
 
 		if (en == false) {
+			if (pdata->disable_charging_count == 0)
 				_mtk_charger_do_charging(info, en);
+
 			pdata->disable_charging_count++;
 		} else {
 			if (pdata->disable_charging_count == 1) {
@@ -715,50 +708,6 @@ unregister:
 	unregister_chrdev_region(charger_devno, 1);
 }
 /* factory mode end */
-
-
-/* internal algorithm common function */
-bool is_dual_charger_supported(struct charger_manager *info)
-{
-	if (info->chg2_dev == NULL)
-		return false;
-	return true;
-}
-
-int charger_enable_vbus_ovp(struct charger_manager *pinfo, bool enable)
-{
-	int ret = 0;
-	u32 sw_ovp = 0;
-
-	if (enable)
-		sw_ovp = pinfo->data.max_charger_voltage_setting;
-	else
-		//modify XLLSHLSS-5 by zhipeng.pan 20171222 start
-		sw_ovp = 11000000;
-		//modify XLLSHLSS-5 by zhipeng.pan 20171222 end
-	/* Enable/Disable SW OVP status */
-	pinfo->data.max_charger_voltage = sw_ovp;
-
-	chr_err("[charger_enable_vbus_ovp] en:%d ovp:%d\n",
-			    enable, sw_ovp);
-	return ret;
-}
-
-bool is_typec_adapter(struct charger_manager *info)
-{
-	if (info->pd_type == PD_CONNECT_TYPEC_ONLY_SNK &&
-			info->chr_type != STANDARD_HOST &&
-			info->chr_type != CHARGING_HOST &&
-			mtk_pe20_get_is_connect(info) == false &&
-			mtk_pe_get_is_connect(info) == false &&
-			info->enable_type_c == true)
-		return true;
-
-	return false;
-}
-
-/* internal algorithm common function end */
-
 
 /* sw jeita */
 void do_sw_jeita_state_machine(struct charger_manager *info)
@@ -1152,6 +1101,7 @@ static int mtk_charger_plug_out(struct charger_manager *info)
 	pdata1->disable_charging_count = 0;
 	pdata1->input_current_limit_by_aicl = -1;
 	pdata2->disable_charging_count = 0;
+
 	if (info->plug_out != NULL)
 		info->plug_out(info);
 
@@ -1184,63 +1134,40 @@ static void charger_update_data(struct charger_manager *info)
 	info->battery_temperature = battery_meter_get_battery_temperature();
 }
 
-/* return false if vbus is over max_charger_voltage */
-static bool mtk_chg_check_vbus(struct charger_manager *info)
-{
-	int vchr = 0;
-
-	vchr = pmic_get_vbus() * 1000; /* uV */
-	if (vchr > info->data.max_charger_voltage) {
-		chr_err("%s: vbus(%d mV) > %d mV\n", __func__, vchr / 1000,
-			info->data.max_charger_voltage / 1000);
-		return false;
-	}
-
-	return true;
-}
-
 static void mtk_battery_notify_VCharger_check(struct charger_manager *info)
 {
 #if defined(BATTERY_NOTIFY_CASE_0001_VCHARGER)
 	int vchr = 0;
 
-	vchr = pmic_get_vbus() * 1000; /* uV */
-	if (vchr < info->data.max_charger_voltage)
-		info->notify_code &= ~(0x0001);
-	else {
+	vchr = pmic_get_vbus();
+	if (vchr > info->data.max_charger_voltage) {
 		info->notify_code |= 0x0001;
-		chr_err("[BATTERY] charger_vol(%d mV) > %d mV\n",
-			vchr / 1000, info->data.max_charger_voltage / 1000);
+		chr_err("[BATTERY] charger_vol(%d) > %d mV\n",
+			vchr, info->data.max_charger_voltage);
+	} else {
+		info->notify_code &= ~(0x0001);
 	}
+	if (info->notify_code != 0x0000)
+		chr_err("[BATTERY] BATTERY_NOTIFY_CASE_0001_VCHARGER (%x)\n",
+			info->notify_code);
 #endif
 }
 
 static void mtk_battery_notify_VBatTemp_check(struct charger_manager *info)
 {
 #if defined(BATTERY_NOTIFY_CASE_0002_VBATTEMP)
-	//modify XLLSHLSS-5 by kaili.lu 20180209 start
-	if ((mt_get_charger_type() != CHARGER_UNKNOWN) && info->battery_temperature >= info->thermal.max_charge_temperature) {
+	if (info->battery_temperature >= info->thermal.max_charge_temperature) {
 		info->notify_code |= 0x0002;
 		chr_err("[BATTERY] bat_temp(%d) out of range(too high)\n",
 			info->battery_temperature);
 	}
 
 	if (info->enable_sw_jeita == true) {
-		if ((mt_get_charger_type() != CHARGER_UNKNOWN) && info->battery_temperature <= info->data.temp_neg_10_threshold) {
+		if (info->battery_temperature < info->data.temp_neg_10_threshold) {
 			info->notify_code |= 0x0020;
 			chr_err("[BATTERY] bat_temp(%d) out of range(too low)\n",
 				info->battery_temperature);
 		}
-		if(info->battery_temperature < -17){
-		info->notify_code &= ~(0x0020);
-		info->notify_code |= 0x0080;
-		chr_err("[BATTERY]line:%d  g_BatteryNotifyCode = 0x%x, bat_temp(%d) out of range(too low)\n",__LINE__, info->notify_code, info->battery_temperature);
-		} else if(info->battery_temperature > 57){
-		info->notify_code &= ~(0x0002);
-		info->notify_code |= 0x0040;
-		chr_err("[BATTERY]line:%d  g_BatteryNotifyCode = 0x%x, bat_temp(%d) out of range(too high)\n",__LINE__, info->notify_code, info->battery_temperature);
-		}
-	//modify XLLSHLSS-5 by kaili.lu 20180209 end
 	} else {
 #ifdef BAT_LOW_TEMP_PROTECT_ENABLE
 		if (info->battery_temperature < info->thermal.min_charge_temperature) {
@@ -1293,40 +1220,6 @@ static void mtk_battery_notify_check(struct charger_manager *info)
 		mtk_battery_notify_UI_test(info);
 	}
 }
-
-//modify XLLSHLSS-474 by zhipeng.pan 20180112 start
-
-struct charger_manager *tran_get_pinfo(void)
-{
-	return pinfo;
-}
-
-void tran_clear_notifycode_func(struct charger_manager *info)
-{
-	int bat_temp;
-	if(mt_get_charger_type()){
-		/*do nothing*/
-	}else{
-		bat_temp = battery_meter_get_battery_temperature();
-		chr_err("[%s]line:%d  bat_temp(%d)\n", __FUNCTION__, __LINE__, bat_temp);
-		if(bat_temp < -17){
-			info->notify_code &= ~(0x0020);
-			info->notify_code |= 0x0080;
-			chr_err("[%s]line:%d  g_BatteryNotifyCode = 0x%x, bat_temp(%d) out of range(too low)\n", __FUNCTION__, __LINE__, info->notify_code, bat_temp);
-		}else if(bat_temp > 57){
-			info->notify_code &= ~(0x0002);
-			info->notify_code |= 0x0040;
-			chr_err("[%s]line:%d  g_BatteryNotifyCode = 0x%x, bat_temp(%d) out of range(too high)\n", __FUNCTION__, __LINE__, info->notify_code, bat_temp);
-		}else{
-			info->notify_code &= ~(0x0002);
-			info->notify_code &= ~(0x0020);
-			info->notify_code &= ~(0x0040);
-			info->notify_code &= ~(0x0080);
-			chr_err("[%s]line:%d  clear notifycode g_BatteryNotifyCode = 0x%x, bat_temp(%d)\n", __FUNCTION__, __LINE__, info->notify_code, bat_temp);
-		}
-	}
-}
-//modify XLLSHLSS-474 by zhipeng.pan 20180112 end
 
 static void charger_check_status(struct charger_manager *info)
 {
@@ -1386,11 +1279,6 @@ static void charger_check_status(struct charger_manager *info)
 		}
 	}
 
-	if (!mtk_chg_check_vbus(info)) {
-		charging = false;
-		goto stop_charging;
-	}
-
 	if (info->cmd_discharging)
 		charging = false;
 	if (info->safety_timeout)
@@ -1401,12 +1289,11 @@ static void charger_check_status(struct charger_manager *info)
 stop_charging:
 	mtk_battery_notify_check(info);
 
-	chr_err("tmp:%d (jeita:%d sm:%d cv:%d en:%d) (sm:%d) en:%d c:%d s:%d ov:%d %d %d\n",
+	chr_err("tmp:%d (jeita:%d sm:%d cv:%d en:%d) (sm:%d) en:%d c:%d s:%d ov:%d\n",
 		temperature, info->enable_sw_jeita, info->sw_jeita.sm,
 		info->sw_jeita.cv, info->sw_jeita.charging, thermal->sm,
 		charging, info->cmd_discharging, info->safety_timeout,
-		info->vbusov_stat,
-		info->can_charging, charging);
+		info->vbusov_stat);
 
 	if (charging != info->can_charging)
 		_charger_manager_enable_charging(info->chg1_consumer, 0, charging);
@@ -1417,6 +1304,7 @@ stop_charging:
 
 static void kpoc_power_off_check(struct charger_manager *info)
 {
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 	unsigned int boot_mode = get_boot_mode();
 	int vbus = battery_get_vbus();
 
@@ -1430,6 +1318,7 @@ static void kpoc_power_off_check(struct charger_manager *info)
 			kernel_power_off();
 		}
 	}
+#endif
 }
 
 enum hrtimer_restart charger_kthread_hrtimer_func(struct hrtimer *timer)
@@ -1488,51 +1377,35 @@ static int charger_routine_thread(void *arg)
 	static int i;
 	unsigned long flags;
 	bool curr_sign, is_charger_on;
-	int bat_current, chg_current;
+	int bat_current;
 
 	while (1) {
 		wait_event(info->wait_que, (info->charger_thread_timeout == true));
 
 		mutex_lock(&info->charger_lock);
-		spin_lock_irqsave(&info->slock, flags);
-		if (wake_lock_active(&info->charger_wakelock) == 0)
-			wake_lock(&info->charger_wakelock);
-		spin_unlock_irqrestore(&info->slock, flags);
-
 		info->charger_thread_timeout = false;
 		i++;
 		curr_sign = battery_get_bat_current_sign();
 		bat_current = battery_get_bat_current();
-		chg_current = pmic_get_charging_current();
-		chr_err("Vbat=%d,Ibat=%d,I=%d,VChr=%d,T=%d,Soc=%d:%d,CT:%d:%d hv:%d pd:%d:%d\n",
-			battery_get_bat_voltage(),
-			curr_sign ? bat_current : -1 * bat_current, chg_current,
+		chr_err("Vbat=%d,I=%d,VChr=%d,T=%d,Soc=%d:%d,CT:%d:%d hv:%d\n", battery_get_bat_voltage(),
+			curr_sign ? bat_current : -1 * bat_current,
 			battery_get_vbus(), battery_get_bat_temperature(),
 			battery_get_bat_soc(), battery_get_bat_uisoc(),
-			mt_get_charger_type(), info->chr_type, info->enable_hv_charging,
-			info->pd_type, info->pd_reset);
-
-		if (info->pd_reset == true) {
-			mtk_pe40_plugout_reset(info);
-			info->pd_reset = false;
-		}
+			mt_get_charger_type(), info->chr_type, info->enable_hv_charging);
 
 		is_charger_on = mtk_is_charger_on(info);
-
-		if (info->charger_thread_polling == true)
-			mtk_charger_start_timer(info);
 
 		charger_update_data(info);
 		charger_check_status(info);
 		kpoc_power_off_check(info);
-
-		if (is_disable_charger() == false) {
-			if (is_charger_on == true) {
-				if (info->do_algorithm)
-					info->do_algorithm(info);
-			}
-		} else
-			chr_debug("disable charging\n");
+#ifndef CONFIG_POWER_EXT
+		if (is_charger_on == true) {
+			if (info->do_algorithm)
+				info->do_algorithm(info);
+		}
+#endif
+		if (info->charger_thread_polling == true)
+			mtk_charger_start_timer(info);
 
 		spin_lock_irqsave(&info->slock, flags);
 		wake_unlock(&info->charger_wakelock);
@@ -1574,19 +1447,11 @@ static int mtk_charger_parse_dt(struct charger_manager *info, struct device *dev
 	}
 #endif
 
-	if (strcmp(info->algorithm_name, "LinearCharging") == 0) {
-		pr_info("%s: LinearCharging\n", __func__);
-		mtk_linear_charging_init(info);
-	}
-
-	info->disable_charger = of_property_read_bool(np, "disable_charger");
 	info->enable_sw_safety_timer = of_property_read_bool(np, "enable_sw_safety_timer");
 	info->enable_sw_jeita = of_property_read_bool(np, "enable_sw_jeita");
 	info->enable_pe_plus = of_property_read_bool(np, "enable_pe_plus");
 	info->enable_pe_2 = of_property_read_bool(np, "enable_pe_2");
 	info->enable_pe_3 = of_property_read_bool(np, "enable_pe_3");
-	info->enable_pe_4 = of_property_read_bool(np, "enable_pe_4");
-	info->enable_type_c = of_property_read_bool(np, "enable_type_c");
 
 	info->enable_hv_charging = true;
 
@@ -1607,16 +1472,6 @@ static int mtk_charger_parse_dt(struct charger_manager *info, struct device *dev
 			"use default V_CHARGER_MAX:%d\n",
 			V_CHARGER_MAX);
 		info->data.max_charger_voltage = V_CHARGER_MAX;
-	}
-	info->data.max_charger_voltage_setting = info->data.max_charger_voltage;
-
-	if (of_property_read_u32(np, "min_charger_voltage", &val) >= 0) {
-		info->data.min_charger_voltage = val;
-	} else {
-		chr_err(
-			"use default V_CHARGER_MIN:%d\n",
-			V_CHARGER_MIN);
-		info->data.min_charger_voltage = V_CHARGER_MIN;
 	}
 
 	/* charging current */
@@ -1946,62 +1801,6 @@ static int mtk_charger_parse_dt(struct charger_manager *info, struct device *dev
 		info->data.ta_stop_battery_soc = TA_STOP_BATTERY_SOC;
 	}
 
-	/* PE 4.0 single */
-	if (of_property_read_u32(np, "pe40_single_charger_input_current", &val) >= 0) {
-		info->data.pe40_single_charger_input_current = val;
-	} else {
-		chr_err(
-			"use default pe40_single_charger_input_current:%d\n",
-			3000);
-		info->data.pe40_single_charger_input_current = 3000;
-	}
-
-	if (of_property_read_u32(np, "pe40_single_charger_current", &val) >= 0) {
-		info->data.pe40_single_charger_current = val;
-	} else {
-		chr_err(
-			"use default pe40_single_charger_current:%d\n",
-			3000);
-		info->data.pe40_single_charger_current = 3000;
-	}
-
-	/* PE 4.0 dual */
-	if (of_property_read_u32(np, "pe40_dual_charger_input_current", &val) >= 0) {
-		info->data.pe40_dual_charger_input_current = val;
-	} else {
-		chr_err(
-			"use default pe40_dual_charger_input_current:%d\n",
-			3000);
-		info->data.pe40_dual_charger_input_current = 3000;
-	}
-
-	if (of_property_read_u32(np, "pe40_dual_charger_chg1_current", &val) >= 0) {
-		info->data.pe40_dual_charger_chg1_current = val;
-	} else {
-		chr_err(
-			"use default pe40_dual_charger_chg1_current:%d\n",
-			2000);
-		info->data.pe40_dual_charger_chg1_current = 2000;
-	}
-
-	if (of_property_read_u32(np, "pe40_dual_charger_chg2_current", &val) >= 0) {
-		info->data.pe40_dual_charger_chg2_current = val;
-	} else {
-		chr_err(
-			"use default pe40_dual_charger_chg2_current:%d\n",
-			2000);
-		info->data.pe40_dual_charger_chg2_current = 2000;
-	}
-
-	if (of_property_read_u32(np, "pe40_stop_battery_soc", &val) >= 0) {
-		info->data.pe40_stop_battery_soc = val;
-	} else {
-		chr_err(
-			"use default pe40_stop_battery_soc:%d\n",
-			2000);
-		info->data.pe40_stop_battery_soc = 80;
-	}
-
 #ifdef CONFIG_MTK_DUAL_CHARGER_SUPPORT
 	/* dual charger */
 	if (of_property_read_u32(np, "chg1_ta_ac_charger_current", &val) >= 0) {
@@ -2070,17 +1869,6 @@ static int mtk_charger_parse_dt(struct charger_manager *info, struct device *dev
 		info->data.bif_cv_under_threshold2 = BIF_CV_UNDER_THRESHOLD2;
 	}
 
-	info->data.power_path_support = of_property_read_bool(np, "power_path_support");
-	chr_debug("%s: power_path_support: %d\n", __func__, info->data.power_path_support);
-
-	if (of_property_read_u32(np, "max_charging_time", &val) >= 0) {
-		info->data.max_charging_time = val;
-		chr_debug("%s: max_charging_time: %d\n", __func__, info->data.max_charging_time);
-	} else {
-		chr_err("use default MAX_CHARGING_TIME:%d\n", MAX_CHARGING_TIME);
-		info->data.max_charging_time = MAX_CHARGING_TIME;
-	}
-
 	chr_err("algorithm name:%s\n", info->algorithm_name);
 
 	return 0;
@@ -2101,24 +1889,22 @@ static ssize_t show_Pump_Express(struct device *dev, struct device_attribute *at
 		/* Is PE+20 connect */
 		if (mtk_pe20_get_is_connect(pinfo))
 			is_ta_detected = 1;
+		pr_debug("%s: pe20_is_connect = %d\n",
+			__func__, mtk_pe20_get_is_connect(pinfo));
 	}
 
 	if (IS_ENABLED(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)) {
 		/* Is PE+ connect */
 		if (mtk_pe_get_is_connect(pinfo))
 			is_ta_detected = 1;
+		chr_err("%s: pe_is_connect = %d\n",
+			__func__, mtk_pe_get_is_connect(pinfo));
 	}
 
 	if (mtk_is_TA_support_pe30(pinfo) == true)
 		is_ta_detected = 1;
 
-	if (mtk_is_TA_support_pd_pps(pinfo) == true)
-		is_ta_detected = 1;
-
-	pr_debug("%s: detected = %d, pe20_is_connect = %d, pe_is_connect = %d\n",
-		__func__, is_ta_detected,
-		mtk_pe20_get_is_connect(pinfo),
-		mtk_pe_get_is_connect(pinfo));
+	pr_debug("%s: detected = %d\n", __func__, is_ta_detected);
 
 	return sprintf(buf, "%u\n", is_ta_detected);
 }
@@ -2152,85 +1938,6 @@ static ssize_t store_BatteryNotify(struct device *dev, struct device_attribute *
 }
 
 static DEVICE_ATTR(BatteryNotify, 0664, show_BatteryNotify, store_BatteryNotify);
-
-static ssize_t show_input_current(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-
-	pr_debug("[Battery] show_input_current : %x\n", pinfo->chg1_data.thermal_input_current_limit);
-	return sprintf(buf, "%u\n", pinfo->chg1_data.thermal_input_current_limit);
-}
-
-static ssize_t store_input_current(struct device *dev, struct device_attribute *attr, const char *buf,
-				 size_t size)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-	unsigned int reg = 0;
-	int ret;
-
-	pr_debug("[Battery] store_input_current\n");
-	if (buf != NULL && size != 0) {
-		pr_debug("[Battery] buf is %s and size is %Zu\n", buf, size);
-		ret = kstrtouint(buf, 16, &reg);
-		pinfo->chg1_data.thermal_input_current_limit = reg;
-		pr_debug("[Battery] store_input_current: %x\n", pinfo->chg1_data.thermal_input_current_limit);
-	}
-	return size;
-}
-static DEVICE_ATTR(input_current, 0664, show_input_current, store_input_current);
-
-static ssize_t show_chg1_current(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-
-	pr_debug("[Battery] show_chg1_current : %x\n", pinfo->chg1_data.thermal_charging_current_limit);
-	return sprintf(buf, "%u\n", pinfo->chg1_data.thermal_charging_current_limit);
-}
-
-static ssize_t store_chg1_current(struct device *dev, struct device_attribute *attr, const char *buf,
-				 size_t size)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-	unsigned int reg = 0;
-	int ret;
-
-	pr_debug("[Battery] store_chg1_current\n");
-	if (buf != NULL && size != 0) {
-		pr_debug("[Battery] buf is %s and size is %Zu\n", buf, size);
-		ret = kstrtouint(buf, 16, &reg);
-		pinfo->chg1_data.thermal_charging_current_limit = reg;
-		pr_debug("[Battery] store_chg1_current: %x\n", pinfo->chg1_data.thermal_charging_current_limit);
-	}
-	return size;
-}
-static DEVICE_ATTR(chg1_current, 0664, show_chg1_current, store_chg1_current);
-
-static ssize_t show_chg2_current(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-
-	pr_debug("[Battery] show_chg2_current : %x\n", pinfo->chg2_data.thermal_charging_current_limit);
-	return sprintf(buf, "%u\n", pinfo->chg2_data.thermal_charging_current_limit);
-}
-
-static ssize_t store_chg2_current(struct device *dev, struct device_attribute *attr, const char *buf,
-				 size_t size)
-{
-	struct charger_manager *pinfo = dev->driver_data;
-	unsigned int reg = 0;
-	int ret;
-
-	pr_debug("[Battery] store_chg2_current\n");
-	if (buf != NULL && size != 0) {
-		pr_debug("[Battery] buf is %s and size is %Zu\n", buf, size);
-		ret = kstrtouint(buf, 16, &reg);
-		pinfo->chg2_data.thermal_charging_current_limit = reg;
-		pr_debug("[Battery] store_chg2_current: %x\n", pinfo->chg2_data.thermal_charging_current_limit);
-	}
-	return size;
-}
-static DEVICE_ATTR(chg2_current, 0664, show_chg2_current, store_chg2_current);
-
 
 static ssize_t show_BN_TestMode(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -2354,7 +2061,7 @@ static ssize_t mtk_charger_en_power_path_write(struct file *file, const char *bu
 static int mtk_charger_en_safety_timer_show(struct seq_file *m, void *data)
 {
 	struct charger_manager *pinfo = m->private;
-	bool safety_timer_en = false;
+	bool safety_timer_en;
 
 	charger_dev_is_safety_timer_enabled(pinfo->chg1_dev, &safety_timer_en);
 	seq_printf(m, "%d\n", safety_timer_en);
@@ -2380,13 +2087,6 @@ static ssize_t mtk_charger_en_safety_timer_write(struct file *file, const char *
 	if (ret == 0) {
 		charger_dev_enable_safety_timer(info->chg1_dev, enable);
 		pr_debug("%s: enable safety timer = %d\n", __func__, enable);
-
-		/* SW safety timer */
-		if (enable)
-			info->enable_sw_safety_timer = true;
-		else
-			info->enable_sw_safety_timer = false;
-
 		return count;
 	}
 
@@ -2441,18 +2141,6 @@ static int mtk_charger_setup_files(struct platform_device *pdev)
 	if (ret)
 		goto _out;
 
-	ret = device_create_file(&(pdev->dev), &dev_attr_input_current);
-	if (ret)
-		goto _out;
-
-	ret = device_create_file(&(pdev->dev), &dev_attr_chg1_current);
-	if (ret)
-		goto _out;
-
-	ret = device_create_file(&(pdev->dev), &dev_attr_chg2_current);
-	if (ret)
-		goto _out;
-
 	battery_dir = proc_mkdir("mtk_battery_cmd", NULL);
 	if (!battery_dir) {
 		chr_err("[%s]: mkdir /proc/mtk_battery_cmd failed\n", __func__);
@@ -2476,67 +2164,6 @@ _out:
 	return ret;
 }
 
-static int pd_tcp_notifier_call(struct notifier_block *pnb, unsigned long event, void *data)
-{
-	struct tcp_notify *noti = data;
-	struct charger_manager *pinfo;
-
-	pinfo = container_of(pnb, struct charger_manager, pd_nb);
-
-	chr_err("PD charger event:%d %d\r\n", (int)event,
-		(int)noti->pd_state.connected);
-	switch (event) {
-	case TCP_NOTIFY_PD_STATE:
-		switch (noti->pd_state.connected) {
-		case  PD_CONNECT_NONE:
-			mutex_lock(&pinfo->charger_pd_lock);
-			chr_err("PD Notify Detach\r\n");
-			pinfo->pd_type = PD_CONNECT_NONE;
-			mutex_unlock(&pinfo->charger_pd_lock);
-			/* reset PE40 */
-		break;
-
-		case PD_CONNECT_HARD_RESET:
-			mutex_lock(&pinfo->charger_pd_lock);
-			chr_err("PD Notify HardReset\r\n");
-			pinfo->pd_type = PD_CONNECT_NONE;
-			pinfo->pd_reset = true;
-			mutex_unlock(&pinfo->charger_pd_lock);
-			_wake_up_charger(pinfo);
-		/* reset PE40 */
-		break;
-
-		case PD_CONNECT_PE_READY_SNK:
-			mutex_lock(&pinfo->charger_pd_lock);
-			chr_err("PD Notify fixe voltage ready\r\n");
-			pinfo->pd_type = PD_CONNECT_PE_READY_SNK;
-			mutex_unlock(&pinfo->charger_pd_lock);
-		/* PD is ready */
-		break;
-
-		case PD_CONNECT_PE_READY_SNK_APDO:
-			mutex_lock(&pinfo->charger_pd_lock);
-			chr_err("PD Notify APDO Ready\r\n");
-			pinfo->pd_type = PD_CONNECT_PE_READY_SNK_APDO;
-			mutex_unlock(&pinfo->charger_pd_lock);
-		/* PE40 is ready */
-			_wake_up_charger(pinfo);
-		break;
-
-		case PD_CONNECT_TYPEC_ONLY_SNK:
-			mutex_lock(&pinfo->charger_pd_lock);
-			chr_err("PD Notify Type-C Ready\r\n");
-			pinfo->pd_type = PD_CONNECT_TYPEC_ONLY_SNK;
-			mutex_unlock(&pinfo->charger_pd_lock);
-		/* type C is ready */
-			_wake_up_charger(pinfo);
-		break;
-
-		};
-	}
-	return NOTIFY_OK;
-}
-
 static int mtk_charger_probe(struct platform_device *pdev)
 {
 	struct charger_manager *info = NULL;
@@ -2558,7 +2185,6 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	mtk_charger_parse_dt(info, &pdev->dev);
 
 	mutex_init(&info->charger_lock);
-	mutex_init(&info->charger_pd_lock);
 	atomic_set(&info->enable_kpoc_shdn, 1);
 	wake_lock_init(&info->charger_wakelock, WAKE_LOCK_SUSPEND, "charger suspend wakelock");
 	spin_lock_init(&info->slock);
@@ -2594,14 +2220,6 @@ static int mtk_charger_probe(struct platform_device *pdev)
 	if (ret)
 		chr_err("Error creating sysfs interface\n");
 
-	pinfo->tcpc = tcpc_dev_get_by_name("type_c_port0");
-	if (pinfo->tcpc != NULL) {
-		pinfo->pd_nb.notifier_call = pd_tcp_notifier_call;
-		ret = register_tcp_dev_notifier(pinfo->tcpc, &pinfo->pd_nb, TCP_NOTIFY_TYPE_USB);
-	} else {
-		chr_err("get PD dev fail\n");
-	}
-
 	if (mtk_pe_init(info) < 0)
 		info->enable_pe_plus = false;
 
@@ -2610,9 +2228,6 @@ static int mtk_charger_probe(struct platform_device *pdev)
 
 	if (mtk_pe30_init(info) == false)
 		info->enable_pe_3 = false;
-
-	if (mtk_pe40_init(info) == false)
-		info->enable_pe_4 = false;
 
 	mtk_pdc_init(info);
 	charger_ftm_init();
@@ -2646,7 +2261,9 @@ static void mtk_charger_shutdown(struct platform_device *dev)
 	if (mtk_pe20_get_is_connect(info) || mtk_pe_get_is_connect(info)) {
 		if (info->chg2_dev)
 			charger_dev_enable(info->chg2_dev, false);
-		mtk_pe20_reset_ta_vchr(info);
+		charger_dev_set_input_current(info->chg1_dev, 100000);
+		mdelay(80);
+		charger_dev_set_mivr(info->chg1_dev, 4500000);
 		pr_debug("%s: reset TA before shutdown\n", __func__);
 	}
 }

@@ -55,13 +55,13 @@
 #define MMDVFS_PIXEL_NUM_SENSOR_8M  (7800000)
 
 /* + 1 for MMDVFS_CAM_MON_SCEN */
-static enum mmdvfs_voltage_enum g_mmdvfs_scenario_voltage[MMDVFS_SCEN_COUNT] = {
+static mmdvfs_voltage_enum g_mmdvfs_scenario_voltage[MMDVFS_SCEN_COUNT] = {
 MMDVFS_VOLTAGE_DEFAULT};
-static enum mmdvfs_voltage_enum g_mmdvfs_current_step;
+static mmdvfs_voltage_enum g_mmdvfs_current_step;
 static unsigned int g_mmdvfs_concurrency;
-static struct MTK_SMI_BWC_MM_INFO *g_mmdvfs_info;
+static MTK_SMI_BWC_MM_INFO *g_mmdvfs_info;
 static int g_mmdvfs_profile_id = MMDVFS_PROFILE_UNKNOWN;
-static struct MTK_MMDVFS_CMD g_mmdvfs_cmd;
+static MTK_MMDVFS_CMD g_mmdvfs_cmd;
 
 struct mmdvfs_context_struct {
 	spinlock_t scen_lock;
@@ -89,9 +89,9 @@ static int mmdfvs_adjust_mmsys_clk_by_hopping(int clk_mode);
 static int default_clk_switch_cb(int ori_mmsys_clk_mode, int update_mmsys_clk_mode);
 static int current_mmsys_clk = MMSYS_CLK_LOW;
 
-static enum mmdvfs_voltage_enum mmdvfs_get_default_step(void)
+static mmdvfs_voltage_enum mmdvfs_get_default_step(void)
 {
-	enum mmdvfs_voltage_enum result = MMDVFS_VOLTAGE_LOW;
+	mmdvfs_voltage_enum result = MMDVFS_VOLTAGE_LOW;
 
 	if (g_mmdvfs_profile_id == MMDVFS_PROFILE_D3)
 		result = MMDVFS_VOLTAGE_LOW;
@@ -107,24 +107,24 @@ static enum mmdvfs_voltage_enum mmdvfs_get_default_step(void)
 	return result;
 }
 
-static enum mmdvfs_voltage_enum mmdvfs_get_current_step(void)
+static mmdvfs_voltage_enum mmdvfs_get_current_step(void)
 {
 	return g_mmdvfs_current_step;
 }
 
-static enum mmdvfs_voltage_enum mmdvfs_query(enum MTK_SMI_BWC_SCEN scenario,
-struct MTK_MMDVFS_CMD *cmd)
+static mmdvfs_voltage_enum mmdvfs_query(MTK_SMI_BWC_SCEN scenario,
+MTK_MMDVFS_CMD *cmd)
 {
-	enum mmdvfs_voltage_enum step = mmdvfs_get_default_step();
+	mmdvfs_voltage_enum step = mmdvfs_get_default_step();
 	unsigned int venc_size;
-	struct MTK_MMDVFS_CMD cmd_default;
+	MTK_MMDVFS_CMD cmd_default;
 
 	venc_size = g_mmdvfs_info->video_record_size[0]
 	* g_mmdvfs_info->video_record_size[1];
 
 	/* use default info */
 	if (cmd == NULL) {
-		memset(&cmd_default, 0, sizeof(struct MTK_MMDVFS_CMD));
+		memset(&cmd_default, 0, sizeof(MTK_MMDVFS_CMD));
 		cmd_default.camera_mode = MMDVFS_CAMERA_MODE_FLAG_DEFAULT;
 		cmd = &cmd_default;
 	}
@@ -164,7 +164,7 @@ struct MTK_MMDVFS_CMD *cmd)
 	return step;
 }
 
-static void mmdvfs_update_cmd(struct MTK_MMDVFS_CMD *cmd)
+static void mmdvfs_update_cmd(MTK_MMDVFS_CMD *cmd)
 {
 	if (cmd == NULL)
 		return;
@@ -214,11 +214,11 @@ static void mmdvfs_start_cam_monitor(void)
 
 #endif              /* !defined(SMI_D3) */
 
-int mmdvfs_set_step(enum MTK_SMI_BWC_SCEN scenario, enum mmdvfs_voltage_enum step)
+int mmdvfs_set_step(MTK_SMI_BWC_SCEN scenario, mmdvfs_voltage_enum step)
 {
 	int i, scen_index;
 	unsigned int concurrency = 0;
-	enum mmdvfs_voltage_enum final_step = mmdvfs_get_default_step();
+	mmdvfs_voltage_enum final_step = mmdvfs_get_default_step();
 
 #if !MMDVFS_ENABLE
 	return 0;
@@ -235,11 +235,11 @@ int mmdvfs_set_step(enum MTK_SMI_BWC_SCEN scenario, enum mmdvfs_voltage_enum ste
 	/* D1 plus FHD only allowed DISP as the client  */
 	if (g_mmdvfs_profile_id == MMDVFS_PROFILE_D1_PLUS)
 		if (mmdvfs_get_lcd_resolution() == MMDVFS_LCD_SIZE_FHD
-			&& scenario != (enum MTK_SMI_BWC_SCEN) MMDVFS_SCEN_DISP)
+			&& scenario != (MTK_SMI_BWC_SCEN) MMDVFS_SCEN_DISP)
 			return 0;
 
 
-	if ((scenario >= (enum MTK_SMI_BWC_SCEN) MMDVFS_SCEN_COUNT) || (scenario < SMI_BWC_SCEN_NORMAL)) {
+	if ((scenario >= (MTK_SMI_BWC_SCEN) MMDVFS_SCEN_COUNT) || (scenario < SMI_BWC_SCEN_NORMAL)) {
 		MMDVFSERR("invalid scenario\n");
 		return -1;
 	}
@@ -289,7 +289,7 @@ int mmdvfs_set_step(enum MTK_SMI_BWC_SCEN scenario, enum mmdvfs_voltage_enum ste
 	return 0;
 }
 
-void mmdvfs_handle_cmd(struct MTK_MMDVFS_CMD *cmd)
+void mmdvfs_handle_cmd(MTK_MMDVFS_CMD *cmd)
 {
 #if !MMDVFS_ENABLE
 	return;
@@ -313,9 +313,9 @@ void mmdvfs_handle_cmd(struct MTK_MMDVFS_CMD *cmd)
 			cmd->ret = (unsigned int)MMDVFS_STEP_HIGH2HIGH;
 
 		} else { /* FHD */
-			enum mmdvfs_voltage_enum query_voltage = mmdvfs_query(cmd->scen, cmd);
+			mmdvfs_voltage_enum query_voltage = mmdvfs_query(cmd->scen, cmd);
 
-			enum mmdvfs_voltage_enum current_voltage =	mmdvfs_get_current_step();
+			mmdvfs_voltage_enum current_voltage =	mmdvfs_get_current_step();
 
 			if (current_voltage < query_voltage) {
 				cmd->ret = (unsigned int)MMDVFS_STEP_LOW2HIGH;
@@ -342,7 +342,7 @@ void mmdvfs_handle_cmd(struct MTK_MMDVFS_CMD *cmd)
 	}
 }
 
-void mmdvfs_notify_scenario_exit(enum MTK_SMI_BWC_SCEN scen)
+void mmdvfs_notify_scenario_exit(MTK_SMI_BWC_SCEN scen)
 {
 #if !MMDVFS_ENABLE
 	return;
@@ -367,7 +367,7 @@ void mmdvfs_notify_scenario_exit(enum MTK_SMI_BWC_SCEN scen)
 	mmdvfs_set_step(scen, mmdvfs_get_default_step());
 }
 
-void mmdvfs_notify_scenario_enter(enum MTK_SMI_BWC_SCEN scen)
+void mmdvfs_notify_scenario_enter(MTK_SMI_BWC_SCEN scen)
 {
 #if !MMDVFS_ENABLE
 	return;
@@ -399,7 +399,7 @@ void mmdvfs_notify_scenario_enter(enum MTK_SMI_BWC_SCEN scen)
 	}
 }
 
-void mmdvfs_init(struct MTK_SMI_BWC_MM_INFO *info)
+void mmdvfs_init(MTK_SMI_BWC_MM_INFO *info)
 {
 #if !MMDVFS_ENABLE
 	return;
@@ -614,7 +614,7 @@ static int mmdfvs_adjust_mmsys_clk_by_hopping(int clk_mode)
 	return result;
 }
 
-int mmdvfs_set_mmsys_clk(enum MTK_SMI_BWC_SCEN scenario, int mmsys_clk_mode)
+int mmdvfs_set_mmsys_clk(MTK_SMI_BWC_SCEN scenario, int mmsys_clk_mode)
 {
 	return mmdfvs_adjust_mmsys_clk_by_hopping(mmsys_clk_mode);
 }

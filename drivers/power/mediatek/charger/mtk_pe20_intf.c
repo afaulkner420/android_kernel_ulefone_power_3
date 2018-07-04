@@ -39,14 +39,6 @@ static inline u32 pe20_get_ibat(void)
 	return battery_meter_get_battery_current() * 100;
 }
 
-static bool cancel_pe20(struct charger_manager *pinfo)
-{
-	if (mtk_pdc_check_charger(pinfo) ||
-		mtk_is_TA_support_pd_pps(pinfo))
-		return true;
-	return false;
-}
-
 int mtk_pe20_reset_ta_vchr(struct charger_manager *pinfo)
 {
 	int ret = 0, chr_volt = 0;
@@ -86,7 +78,7 @@ int mtk_pe20_reset_ta_vchr(struct charger_manager *pinfo)
 		return ret;
 	}
 
-	pe20_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+	pe20_set_mivr(pinfo, 4500000);
 
 	/* Measure VBAT */
 	pe20->vbat_orig = pe20_get_vbat();
@@ -107,7 +99,7 @@ static int pe20_enable_hw_vbus_ovp(struct charger_manager *pinfo, bool enable)
 	return ret;
 }
 
-/* Enable/Disable HW & SW VBUS OVP */
+/* Enable/Disable HW */
 static int pe20_enable_vbus_ovp(struct charger_manager *pinfo, bool enable)
 {
 	int ret = 0;
@@ -118,8 +110,6 @@ static int pe20_enable_vbus_ovp(struct charger_manager *pinfo, bool enable)
 		pr_err("%s: failed, ret = %d\n", __func__, ret);
 		return ret;
 	}
-
-	charger_enable_vbus_ovp(pinfo, enable);
 
 	return ret;
 }
@@ -162,7 +152,7 @@ static int pe20_leave(struct charger_manager *pinfo)
 	}
 
 	pe20_enable_vbus_ovp(pinfo, true);
-	pe20_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+	pe20_set_mivr(pinfo, 4500000);
 	pr_err("%s: OK\n", __func__);
 	return ret;
 }
@@ -263,28 +253,26 @@ static int pe20_set_ta_vchr(struct charger_manager *pinfo, u32 chr_volt)
 		 * if difference to target is less than 500mV
 		 * (FIXME: modify to 750mV temporarily)
 		 */
-		//modify XLLSHLSS-5 by zhipeng.pan 20180202 start
-		if (vchr_delta < 1200000 && ret == 0) {
+		if (vchr_delta < 750000 && ret == 0) {
 			pr_err("%s: OK, vchr = (%d, %d), vchr_target = %dmV\n",
 				__func__, vchr_before / 1000, vchr_after / 1000,
 				chr_volt / 1000);
 			return ret;
 		}
-		//modify XLLSHLSS-5 by zhipeng.pan 20180202 end
+
 		if (ret == 0 || sw_retry_cnt >= sw_retry_cnt_max)
 			retry_cnt++;
 		else
 			sw_retry_cnt++;
 
-		pe20_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+		pe20_set_mivr(pinfo, 4500000);
 
 		pr_err("%s: retry_cnt = (%d, %d), vchr = (%d, %d), vchr_target = %dmV\n",
 			__func__, sw_retry_cnt, retry_cnt, vchr_before / 1000,
 			vchr_after / 1000, chr_volt / 1000);
 
 	} while (!pe20->is_cable_out_occur && mt_get_charger_type() != CHARGER_UNKNOWN
-		&& retry_cnt < retry_cnt_max && pinfo->enable_hv_charging &&
-		cancel_pe20(pinfo) != true);
+		&& retry_cnt < retry_cnt_max && pinfo->enable_hv_charging);
 
 	ret = -EIO;
 	pr_err("%s: failed, vchr_org = %dmV, vchr_after = %dmV, target_vchr = %dmV\n",
@@ -294,8 +282,6 @@ static int pe20_set_ta_vchr(struct charger_manager *pinfo, u32 chr_volt)
 	return ret;
 }
 
-//add XLLSHLSS-5 by zhipeng.pan 20171212 start
-#if 0
 static void mtk_pe20_check_cable_impedance(struct charger_manager *pinfo)
 {
 	int ret = 0;
@@ -325,10 +311,10 @@ static void mtk_pe20_check_cable_impedance(struct charger_manager *pinfo)
 
 	get_monotonic_boottime(&ptime[0]);
 
-	/* Set ichg = 2500mA, set MIVR=4.6V */
+	/* Set ichg = 2500mA, set MIVR=4.5V */
 	charger_dev_set_charging_current(pinfo->chg1_dev, 2500000);
 	mdelay(240);
-	pe20_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+	pe20_set_mivr(pinfo, 4500000);
 	/* pe20_set_mivr(pinfo, 4300000); */
 
 	get_monotonic_boottime(&ptime[1]);
@@ -387,8 +373,6 @@ end:
 		__func__, pe20->aicr_cable_imp / 1000,
 		pe20->vbat_orig / 1000, mivr_state);
 }
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171212 end
 
 static int pe20_detect_ta(struct charger_manager *pinfo)
 {
@@ -458,9 +442,6 @@ int mtk_pe20_set_charging_current(struct charger_manager *pinfo,
 
 	chr_debug("%s: starts\n", __func__);
 	/* *aicr = 3200000; */
-	//add XLLSHLSS-5 by zhipeng.pan 20171213 start
-	pe20->aicr_cable_imp = 2000000;
-	//add XLLSHLSS-5 by zhipeng.pan 20171213 end
 	*aicr = pe20->aicr_cable_imp;
 	*ichg = pinfo->data.ta_ac_charger_current;
 	pr_err("%s: OK, ichg = %dmA, AICR = %dmA\n",
@@ -487,8 +468,8 @@ int mtk_pe20_plugout_reset(struct charger_manager *pinfo)
 	if (ret < 0)
 		goto err;
 
-	/* Set MIVR to 4.6V for vbus 5V */
-	ret = pe20_set_mivr(pinfo, pinfo->data.min_charger_voltage); /* uV */
+	/* Set MIVR to 4.5V for vbus 5V */
+	ret = pe20_set_mivr(pinfo, 4500000); /* uV */
 	if (ret < 0)
 		goto err;
 
@@ -546,19 +527,11 @@ int mtk_pe20_check_charger(struct charger_manager *pinfo)
 	if (ret < 0)
 		goto out;
 
-	if (cancel_pe20(pinfo))
-		goto out;
-
 	ret = mtk_pe20_reset_ta_vchr(pinfo);
 	if (ret < 0)
 		goto out;
 
-	if (cancel_pe20(pinfo))
-		goto out;
-
-	//modify XLLSHLSS-5 by zhipeng.pan 20171212 start
-	//mtk_pe20_check_cable_impedance(pinfo);
-	//modify XLLSHLSS-5 by zhipeng.pan 20171212 end
+	mtk_pe20_check_cable_impedance(pinfo);
 
 	ret = pe20_detect_ta(pinfo);
 	if (ret < 0)
@@ -776,12 +749,11 @@ int mtk_pe20_init(struct charger_manager *pinfo)
 	pinfo->pe2.profile[3].vchr = 9000000;
 	pinfo->pe2.profile[4].vchr = 9000000;
 	pinfo->pe2.profile[5].vchr = 9000000;
-	//modify XLLSHLSS-5 by zhipeng.pan 20171122 start
-	pinfo->pe2.profile[6].vchr = 9000000;
-	pinfo->pe2.profile[7].vchr = 9000000;
-	pinfo->pe2.profile[8].vchr = 9000000;
-	pinfo->pe2.profile[9].vchr = 9000000;
-	//modify XLLSHLSS-5 by zhipeng.pan 20171122 end
+	pinfo->pe2.profile[6].vchr = 9500000;
+	pinfo->pe2.profile[7].vchr = 9500000;
+	pinfo->pe2.profile[8].vchr = 10000000;
+	pinfo->pe2.profile[9].vchr = 10000000;
+
 	ret = charger_dev_set_pe20_efficiency_table(pinfo->chg1_dev);
 	if (ret != 0)
 		pr_err("%s: use default table, %d\n", __func__, ret);

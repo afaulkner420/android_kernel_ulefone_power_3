@@ -455,7 +455,7 @@ int zpci_dma_init_device(struct zpci_dev *zdev)
 	zdev->dma_table = dma_alloc_cpu_table();
 	if (!zdev->dma_table) {
 		rc = -ENOMEM;
-		goto out;
+		goto out_clean;
 	}
 
 	/*
@@ -475,22 +475,18 @@ int zpci_dma_init_device(struct zpci_dev *zdev)
 	zdev->iommu_bitmap = vzalloc(zdev->iommu_pages / 8);
 	if (!zdev->iommu_bitmap) {
 		rc = -ENOMEM;
-		goto free_dma_table;
+		goto out_reg;
 	}
 
 	rc = zpci_register_ioat(zdev, 0, zdev->start_dma, zdev->end_dma,
 				(u64) zdev->dma_table);
 	if (rc)
-		goto free_bitmap;
-
+		goto out_reg;
 	return 0;
-free_bitmap:
-	vfree(zdev->iommu_bitmap);
-	zdev->iommu_bitmap = NULL;
-free_dma_table:
+
+out_reg:
 	dma_free_cpu_table(zdev->dma_table);
-	zdev->dma_table = NULL;
-out:
+out_clean:
 	return rc;
 }
 

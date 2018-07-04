@@ -23,17 +23,6 @@
 #undef CHAR
 #endif
 
-/*
- * Provide a common conn_md_ipc_ilm_t definition for wmt_drv.ko to reference,
- * this decouples wmt_drv.ko away from ECCCI's ipc_ilm definition, as its
- * naming varies between different Kernel versions currently.
- * If in future the fields in this struct varies as well, we could either:
- * 1. Redefine entire struct from conn_md, or
- * 2. Let wmt_drv.ko handles the difference via:
- *      #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0))
- */
-typedef struct ipc_ilm conn_md_ipc_ilm_t;
-
 enum CONN_MD_ERR_CODE {
 	CONN_MD_ERR_NO_ERR = 0,
 	CONN_MD_ERR_DEF_ERR = -1,
@@ -42,7 +31,7 @@ enum CONN_MD_ERR_CODE {
 };
 
 /*For IDC test*/
-typedef int (*conn_md_msg_rx_cb) (struct ipc_ilm *ilm);
+typedef int (*conn_md_msg_rx_cb) (ipc_ilm_t *ilm);
 
 struct conn_md_bridge_ops {
 	conn_md_msg_rx_cb rx_cb;
@@ -50,6 +39,6 @@ struct conn_md_bridge_ops {
 
 extern int mtk_conn_md_bridge_reg(uint32 u_id, struct conn_md_bridge_ops *p_ops);
 extern int mtk_conn_md_bridge_unreg(uint32 u_id);
-extern int mtk_conn_md_bridge_send_msg(struct ipc_ilm *ilm);
+extern int mtk_conn_md_bridge_send_msg(ipc_ilm_t *ilm);
 
 #endif /*__CONN_MD_EXP_H_*/

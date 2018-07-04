@@ -308,13 +308,11 @@ int primary_display_switch_esd_mode(int mode)
 		/* 2.register irq handler */
 		node = of_find_compatible_node(NULL, NULL, "mediatek, DSI_TE-eint");
 		if (node) {
-			if (of_property_read_u32_array(node,
-							"debounce", ints, ARRAY_SIZE(ints)) == 0)
-				pr_debug("[%s]debounce:%d-%d\n", __func__, ints[0], ints[1]);
-				/*mt_gpio_set_debounce(ints[0], ints[1]); */
-			else
-				pr_info("[%s]debounce time not found\n", __func__);
-
+			of_property_read_u32_array(node,
+						   "debounce",
+						   ints,
+						   ARRAY_SIZE(ints));
+			/* mt_gpio_set_debounce(ints[0], ints[1]); */
 			irq = irq_of_parse_and_map(node, 0);
 			if (request_irq(irq, _esd_check_ext_te_irq_handler,
 					IRQF_TRIGGER_RISING, "DSI_TE-eint", NULL))
@@ -447,7 +445,7 @@ int primary_display_esd_check(void)
 
 		mode = get_esd_check_mode();
 		if (mode == GPIO_EINT_MODE) {
-			DISPINFO("[ESD]ESD check eint\n");
+			DISPCHECK("[ESD]ESD check eint\n");
 			mmprofile_log_ex(ddp_mmp_get_events()->esd_extte, MMPROFILE_FLAG_PULSE,
 				primary_display_is_video_mode(), mode);
 			primary_display_switch_esd_mode(mode);
@@ -500,7 +498,7 @@ int primary_display_esd_check(void)
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_rdlcm, MMPROFILE_FLAG_END, 0, ret);
 
 done:
-	DISPINFO("[ESD]ESD check end, ret = %d\n", ret);
+	DISPCHECK("[ESD]ESD check end, ret = %d\n", ret);
 	mmprofile_log_ex(ddp_mmp_get_events()->esd_check_t, MMPROFILE_FLAG_END, 0, ret);
 	dprec_logger_done(DPREC_LOGGER_ESD_CHECK, 0, 0);
 	return ret;
@@ -827,11 +825,8 @@ int external_display_switch_esd_mode(int mode)
 
 	if (mode == GPIO_EINT_MODE) {
 		/* register irq handler */
-		if (of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints)) == 0)
-			pr_debug("[%s]debounce:%d-%d\n", __func__, ints[0], ints[1]);
-			/* mt_gpio_set_debounce(ints[0], ints[1]); */
-		else
-			pr_info("[%s]debounce time not found\n", __func__);
+		of_property_read_u32_array(node, "debounce", ints, ARRAY_SIZE(ints));
+		/* mt_gpio_set_debounce(ints[0], ints[1]); */
 		irq = irq_of_parse_and_map(node, 0);
 		if (request_irq(irq, extd_esd_check_ext_te_irq_handler, IRQF_TRIGGER_RISING, "dsi_te_1-eint", NULL))
 			DISPERR("[EXTD-ESD]EINT IRQ LINE NOT AVAILABLE!!\n");

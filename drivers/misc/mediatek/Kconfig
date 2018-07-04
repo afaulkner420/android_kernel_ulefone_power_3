@@ -14,6 +14,12 @@ config MTK_PLATFORM
 config ARCH_MTK_PROJECT
 	string "MTK project name"
 
+config MTK_INTERNAL
+	bool "Enable MTK internal debug feature"
+	help
+	  Identify if codebase is built with MTK internal debug
+	  (Don't modify this feature option setting.)
+
 config FPGA_EARLY_PORTING
 	bool "MTK FPGA EARLY PORTING"
 	help
@@ -51,44 +57,6 @@ config MTK_ENG_BUILD
 	  features built-in. This option is supposed to specifiy engineering or
 	  user load for this build.
 	  If you are not sure about this, set n
-
-config MTK_DTBO_FEATURE
-	bool "Support Device Tree Overlay"
-	default y
-	select BUILD_ARM_DTB_OVERLAY_IMAGE if !ARM64
-	select BUILD_ARM64_DTB_OVERLAY_IMAGE if ARM64
-	help
-	  This allows a central DTB and overlays it dynamically.
-	  An overlay can add nodes to the tree and make changes to properties
-	  in the existing tree.
-	  If you are not sure about this, set y
-
-config MTK_LATE_MOUNT
-	bool "Support late mount for vendor partition"
-	default n
-	help
-	  This config disables early mount for vendor partition
-	  Early mount is requested in new android version
-	  OTA project will disable it to prevent exception
-	  If you are not sure about this, do not set it to y
-
-config TARGET_COPY_OUT_ODM
-	bool "Support ODM partition"
-	default y
-	help
-	  This config decide to enable odm partition
-	  ODM partition is defined in new android version
-	  OTA project will disable it to prevent exception
-	  If you are not sure about this, do not set it to n
-
-config EXTREME_LOW_RAM
-	bool "Support the device with memory smaller than 512M"
-	default n
-	help
-	  This config decide if device memory < 512M
-	  For 512M device, it has many low mem shrinking mechanism
-	  Normal project will disable it first
-	  If you are not sure about this, do not set it to y
 
 config MTK_LDVT
 	bool "LDVT"
@@ -155,7 +123,7 @@ config MTK_DCS
 
 config MTK_PASR
 	bool "Support Mediatek DRAM PASR mechanism"
-	depends on MTK_MEMORY_LOWPOWER && (MTK_EMI || MTK_EMI_MPU) && MTK_DRAMC
+	depends on MTK_MEMORY_LOWPOWER
 	default n
 	help
 	  Mediatek DRAM PASR mechanism.
@@ -264,21 +232,53 @@ endmenu  # MM
 menu "Sensors"
 
 config MTK_SENSOR_SUPPORT
-	bool "MTK_SENSOR_SUPPORT"
+	bool "MTK SENSOR SUPPORT"
 	help
 	  sensor config to sensor port sensor feature in project.
 
-config MTK_SENSORS_1_0
-	bool "MTK SENSORs driver 1.0 SUPPORT"
+config MTK_SENSOR_BIO
+	bool "MTK SENSOR driver BOOST IO(BIO) SUPPORT"
 	help
-	  This is an option for MTK SENSOR 1.0 driver.
+	  This is an option for MTK SENSOR BIO driver.
 	  we use BIO architecture instead of linux input
 	  architecture, BIO means boost io transfer data
 	  between kernel space and user space.
-	  And we support loadble drivers
 
-source "drivers/misc/mediatek/sensors-1.0/Kconfig"
-
+if !MTK_SENSOR_BIO
+source "drivers/misc/mediatek/accelerometer/Kconfig"
+#source "drivers/misc/mediatek/activity_sensor/Kconfig"
+source "drivers/misc/mediatek/alsps/Kconfig"
+source "drivers/misc/mediatek/rgbw/Kconfig"
+#source "drivers/misc/mediatek/answer_call_sensor/Kconfig"
+source "drivers/misc/mediatek/barometer/Kconfig"
+#source "drivers/misc/mediatek/face_down_sensor/Kconfig"
+#source "drivers/misc/mediatek/freefall_sensor/Kconfig"
+#source "drivers/misc/mediatek/gamerotationvector/Kconfig"
+#source "drivers/misc/mediatek/geomagneticrotationvector/Kconfig"
+#source "drivers/misc/mediatek/gesture/Kconfig"
+#source "drivers/misc/mediatek/glance_gesture_sensor/Kconfig"
+#source "drivers/misc/mediatek/gravity/Kconfig"
+source "drivers/misc/mediatek/gyroscope/Kconfig"
+#source "drivers/misc/mediatek/heart_rate_sensor/Kconfig"
+#source "drivers/misc/mediatek/humidity/Kconfig"
+source "drivers/misc/mediatek/hwmon/Kconfig"
+#source "drivers/misc/mediatek/linearacceleration/Kconfig"
+source "drivers/misc/mediatek/magnetometer/Kconfig"
+#source "drivers/misc/mediatek/pdr_sensor/Kconfig"
+#source "drivers/misc/mediatek/pedometer/Kconfig"
+#source "drivers/misc/mediatek/pick_up_sensor/Kconfig"
+#source "drivers/misc/mediatek/rotationvector/Kconfig"
+#source "drivers/misc/mediatek/sensorHub/Kconfig"
+#source "drivers/misc/mediatek/shake_sensor/Kconfig"
+#source "drivers/misc/mediatek/step_counter/Kconfig"
+#source "drivers/misc/mediatek/tilt_detector_sensor/Kconfig"
+#source "drivers/misc/mediatek/uncali_gyro/Kconfig"
+#source "drivers/misc/mediatek/uncali_mag/Kconfig"
+#source "drivers/misc/mediatek/wake_gesture_sensor/Kconfig"
+endif
+if MTK_SENSOR_BIO
+source "drivers/misc/mediatek/sensor_bio/Kconfig"
+endif
 endmenu  # Sensors
 
 
@@ -330,7 +330,6 @@ source "drivers/misc/mediatek/devapc/Kconfig"
 source "drivers/misc/mediatek/dfd/Kconfig"
 source "drivers/misc/mediatek/dramc/Kconfig"
 source "drivers/misc/mediatek/dxcc/Kconfig"
-source "drivers/misc/mediatek/emi/Kconfig"
 source "drivers/misc/mediatek/emi_bwl/Kconfig"
 source "drivers/misc/mediatek/emi_mbw/Kconfig"
 source "drivers/misc/mediatek/emi_mpu/Kconfig"
@@ -362,24 +361,10 @@ source "drivers/misc/mediatek/usb_c/Kconfig"
 source "drivers/misc/mediatek/vibrator/Kconfig"
 source "drivers/misc/mediatek/xhci/Kconfig"
 source "drivers/misc/mediatek/pcie_ut/Kconfig"
-#add XLLWHLSE-1 by xumin.yan 20180111 start
-source "drivers/misc/mediatek/tfa98xx/Kconfig"
-#add XLLWHLSE-1 by xumin.yan 20180111 end
+
 endmenu  # Peripheral
 
 menu "Performance, Power, and Thermal"
-
-config GATOR
-	tristate "Gator module for ARM's Streamline Performance Analyzer"
-	default m if (ARM || ARM64)
-	depends on PROFILING
-	depends on HIGH_RES_TIMERS
-	depends on LOCAL_TIMERS || !(ARM && SMP)
-	depends on PERF_EVENTS
-	depends on HW_PERF_EVENTS || !(ARM || ARM64)
-	select TRACING
-	help
-	  Gator module for ARM's Streamline Performance Analyzer
 
 config MTK_FPSGO
 	bool "Support FPSGO framework"
@@ -395,7 +380,7 @@ config MTK_FPSGO
 config MTK_FPSGO_FBT_GAME
 	bool "Support FPSGO Frame Budget Tuner for Game"
 	default n
-	depends on MTK_FPSGO
+	depends on MTK_FPSGO && 64BIT
 	help
 	  Support FPSGO Frame Budget Tuner for Gaming FPS performance
 	  and low power balance. FBT is designated to achieve on-time
@@ -419,14 +404,6 @@ config MTK_FPSGO_FSTB
 	help
 	  Support FPSGO FPS stabilizer for FPS performance and low
 	  power balance.
-	  If you are not sure about this, set n.
-
-config MTK_FPSGO_MULTI_STAGE_RESCUE
-	bool "Support FPSGO FBT multi-stage rescuer"
-	default n
-	depends on MTK_FPSGO
-	help
-	  Support FPSGO FBT milti-stage boost rescuer.
 	  If you are not sure about this, set n.
 
 endmenu  # PPT
@@ -473,7 +450,6 @@ config MTK_CACHE_FLUSH_RANGE_PARALLEL
 config MTK_SVP
 	bool "Support Mediatek Shareable Secure Video Playback technology"
 	depends on CMA
-	default y if (ARM || ARM64)
 	help
 	  Mediatek Shareable SVP technology.
 	  It tries to save memory by switching
@@ -490,10 +466,6 @@ config MTK_TUI_RAM_SIZE
 	depends on MTK_SVP
 	default 0
 
-config MTK_AB_OTA_UPDATER
-	bool "Support Android A/B system updates"
-	default n
-
 source "drivers/misc/mediatek/aee/Kconfig"
 source "drivers/misc/mediatek/atf_log/Kconfig"
 source "drivers/misc/mediatek/boot/Kconfig"
@@ -501,27 +473,20 @@ source "drivers/misc/mediatek/boot_reason/Kconfig"
 source "drivers/misc/mediatek/blocktag/Kconfig"
 source "drivers/misc/mediatek/chip/Kconfig"
 
-config MTK_CPU_STRESS
-	bool "MTK cpu stress pattern"
-	default n
-	help
-	  This is an option for MTK internal cpu_stress pattern.
-	  Run test patterns to stress CPU functionality.
-	  Internal project will enable it to stress CPU.
-	  If you are not sure about this, do not set it to y.
-
 #source "drivers/misc/mediatek/devinfo/Kconfig"
 #source "drivers/misc/mediatek/dynamic_boost/Kconfig"
 source "drivers/misc/mediatek/exm/Kconfig"
+
 source "drivers/misc/mediatek/gud/Kconfig"
 source "drivers/misc/mediatek/ice_debug/Kconfig"
 source "drivers/misc/mediatek/log_store/Kconfig"
 source "drivers/misc/mediatek/masp/Kconfig"
+
 source "drivers/misc/mediatek/mlog/Kconfig"
 source "drivers/misc/mediatek/mtee/Kconfig"
 source "drivers/misc/mediatek/mtprintk/Kconfig"
 source "drivers/misc/mediatek/mtprof/Kconfig"
-source "drivers/misc/mediatek/performance/Kconfig"
+#source "drivers/misc/mediatek/performance/Kconfig"
 source "drivers/misc/mediatek/ram_console/Kconfig"
 source "drivers/misc/mediatek/sched/Kconfig"
 source "drivers/misc/mediatek/selinux_warning/Kconfig"
@@ -537,24 +502,7 @@ source "drivers/misc/mediatek/iccs/Kconfig"
 source "drivers/misc/mediatek/fiq_cache/Kconfig"
 source "drivers/misc/mediatek/base/power/mcdi/Kconfig"
 source "drivers/misc/mediatek/geniezone/Kconfig"
-source "drivers/misc/mediatek/timer/Kconfig"
-#add OSODEV-1176 by haiping.bai 20171123 start
-source "drivers/misc/mediatek/hall_rlk/Kconfig"
-#add OSODEV-1176 by haiping.bai 20171123 end
-source "drivers/misc/mediatek/io_boost/Kconfig"
-source "drivers/misc/mediatek/es_reg/Kconfig"
-source "drivers/misc/mediatek/cmo/Kconfig"
-#add XLLWHLSE-35 by hao.wu2 20180227 start
-source "drivers/misc/mediatek/transsion_pen/Kconfig"
-#add XLLWHLSE-35 by hao.wu2 20180227 end
-
-config MTK_DM_VERITY_OFF
-	bool "Disable dm-verity"
-	default n
-
-config MTK_IRIS_SUPPORT
-	bool "Biometric authentication - iris secure camera"
-	default n
+source "drivers/misc/mediatek/tkcore/Kconfig"
 
 endmenu    # Misc
 

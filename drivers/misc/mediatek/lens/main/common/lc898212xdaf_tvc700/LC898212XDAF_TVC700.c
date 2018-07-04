@@ -118,11 +118,11 @@ static int s4AF_WriteReg_LC898212XD_TVC820(u8 *a_pSendData, u16 a_sizeSendData, 
 #define STMSV_SET		STMSV_ON
 #define STMLFF_SET		STMLFF_OFF
 
-struct stSmvPar {
+typedef struct STMVPAR {
 	unsigned short	UsSmvSiz;
 	unsigned char	UcSmvItv;
 	unsigned char	UcSmvEnb;
-};
+} stSmvPar;
 
 
 /* *********************************************************** */
@@ -395,7 +395,7 @@ static const struct INIDATAT Init_Table_TVC820[] = {
 #define DeviceAddr	0xE4 /* Device address of driver IC */
 
 
-static struct stSmvPar StSmvPar;
+static stSmvPar StSmvPar;
 
 
 static void RamWriteA(unsigned short addr, unsigned short data)
@@ -449,7 +449,7 @@ static void WaitTime(unsigned short msec)
 	usleep_range(msec * 1000, (msec + 1) * 1000);
 }
 
-static void StmvSet(struct stSmvPar StSetSmv)
+static void StmvSet(stSmvPar StSetSmv)
 {
 	unsigned char UcSetEnb;
 	unsigned char UcSetSwt;
@@ -583,7 +583,7 @@ static void s4AF_WriteReg(unsigned short addr, unsigned char data)
 
 static void LC898212XD_init(void)
 {
-	struct stSmvPar StSmvPar;
+	stSmvPar StSmvPar;
 	u8 val1 = 0, val2 = 0;
 
 	int Hall_Off = 0x80;	/* Please Read Offset from EEPROM or OTP */
@@ -623,9 +623,9 @@ static unsigned short AF_convert(int position)
 }
 
 
-static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
+static inline int getAFInfo(__user stAF_MotorInfo * pstMotorInfo)
 {
-	struct stAF_MotorInfo stMotorInfo;
+	stAF_MotorInfo stMotorInfo;
 
 	stMotorInfo.u4MacroPosition = g_u4AF_MACRO;
 	stMotorInfo.u4InfPosition = g_u4AF_INF;
@@ -639,7 +639,7 @@ static inline int getAFInfo(__user struct stAF_MotorInfo *pstMotorInfo)
 	else
 		stMotorInfo.bIsMotorOpen = 0;
 
-	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(struct stAF_MotorInfo)))
+	if (copy_to_user(pstMotorInfo, &stMotorInfo, sizeof(stAF_MotorInfo)))
 		LOG_INF("copy to user failed when getting motor information\n");
 
 	return 0;
@@ -675,7 +675,6 @@ static inline int moveAF(unsigned long a_u4Position)
 		spin_unlock(g_pAF_SpinLock);
 	} else {
 		LOG_INF("set I2C failed when moving the motor\n");
-		return -1;
 	}
 
 	return 0;
@@ -697,9 +696,9 @@ static inline int setAFMacro(unsigned long a_u4Position)
 	return 0;
 }
 
-static inline int getAFCalPos(__user struct stAF_MotorCalPos *pstMotorCalPos)
+static inline int getAFCalPos(__user stAF_MotorCalPos * pstMotorCalPos)
 {
-	struct stAF_MotorCalPos stMotorCalPos;
+	stAF_MotorCalPos stMotorCalPos;
 
 	stMotorCalPos.u4MacroPos = 0;
 	stMotorCalPos.u4InfPos = 0;
@@ -717,7 +716,7 @@ long LC898212XD_TVC700_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, u
 
 	switch (a_u4Command) {
 	case AFIOC_G_MOTORINFO:
-		i4RetValue = getAFInfo((__user struct stAF_MotorInfo *) (a_u4Param));
+		i4RetValue = getAFInfo((__user stAF_MotorInfo *) (a_u4Param));
 		break;
 
 	case AFIOC_T_MOVETO:
@@ -733,7 +732,7 @@ long LC898212XD_TVC700_Ioctl(struct file *a_pstFile, unsigned int a_u4Command, u
 		break;
 
 	case AFIOC_G_MOTORCALPOS:
-		i4RetValue = getAFCalPos((__user struct stAF_MotorCalPos *) (a_u4Param));
+		i4RetValue = getAFCalPos((__user stAF_MotorCalPos *) (a_u4Param));
 		break;
 	default:
 		LOG_INF("No CMD\n");

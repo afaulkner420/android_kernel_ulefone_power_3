@@ -122,23 +122,13 @@ static char *pwr_ctrl_str[PWR_MAX_COUNT] = {
 	[PWR_REG_MD_DDR_EN_0_MASK_B] = "reg_md_ddr_en_0_mask_b",
 	[PWR_REG_MD_DDR_EN_1_MASK_B] = "reg_md_ddr_en_1_mask_b",
 	[PWR_REG_CONN_DDR_EN_MASK_B] = "reg_conn_ddr_en_mask_b",
-#if defined(CONFIG_MACH_MT6775)
-	[PWR_REG_DISP0_APSRC_REQ_MASK_B] = "reg_disp0_apsrc_req_mask_b",
-	[PWR_REG_DISP1_APSRC_REQ_MASK_B] = "reg_disp1_apsrc_req_mask_b",
-#else
 	[PWR_REG_DISP0_REQ_MASK_B] = "reg_disp0_req_mask_b",
 	[PWR_REG_DISP1_REQ_MASK_B] = "reg_disp1_req_mask_b",
-#endif
 	[PWR_REG_DISP_OD_REQ_MASK_B] = "reg_disp_od_req_mask_b",
 	[PWR_REG_MFG_REQ_MASK_B] = "reg_mfg_req_mask_b",
 	[PWR_REG_VDEC0_REQ_MASK_B] = "reg_vdec0_req_mask_b",
-#if defined(CONFIG_MACH_MT6775)
-	[PWR_REG_GCE_APSRC_REQ_MASK_B] = "reg_gce_apsrc_req_mask_b",
-	[PWR_REG_GCE_DDR_EN_REQ_MASK_B] = "reg_gce_ddr_en_req_mask_b",
-#else
-	[PWR_REG_GCE_REQ_MASK_B] = "REG_GCE_REQ_MASK_B",
-	[PWR_REG_GCE_VRF18_REQ_MASK_B] = "REG_GCE_VRF18_REQ_MASK_B",
-#endif
+	[PWR_REG_GCE_REQ_MASK_B] = "reg_gce_req_mask_b",
+	[PWR_REG_GCE_VRF18_REQ_MASK_B] = "reg_gce_vrf18_req_mask_b",
 	[PWR_REG_LPDMA_REQ_MASK_B] = "reg_lpdma_req_mask_b",
 	[PWR_REG_CONN_SRCCLKENA_CKSEL2_MASK_B] = "reg_conn_srcclkena_cksel2_mask_b",
 	[PWR_REG_SSPM_APSRC_REQ_DDREN_MASK_B] = "reg_sspm_apsrc_req_ddren_mask_b",
@@ -161,10 +151,8 @@ static char *pwr_ctrl_str[PWR_MAX_COUNT] = {
 	[PWR_REG_DQSSOC_REQ_MASK_B] = "reg_dqssoc_req_mask_b",
 #if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	[PWR_REG_GCE_VRF18_REQ2_MASK_B] = "reg_gce_vrf18_req2_mask_b",
-#elif defined(CONFIG_MACH_MT6775)
-	[PWR_REG_GCE_BUSCLK_REQ_MASK_B] = "reg_gce_busclk_req_mask_b",
 #endif
-#if defined(CONFIG_MACH_MT6758) || defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6758)
 	[PWR_REG_UFS_SRCCLKENA_MASK_B] = "reg_ufs_srcclkena_mask_b",
 	[PWR_REG_UFS_VRF18_REQ_MASK_B] = "reg_ufs_vrf18_req_mask_b",
 #endif
@@ -200,16 +188,11 @@ static char *pwr_ctrl_str[PWR_MAX_COUNT] = {
 	[PWR_REG_CONN_MASK_B] = "reg_conn_mask_b",
 	[PWR_REG_CONN_APSRC_SEL] = "reg_conn_apsrc_sel",
 	[PWR_REG_MD_SRCCLKENA_0_VRF18_MASK_B] = "reg_md_srcclkena_0_vrf18_mask_b",
-#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758) || \
-	defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	[PWR_REG_CCIF4_MD_EVENT_MASK_B] = "reg_ccif4_md_event_mask_b",
 	[PWR_REG_CCIF4_AP_EVENT_MASK_B] = "reg_ccif4_ap_event_mask_b",
 	[PWR_REG_CCIF5_MD_EVENT_MASK_B] = "reg_ccif5_md_event_mask_b",
 	[PWR_REG_CCIF5_AP_EVENT_MASK_B] = "reg_ccif5_ap_event_mask_b",
-#endif
-#if defined(CONFIG_MACH_MT6775)
-	[PWR_REG_DISP0_DDREN_REQ_MASK_B] = "reg_disp0_ddren_req_mask_b",
-	[PWR_REG_DISP1_DDREN_REQ_MASK_B] = "reg_disp1_ddren_req_mask_b",
 #endif
 	[PWR_REG_WAKEUP_EVENT_MASK] = "reg_wakeup_event_mask",
 	[PWR_REG_EXT_WAKEUP_EVENT_MASK] = "reg_ext_wakeup_event_mask",
@@ -231,9 +214,7 @@ static char *pwr_ctrl_str[PWR_MAX_COUNT] = {
 	[PWR_MCU15_WFI_EN] = "mcu15_wfi_en",
 	[PWR_MCU16_WFI_EN] = "mcu16_wfi_en",
 	[PWR_MCU17_WFI_EN] = "mcu17_wfi_en",
-#if defined(CONFIG_MACH_MT6759) \
-	|| defined(CONFIG_MACH_MT6758) \
-	|| defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	[PWR_SPM_RSV_CON2] = "spm_rsv_con2",
 #endif
 };
@@ -290,8 +271,7 @@ static ssize_t sodi_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	return show_pwr_ctrl(__spm_sodi.pwrctrl, buf);
 }
-#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758) && \
-	!defined(CONFIG_MACH_MT6775)
+#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758)
 
 #ifdef SUP_MCSODI_FS
 static ssize_t mcsodi_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -305,12 +285,7 @@ static ssize_t mcsodi_ctrl_show(struct kobject *kobj, struct kobj_attribute *att
 #if !defined(CONFIG_FPGA_EARLY_PORTING)
 static ssize_t vcore_dvfs_ctrl_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-#if defined(CONFIG_MACH_MT6799) || defined(CONFIG_MACH_MT6759) || \
-	defined(CONFIG_MACH_MT6758)
 	return show_pwr_ctrl(__spm_vcorefs.pwrctrl, buf);
-#else
-	return 0;
-#endif
 }
 #endif
 
@@ -630,16 +605,6 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_conn_ddr_en_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_CONN_DDR_EN_MASK_B, val);
-#if defined(CONFIG_MACH_MT6775)
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP0_APSRC_REQ_MASK_B])) {
-		pwrctrl->reg_disp0_apsrc_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_DISP0_APSRC_REQ_MASK_B, val);
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP1_APSRC_REQ_MASK_B])) {
-		pwrctrl->reg_disp1_apsrc_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_DISP1_APSRC_REQ_MASK_B, val);
-#else
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP0_REQ_MASK_B])) {
 		pwrctrl->reg_disp0_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -648,7 +613,6 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_disp1_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_DISP1_REQ_MASK_B, val);
-#endif
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP_OD_REQ_MASK_B])) {
 		pwrctrl->reg_disp_od_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -661,16 +625,6 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_vdec0_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_VDEC0_REQ_MASK_B, val);
-#if defined(CONFIG_MACH_MT6775)
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_GCE_APSRC_REQ_MASK_B])) {
-		pwrctrl->reg_gce_apsrc_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_GCE_APSRC_REQ_MASK_B, val);
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_GCE_DDR_EN_REQ_MASK_B])) {
-		pwrctrl->reg_gce_ddr_en_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_GCE_DDR_EN_REQ_MASK_B, val);
-#else
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_GCE_REQ_MASK_B])) {
 		pwrctrl->reg_gce_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -679,7 +633,6 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_gce_vrf18_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_GCE_VRF18_REQ_MASK_B, val);
-#endif
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_LPDMA_REQ_MASK_B])) {
 		pwrctrl->reg_lpdma_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -762,22 +715,17 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 				id, PWR_REG_DQSSOC_REQ_MASK_B, val);
 #if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_GCE_VRF18_REQ2_MASK_B])) {
-		pwrctrl->reg_gce_vrf18_req2_mask_b = val;
+		pwrctrl->reg_gce_vrf18_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_GCE_VRF18_REQ2_MASK_B, val);
-#elif defined(CONFIG_MACH_MT6775)
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_GCE_BUSCLK_REQ_MASK_B])) {
-		pwrctrl->reg_gce_busclk_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_GCE_BUSCLK_REQ_MASK_B, val);
 #endif
-#if defined(CONFIG_MACH_MT6758) || defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6758)
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_UFS_SRCCLKENA_MASK_B])) {
-		pwrctrl->reg_ufs_srcclkena_mask_b = val;
+		pwrctrl->reg_gce_vrf18_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_UFS_SRCCLKENA_MASK_B, val);
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_UFS_VRF18_REQ_MASK_B])) {
-		pwrctrl->reg_ufs_vrf18_req_mask_b = val;
+		pwrctrl->reg_gce_vrf18_req_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_UFS_VRF18_REQ_MASK_B, val);
 #endif
@@ -909,9 +857,7 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_md_srcclkena_0_vrf18_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_MD_SRCCLKENA_0_VRF18_MASK_B, val);
-#if defined(CONFIG_MACH_MT6759) \
-	|| defined(CONFIG_MACH_MT6758) \
-	|| defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_CCIF4_MD_EVENT_MASK_B])) {
 		pwrctrl->reg_ccif4_md_event_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -928,16 +874,6 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->reg_ccif5_ap_event_mask_b = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_REG_CCIF5_AP_EVENT_MASK_B, val);
-#endif
-#if defined(CONFIG_MACH_MT6775)
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP0_DDREN_REQ_MASK_B])) {
-		pwrctrl->reg_disp0_ddren_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_DISP0_DDREN_REQ_MASK_B, val);
-	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_DISP1_DDREN_REQ_MASK_B])) {
-		pwrctrl->reg_disp1_ddren_req_mask_b = val;
-		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
-				id, PWR_REG_DISP1_DDREN_REQ_MASK_B, val);
 #endif
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_REG_WAKEUP_EVENT_MASK])) {
 		pwrctrl->reg_wakeup_event_mask = val;
@@ -1019,9 +955,7 @@ static ssize_t store_pwr_ctrl(int id, struct pwr_ctrl *pwrctrl, const char *buf,
 		pwrctrl->mcu17_wfi_en = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
 				id, PWR_MCU17_WFI_EN, val);
-#if defined(CONFIG_MACH_MT6759) \
-	|| defined(CONFIG_MACH_MT6758) \
-	|| defined(CONFIG_MACH_MT6775)
+#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
 	} else if (!strcmp(cmd, pwr_ctrl_str[PWR_SPM_RSV_CON2])) {
 		pwrctrl->spm_rsv_con2 = val;
 		mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
@@ -1057,8 +991,7 @@ static ssize_t sodi_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr
 {
 	return store_pwr_ctrl(SPM_PWR_CTRL_SODI, __spm_sodi.pwrctrl, buf, count);
 }
-#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758) && \
-	!defined(CONFIG_MACH_MT6775)
+#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758)
 
 #ifdef SUP_MCSODI_FS
 static ssize_t mcsodi_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
@@ -1074,11 +1007,9 @@ static ssize_t mcsodi_ctrl_store(struct kobject *kobj, struct kobj_attribute *at
 static ssize_t vcore_dvfs_ctrl_store(struct kobject *kobj, struct kobj_attribute *attr,
 				     const char *buf, size_t count)
 {
-#if defined(CONFIG_MACH_MT6759) || defined(CONFIG_MACH_MT6758)
-	return store_pwr_ctrl(SPM_PWR_CTRL_VCOREFS, __spm_vcorefs.pwrctrl, buf, count);
-#else
+
+	/* return store_pwr_ctrl(SPM_PWR_CTRL_VCOREFS, __spm_vcorefs.pwrctrl, buf, count); */
 	return 0;
-#endif
 }
 #endif
 
@@ -1100,8 +1031,7 @@ DEFINE_ATTR_RW(suspend_ctrl);
 DEFINE_ATTR_RW(dpidle_ctrl);
 DEFINE_ATTR_RW(sodi3_ctrl);
 DEFINE_ATTR_RW(sodi_ctrl);
-#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758) && \
-	!defined(CONFIG_MACH_MT6775)
+#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758)
 #ifdef SUP_MCSODI_FS
 DEFINE_ATTR_RW(mcsodi_ctrl);
 #endif
@@ -1117,8 +1047,7 @@ static struct attribute *spm_attrs[] = {
 	__ATTR_OF(dpidle_ctrl),
 	__ATTR_OF(sodi3_ctrl),
 	__ATTR_OF(sodi_ctrl),
-#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758) && \
-	!defined(CONFIG_MACH_MT6775)
+#if !defined(CONFIG_MACH_MT6759) && !defined(CONFIG_MACH_MT6758)
 #ifdef SUP_MCSODI_FS
 	__ATTR_OF(mcsodi_ctrl),
 #endif

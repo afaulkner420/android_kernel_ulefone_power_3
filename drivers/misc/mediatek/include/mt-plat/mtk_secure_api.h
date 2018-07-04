@@ -18,11 +18,7 @@
 #include <linux/kernel.h>
 #include <mt-plat/sync_write.h>
 
-#if defined(CONFIG_MTK_HW_FDE) || defined(CONFIG_HIE)
-#define _STORAGE_HW_CRYPTO
-#endif
-
-#if defined(CONFIG_ARM_PSCI) || defined(CONFIG_MTK_PSCI) || defined(_STORAGE_HW_CRYPTO)
+#if defined(CONFIG_ARM_PSCI) || defined(CONFIG_MTK_PSCI) || defined(CONFIG_MTK_HW_FDE)
 /* Error Code */
 #define SIP_SVC_E_SUCCESS               0
 #define SIP_SVC_E_NOT_SUPPORTED         -1
@@ -46,7 +42,6 @@
 #define MTK_SIP_KERNEL_EMIMPU_WRITE         (0x82000207 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_EMIMPU_READ          (0x82000208 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_EMIMPU_SET           (0x82000209 | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_EMIMPU_CLEAR         (0x8200020A | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_SCP_RESET            (0x8200020B | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_DISABLE_DFD	    (0x8200020F | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_ICACHE_DUMP          (0x82000210 | MTK_SIP_SMC_AARCH_BIT)
@@ -58,7 +53,7 @@
 /*CPU operations*/
 #define MTK_SIP_POWER_DOWN_CLUSTER	(0x82000215 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_POWER_UP_CLUSTER	(0x82000216 | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_MCSI_NS_ACCESS		(0x82000217 | MTK_SIP_SMC_AARCH_BIT)
+#define MTK_SIP_KERENL_MCSI_NS_ACCESS		(0x82000217 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_POWER_DOWN_CORE		(0x82000218 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_POWER_UP_CORE		(0x82000219 | MTK_SIP_SMC_AARCH_BIT)
 /* SPM related SMC call */
@@ -109,25 +104,14 @@
 
 #define MTK_SIP_KERNEL_ICCS_STATE		(0x82000236 | MTK_SIP_SMC_AARCH_BIT)
 
-#define MTK_SIP_KERNEL_CACHE_FLUSH_BY_SF	(0x82000237 | MTK_SIP_SMC_AARCH_BIT)
-
 /* HW FDE related SMC call */
 #define MTK_SIP_KERNEL_HW_FDE_UFS_CTL       (0x82000240 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_HW_FDE_AES_INIT		(0x82000241 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_HW_FDE_KEY			(0x82000242 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_HW_FDE_MSDC_CTL       (0x82000243 | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_PMU_EVA          (0x82000256 | MTK_SIP_SMC_AARCH_BIT)
 
 /* UFS generic SMC call */
 #define MTK_SIP_KERNEL_UFS_CTL				(0x82000260 | MTK_SIP_SMC_AARCH_BIT)
-
-/* mcdi related SMC call */
-#define MTK_SIP_KERNEL_MCDI_ARGS		(0x82000263 | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_MCUPM_FW_LOAD_STATUS	(0x82000264 | MTK_SIP_SMC_AARCH_BIT)
-
-/* HIE related SMC call */
-#define MTK_SIP_KERNEL_CRYPTO_HIE_CFG_REQUEST  (0x8200024E | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_CRYPTO_HIE_INIT         (0x8200024F | MTK_SIP_SMC_AARCH_BIT)
 
 #define MTK_SIP_KERNEL_DRAM_DCS_CHB		(0x82000289 | MTK_SIP_SMC_AARCH_BIT)
 #define MTK_SIP_KERNEL_MSG                  (0x820002ff | MTK_SIP_SMC_AARCH_BIT)
@@ -137,31 +121,44 @@
 
 #define TBASE_SMC_AEE_DUMP                  (0xB200AEED)
 
-/* i2c secure RG related call */
-#define MTK_SIP_KERNEL_I2C_SEC_WRITE		(0x820002A0 | MTK_SIP_SMC_AARCH_BIT)
+#ifdef CONFIG_ARM64
+/* SIP SMC Call 64 */
+static noinline int mt_secure_call(u64 function_id,
+	u64 arg0, u64 arg1, u64 arg2)
+{
+	register u64 reg0 __asm__("x0") = function_id;
+	register u64 reg1 __asm__("x1") = arg0;
+	register u64 reg2 __asm__("x2") = arg1;
+	register u64 reg3 __asm__("x3") = arg2;
+	int ret = 0;
 
-/* AMMS related SMC call */
-#define MTK_SIP_KERNEL_AMMS_GET_FREE_ADDR (0x82000271 | MTK_SIP_SMC_AARCH_BIT)
-#define MTK_SIP_KERNEL_AMMS_GET_FREE_LENGTH (0x82000272 | MTK_SIP_SMC_AARCH_BIT)
+	asm volatile ("smc    #0\n" : "+r" (reg0) :
+		"r"(reg1), "r"(reg2), "r"(reg3));
 
-/*I2C related SMC call */
+	ret = (int)reg0;
+	return ret;
+}
 
-extern size_t mt_secure_call(size_t function_id,
-	size_t arg0, size_t arg1, size_t arg2);
-extern size_t mt_secure_call_all(size_t function_id,
-	size_t arg0, size_t arg1, size_t arg2,
-	size_t arg3, size_t *r1, size_t *r2, size_t *r3);
+#else
+#include <asm/opcodes-sec.h>
+#include <asm/opcodes-virt.h>
+/* SIP SMC Call 32 */
+static noinline int mt_secure_call(u32 function_id,
+	u32 arg0, u32 arg1, u32 arg2)
+{
+	register u32 reg0 __asm__("r0") = function_id;
+	register u32 reg1 __asm__("r1") = arg0;
+	register u32 reg2 __asm__("r2") = arg1;
+	register u32 reg3 __asm__("r3") = arg2;
+	int ret = 0;
 
-#define mt_secure_call_ret0(_fun_id, _arg0, _arg1, _arg2, _arg3) \
-	mt_secure_call_all(_fun_id, _arg0, _arg1, _arg2, _arg3, 0, 0, 0)
-#define mt_secure_call_ret1(_fun_id, _arg0, _arg1, _arg2, _arg3) \
-	mt_secure_call_all(_fun_id, _arg0, _arg1, _arg2, _arg3, 0, 0, 0)
-#define mt_secure_call_ret2(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1) \
-	mt_secure_call_all(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1, 0, 0)
-#define mt_secure_call_ret3(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1, _r2) \
-	mt_secure_call_all(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1, _r2, 0)
-#define mt_secure_call_ret4(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1, _r2, _r3) \
-	mt_secure_call_all(_fun_id, _arg0, _arg1, _arg2, _arg3, _r1, _r2, _r3)
+	asm volatile (__SMC(0) : "+r"(reg0),
+		"+r"(reg1), "+r"(reg2), "+r"(reg3));
+
+	ret = reg0;
+	return ret;
+}
+#endif
 #define tbase_trigger_aee_dump() \
 	mt_secure_call(TBASE_SMC_AEE_DUMP, 0, 0, 0)
 #endif
@@ -180,14 +177,8 @@ mt_secure_call(MTK_SIP_KERNEL_EMIMPU_READ, offset, 0, 0)
 mt_secure_call(MTK_SIP_KERNEL_EMIMPU_SET, start, end, region_permission)
 #else
 #define emi_mpu_smc_set(start, end, apc8, apc0) \
-mt_secure_call_all(MTK_SIP_KERNEL_EMIMPU_SET, start, end, apc8, apc0, 0, 0, 0)
+mt_mpu_secure_call(MTK_SIP_KERNEL_EMIMPU_SET, start, end, apc8, apc0)
 #endif
-
-#define emi_mpu_smc_clear(region) \
-mt_secure_call(MTK_SIP_KERNEL_EMIMPU_CLEAR, region, 0, 0)
-
-#define emi_mpu_smc_protect(start, end, apc) \
-mt_secure_call(MTK_SIP_KERNEL_EMIMPU_SET, start, end, apc)
 
 #define lpdma_smc_write(offset, val) \
 mt_secure_call(MTK_SIP_KERNEL_LPDMA_WRITE, offset, val, 0)

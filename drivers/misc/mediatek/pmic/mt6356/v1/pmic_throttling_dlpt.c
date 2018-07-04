@@ -179,14 +179,14 @@ void exec_low_battery_callback(LOW_BATTERY_LEVEL low_battery_level)
 	}
 }
 
-static void lbat_min_en_setting(int en_val)
+void lbat_min_en_setting(int en_val)
 {
 	pmic_set_register_value(PMIC_AUXADC_LBAT_EN_MIN, en_val);
 	pmic_set_register_value(PMIC_AUXADC_LBAT_IRQ_EN_MIN, en_val);
 	pmic_enable_interrupt(INT_BAT_L, en_val, "pmic_throttling_dlpt");
 }
 
-static void lbat_max_en_setting(int en_val)
+void lbat_max_en_setting(int en_val)
 {
 	pmic_set_register_value(PMIC_AUXADC_LBAT_EN_MAX, en_val);
 	pmic_set_register_value(PMIC_AUXADC_LBAT_IRQ_EN_MAX, en_val);
@@ -434,7 +434,7 @@ void exec_battery_percent_callback(BATTERY_PERCENT_LEVEL battery_percent_level)
 #endif
 
 	if (g_battery_percent_stop == 1) {
-		pr_notice("[exec_battery_percent_callback] g_battery_percent_stop=%d\n",
+		pr_err("[exec_battery_percent_callback] g_battery_percent_stop=%d\n",
 			g_battery_percent_stop);
 	} else {
 #ifdef DISABLE_DLPT_FEATURE
@@ -490,13 +490,7 @@ int bat_percent_notify_handler(void *unused)
 #endif
 			g_battery_percent_level = 1;
 			exec_battery_percent_callback(BATTERY_PERCENT_LEVEL_1);
-		//modify XLLSHLSS-1778 flash in charge at low battery by ming.liao 20180226 start
-		#if defined (TRAN_X604) || defined (TRAN_X605)
-		} else if (((g_battery_percent_level == 1) && (bat_per_val > BAT_PERCENT_LINIT))||((upmu_get_rgs_chrdet()== 1) && (g_battery_percent_level == 1 ))) {
-		#else
 		} else if ((g_battery_percent_level == 1) && (bat_per_val > BAT_PERCENT_LINIT)) {
-		#endif
-		//modify XLLSHLSS-1778 flash in charge at low battery by ming.liao 20180226 end
 			g_battery_percent_level = 0;
 			exec_battery_percent_callback(BATTERY_PERCENT_LEVEL_0);
 		} else {
@@ -884,7 +878,7 @@ void register_dlpt_notify(void (*dlpt_callback) (unsigned int), DLPT_PRIO prio_v
 	pr_info("[register_dlpt_notify] prio_val=%d\n", prio_val);
 
 	if ((g_dlpt_stop == 0) && (g_dlpt_val != 0)) {
-		pr_notice("[register_dlpt_notify] dlpt happen\n");
+		pr_err("[register_dlpt_notify] dlpt happen\n");
 		if (dlpt_callback != NULL)
 			dlpt_callback(g_dlpt_val);
 	}
@@ -897,7 +891,7 @@ void exec_dlpt_callback(unsigned int dlpt_val)
 	g_dlpt_val = dlpt_val;
 
 	if (g_dlpt_stop == 1) {
-		pr_notice("[exec_dlpt_callback] g_dlpt_stop=%d\n", g_dlpt_stop);
+		pr_err("[exec_dlpt_callback] g_dlpt_stop=%d\n", g_dlpt_stop);
 	} else {
 		for (i = 0; i < DLPT_NUM; i++) {
 			if (dlpt_cb_tb[i].dlpt_cb != NULL) {
@@ -2250,25 +2244,25 @@ int pmic_throttling_dlpt_init(void)
 #ifdef LOW_BATTERY_PROTECT
 	low_battery_protect_init();
 #else
-	pr_notice("[PMIC] no define LOW_BATTERY_PROTECT\n");
+	pr_err("[PMIC] no define LOW_BATTERY_PROTECT\n");
 #endif
 
 #ifdef BATTERY_OC_PROTECT
 	battery_oc_protect_init();
 #else
-	pr_notice("[PMIC] no define BATTERY_OC_PROTECT\n");
+	pr_err("[PMIC] no define BATTERY_OC_PROTECT\n");
 #endif
 
 #ifdef BATTERY_PERCENT_PROTECT
 	bat_percent_notify_init();
 #else
-	pr_notice("[PMIC] no define BATTERY_PERCENT_PROTECT\n");
+	pr_err("[PMIC] no define BATTERY_PERCENT_PROTECT\n");
 #endif
 
 #ifdef DLPT_FEATURE_SUPPORT
 	dlpt_notify_init();
 #else
-	pr_notice("[PMIC] no define DLPT_FEATURE_SUPPORT\n");
+	pr_err("[PMIC] no define DLPT_FEATURE_SUPPORT\n");
 #endif
 
 #if PMIC_THROTTLING_DLPT_UT /* UT TBD */
@@ -2299,7 +2293,7 @@ static int __init pmic_throttling_dlpt_rac_init(void)
 	if (pimix == NULL) {
 		pr_err(" pimix == NULL len = %d\n", len);
 	} else {
-		pr_notice(" pimix = %d\n", *pimix);
+		PMICLOG(" pimix = %d\n", *pimix);
 		ptim_rac_val_avg = *pimix;
 	}
 

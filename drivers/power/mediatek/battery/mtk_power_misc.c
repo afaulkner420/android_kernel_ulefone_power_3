@@ -132,13 +132,11 @@ int set_shutdown_cond(int shutdown_cond)
 	int now_current;
 	int now_is_charging = 0;
 	int now_is_kpoc;
-	bool curr_sign = 0;
 	int vbat;
 
 	now_current = battery_get_bat_current();
 	now_is_kpoc = battery_get_is_kpoc();
 	vbat = pmic_get_battery_voltage();
-	curr_sign = battery_get_bat_current_sign();
 
 	if (mt_get_charger_type() != CHARGER_UNKNOWN)
 		now_is_charging = 1;
@@ -194,14 +192,14 @@ int set_shutdown_cond(int shutdown_cond)
 
 			mutex_lock(&sdc.lock);
 			if (now_is_kpoc != 1) {
-				if (curr_sign != 1) {
+				if (now_is_charging != 1) {
 					sdc.shutdown_status.is_under_shutdown_voltage = true;
 					for (i = 0; i < AVGVBAT_ARRAY_SIZE; i++)
 						sdc.batdata[i] = vbat;
 					sdc.batidx = 0;
 				}
 			}
-			bm_err("LOW_BAT_VOLT:%d, curr_sign:%d\n", vbat, curr_sign);
+			bm_err("LOW_BAT_VOLT:%d", vbat);
 			mutex_unlock(&sdc.lock);
 		}
 		break;
@@ -388,36 +386,15 @@ int mtk_power_misc_psy_event(struct notifier_block *nb, unsigned long event, voi
 	union power_supply_propval val;
 	int ret;
 	int tmp = 0;
-	//add XLLSHLSS-5 by zhipeng.pan 20180104 start
-	unsigned int chr_vol;
-	//add XLLSHLSS-5 by zhipeng.pan 20180104 end
 
 	if (strcmp(psy->desc->name, "battery") == 0) {
 		ret = psy->desc->get_property(psy, POWER_SUPPLY_PROP_batt_temp, &val);
 		if (!ret) {
 			tmp = val.intval / 10;
-			//modify XLLSHLSS-5 by zhipeng.pan 20180129 start
-			bm_err("line:%d [%s] tmp = %d \n", __LINE__, __FUNCTION__, tmp);
-			if(tmp == -127){
-				return 0;
-			}
-			if ((tmp >= BATTERY_SHUTDOWN_TEMPERATURE) || (tmp <= BATTERY_SHUTDOWN_TEMPERATURE2)) {
-			#if 0
 			if (tmp >= BATTERY_SHUTDOWN_TEMPERATURE) {
 				bm_err("battery temperature >= %d , shutdown", tmp);
 				kernel_power_off();
-			#else
-				chr_vol = battery_get_vbus();
-				if((chr_vol > 4400)){
-				    bm_err("battery temperature >= %d , restart , chr_vol = (%d)", tmp, chr_vol);
-				    kernel_restart("battery service reboot system");
-				}else{
-				    bm_err("battery temperature >= %d , shutdown , chr_vol = (%d)", tmp, chr_vol);
-				    kernel_power_off();
-				}
-			#endif
 			}
-			//modify XLLSHLSS-5 by zhipeng.pan 20180129 end
 		}
 	}
 

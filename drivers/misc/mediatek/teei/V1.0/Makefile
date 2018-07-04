@@ -16,10 +16,10 @@ ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
 subdir-ccflags-y  += -DCONFIG_MICROTRUST_DEBUG
 endif
 subdir-ccflags-y  += -I$(srctree)/drivers/misc/mediatek/teei/V1.0/common/include
-#modify XLLSHLSS-97 by haiping.bai 20171222 start
-subdir-ccflags-y  += -DFP_TA_COMPATIBLE_SUPPORT
-#modify XLLSHLSS-97 by haiping.bai 20171222 end
+
 obj-$(CONFIG_MICROTRUST_TZ_DRIVER) += tz_driver/
 obj-$(CONFIG_MICROTRUST_VFS_DRIVER) += tz_vfs/
 obj-$(CONFIG_MICROTRUST_FP_DRIVER) += teei_fp/
 obj-$(CONFIG_MICROTRUST_KEYMASTER_DRIVER) += ut_keymaster/
+obj-$(CONFIG_MICROTRUST_TUI_DRIVER) += ut_tui/
+

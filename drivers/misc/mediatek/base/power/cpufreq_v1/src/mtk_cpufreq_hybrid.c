@@ -74,11 +74,7 @@ static void __iomem *csram_base;
 #define OFFS_LOG_S		0x03d0
 #define OFFS_LOG_E		(OFFS_LOG_S + DVFS_LOG_NUM * ENTRY_EACH_LOG * 4)
 
-#ifdef REPORT_IDLE_FREQ
-#define MAX_LOG_FETCH 80
-#else
 #define MAX_LOG_FETCH 40
-#endif
 /* log_box_parsed[MAX_LOG_FETCH] is also used to save last log entry */
 static struct cpu_dvfs_log_box log_box_parsed[1 + MAX_LOG_FETCH];
 
@@ -149,11 +145,7 @@ int Ripi_cpu_dvfs_thread(void *data)
 
 		bk_log_offs = pwdata[0];
 		num_log = 0;
-#ifdef REPORT_IDLE_FREQ
-		while ((bk_log_offs != pwdata[1]) && (num_log < MAX_LOG_FETCH)) {
-#else
 		while (bk_log_offs != pwdata[1]) {
-#endif
 			buf[0] = csram_read(bk_log_offs);
 			bk_log_offs += 4;
 			if (bk_log_offs >= OFFS_LOG_E)
@@ -720,13 +712,8 @@ int cpuhvfs_set_iccs_freq(enum mt_cpu_dvfs_id id, unsigned int freq)
 
 	p = id_to_cpu_dvfs(id);
 
-#ifdef DVFS_CLUSTER_REMAPPING
-	cluster = (id == MT_CPU_DVFS_LL) ? DVFS_CLUSTER_LL :
-		(id == MT_CPU_DVFS_L) ? DVFS_CLUSTER_L : DVFS_CLUSTER_B;
-#else
 	cluster = (id == MT_CPU_DVFS_LL) ? 0 :
 		(id == MT_CPU_DVFS_L) ? 1 : 2;
-#endif
 
 	cpufreq_ver("ICCS: cluster = %d, freq = %d\n", cluster, freq);
 
@@ -749,13 +736,8 @@ int cpuhvfs_set_cluster_load_freq(enum mt_cpu_dvfs_id id, unsigned int freq)
 
 	p = id_to_cpu_dvfs(id);
 
-#ifdef DVFS_CLUSTER_REMAPPING
-	cluster = (id == MT_CPU_DVFS_LL) ? DVFS_CLUSTER_LL :
-		(id == MT_CPU_DVFS_L) ? DVFS_CLUSTER_L : DVFS_CLUSTER_B;
-#else
 	cluster = (id == MT_CPU_DVFS_LL) ? 0 :
 		(id == MT_CPU_DVFS_L) ? 1 : 2;
-#endif
 
 	cpufreq_ver("sched: cluster = %d, freq = %d\n", cluster, freq);
 
@@ -773,11 +755,6 @@ int cpuhvfs_set_cluster_load_freq(enum mt_cpu_dvfs_id id, unsigned int freq)
 	cpufreq_ver("sched: buf = 0x%x\n", buf);
 
 	trace_sched_update(cluster, csram_read(OFFS_SCHED_S + (cluster * 4)));
-
-#if defined(CONFIG_MACH_MT6763) && defined(CONFIG_MTK_CM_MGR)
-	if (cluster < 2)
-		check_cm_mgr_status(freq_idx, cluster);
-#endif
 
 	return 0;
 }

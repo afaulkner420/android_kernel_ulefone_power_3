@@ -130,7 +130,6 @@ static int polling_trip_temp1 = 40000;
 static int polling_trip_temp2 = 20000;
 static int polling_factor1 = 5000;
 static int polling_factor2 = 10000;
-static int bat_temp = 21234;
 
 /* static int battery_write_flag=0; */
 
@@ -239,8 +238,6 @@ static int mtktsbattery_get_hw_temp(void)
 	/* cat /sys/class/power_supply/battery/batt_temp */
 	t_ret = get_hw_battery_temp();
 	t_ret = t_ret * 100;
-	if (t_ret > 50000)
-		pr_debug("[Thermal/TZ/BATTERY] %s bat_temp:%d\n", __func__, t_ret);
 
 	mutex_unlock(&Battery_lock);
 
@@ -256,7 +253,6 @@ static int mtktsbattery_get_temp(struct thermal_zone_device *thermal, int *t)
 {
 
 	*t = mtktsbattery_get_hw_temp();
-	bat_temp = *t;
 
 	if ((int)*t >= polling_trip_temp1)
 		thermal->polling_delay = interval * 1000;
@@ -450,8 +446,7 @@ static int tsbat_sysrst_set_cur_state(struct thermal_cooling_device *cdev, unsig
 
 	cl_dev_sysrst_state = state;
 	if (cl_dev_sysrst_state == 1) {
-
-		pr_debug("Power/battery_Thermal: reset, reset, reset!!! bat_temp=%d", bat_temp);
+		pr_debug("Power/battery_Thermal: reset, reset, reset!!!");
 		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
 		pr_debug("*****************************************");
 		pr_debug("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");

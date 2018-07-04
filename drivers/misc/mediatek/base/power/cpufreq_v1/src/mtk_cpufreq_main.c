@@ -55,7 +55,7 @@ struct pll_ctrl_t *id_to_pll_ctrl(enum mt_cpu_dvfs_pll_id id)
 static unsigned int _calc_new_opp_idx(struct mt_cpu_dvfs *p, int new_opp_idx);
 static unsigned int _calc_new_opp_idx_no_base(struct mt_cpu_dvfs *p, int new_opp_idx);
 
-int _search_available_freq_idx_under_v(struct mt_cpu_dvfs *p, unsigned int volt)
+static int _search_available_freq_idx_under_v(struct mt_cpu_dvfs *p, unsigned int volt)
 {
 	int i;
 
@@ -109,17 +109,6 @@ int get_cur_volt_wrapper(struct mt_cpu_dvfs *p, struct buck_ctrl_t *volt_p)
 }
 
 #ifdef CONFIG_HYBRID_CPU_DVFS
-#ifdef DVFS_CLUSTER_REMAPPING
-static void _set_met_tag_oneshot(int id, unsigned int target_khz)
-{
-	if (id == DVFS_CLUSTER_LL)
-		met_tag_oneshot(0, "LL", target_khz);
-	else if (id == DVFS_CLUSTER_L)
-		met_tag_oneshot(0, "L", target_khz);
-	else
-		met_tag_oneshot(0, "B", target_khz);
-}
-#endif
 static int _cpufreq_set_locked_secure(struct cpufreq_policy *policy, struct mt_cpu_dvfs *p,
 	unsigned int target_khz, int log)
 {
@@ -134,21 +123,12 @@ static int _cpufreq_set_locked_secure(struct cpufreq_policy *policy, struct mt_c
 
 	cpuhvfs_set_dvfs(arch_get_cluster_id(p->cpu_id), target_khz);
 
-#ifdef DVFS_CLUSTER_REMAPPING
-	if (policy->cpu < 4)
-		_set_met_tag_oneshot(0, target_khz);
-	else if ((policy->cpu >= 4) && (policy->cpu < 8))
-		_set_met_tag_oneshot(1, target_khz);
-	else if (policy->cpu >= 8)
-		_set_met_tag_oneshot(2, target_khz);
-#else
 	if (policy->cpu < 4)
 		met_tag_oneshot(0, "LL", target_khz);
 	else if (policy->cpu >= 4)
 		met_tag_oneshot(0, "L", target_khz);
 	else if (policy->cpu >= 8)
 		met_tag_oneshot(0, "B", target_khz);
-#endif
 
 	return 0;
 
@@ -330,8 +310,6 @@ static inline void assert_volt_valid(int line, unsigned int volt, unsigned int c
 
 int set_cur_volt_wrapper(struct mt_cpu_dvfs *p, unsigned int volt)
 {				/* volt: vproc (mv*100) */
-	unsigned int old_vproc;
-	unsigned int old_vsram;
 	unsigned int cur_vsram;
 	unsigned int cur_vproc;
 	unsigned int delay_us;
@@ -356,37 +334,6 @@ int set_cur_volt_wrapper(struct mt_cpu_dvfs *p, unsigned int volt)
 
 	assert_volt_valid(__LINE__, volt, cur_vsram, cur_vproc, cur_vsram, cur_vproc);
 
-#ifdef SUPPORT_VOLT_HW_AUTO_TRACK
-	old_vproc = cur_vproc;
-	old_vsram = cur_vsram;
-
-	volt = MIN(volt, MAX_VPROC_VOLT);
-
-	if (volt > old_vproc)
-		notify_cpu_volt_sampler(p->id, volt, VOLT_UP, VOLT_PRECHANGE);
-	else
-		notify_cpu_volt_sampler(p->id, volt, VOLT_DOWN, VOLT_PRECHANGE);
-
-	vproc_p->buck_ops->set_cur_volt(vproc_p, volt);
-
-	delay_us =
-		_calc_pmic_settle_time(p, old_vproc, old_vsram, volt, cur_vsram);
-	udelay(delay_us);
-
-	cpufreq_ver
-		("@%s(): UP --> old_vsram=%d, cur_vsram=%d, old_vproc=%d, target_vproc=%d, delay=%d\n",
-		__func__, old_vsram, cur_vsram, old_vproc, volt, delay_us);
-
-	cur_vsram = get_cur_volt_wrapper(p, vsram_p);
-	cur_vproc = get_cur_volt_wrapper(p, vproc_p);
-
-	assert_volt_valid(__LINE__, volt, cur_vsram, cur_vproc, old_vsram, old_vproc);
-
-	if (volt > old_vproc)
-		notify_cpu_volt_sampler(p->id, volt, VOLT_UP, VOLT_POSTCHANGE);
-	else
-		notify_cpu_volt_sampler(p->id, volt, VOLT_DOWN, VOLT_POSTCHANGE);
-#else
 	/* UP */
 	if (volt > cur_vproc) {
 		unsigned int target_vsram = volt + NORMAL_DIFF_VRSAM_VPROC;
@@ -394,8 +341,8 @@ int set_cur_volt_wrapper(struct mt_cpu_dvfs *p, unsigned int volt)
 
 		notify_cpu_volt_sampler(p->id, volt, VOLT_UP, VOLT_PRECHANGE);
 		do {
-			old_vproc = cur_vproc;
-			old_vsram = cur_vsram;
+			unsigned int old_vproc = cur_vproc;
+			unsigned int old_vsram = cur_vsram;
 
 			next_vsram = MIN((MAX_DIFF_VSRAM_VPROC - 2500) + cur_vproc, target_vsram);
 
@@ -440,8 +387,8 @@ int set_cur_volt_wrapper(struct mt_cpu_dvfs *p, unsigned int volt)
 
 		notify_cpu_volt_sampler(p->id, volt, VOLT_DOWN, VOLT_PRECHANGE);
 		do {
-			old_vproc = cur_vproc;
-			old_vsram = cur_vsram;
+			unsigned int old_vproc = cur_vproc;
+			unsigned int old_vsram = cur_vsram;
 
 			next_vproc = MAX(next_vsram - (MAX_DIFF_VSRAM_VPROC - 2500), volt);
 
@@ -473,7 +420,6 @@ int set_cur_volt_wrapper(struct mt_cpu_dvfs *p, unsigned int volt)
 		} while (cur_vproc > volt);
 		notify_cpu_volt_sampler(p->id, volt, VOLT_DOWN, VOLT_POSTCHANGE);
 	}
-#endif
 
 	vsram_p->cur_volt = cur_vsram;
 	vproc_p->cur_volt = cur_vproc;
@@ -769,11 +715,7 @@ void _mt_cpufreq_dvfs_request_wrapper(struct mt_cpu_dvfs *p, int new_opp_idx,
 	unsigned int **volt_tbl;
 	struct buck_ctrl_t *vproc_p;
 
-#ifdef DRCC_SUPPORT
-	if (action != MT_CPU_DVFS_EEM_UPDATE)
-#endif
 	cpufreq_lock(flags);
-
 	/* action switch */
 	switch (action) {
 	case MT_CPU_DVFS_NORMAL:
@@ -836,10 +778,6 @@ void _mt_cpufreq_dvfs_request_wrapper(struct mt_cpu_dvfs *p, int new_opp_idx,
 	default:
 		break;
 	};
-
-#ifdef DRCC_SUPPORT
-	if (action != MT_CPU_DVFS_EEM_UPDATE)
-#endif
 	cpufreq_unlock(flags);
 }
 
@@ -1475,10 +1413,6 @@ static int __init _mt_cpufreq_tbl_init(void)
 	int i, j;
 	struct opp_tbl_info *opp_tbl_info;
 	struct cpufreq_frequency_table *table;
-
-#ifdef CPU_DVFS_NOT_READY
-	return 0;
-#endif
 
 	/* Prepare OPP table for EEM */
 	for_each_cpu_dvfs(j, p) {

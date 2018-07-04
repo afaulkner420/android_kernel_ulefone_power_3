@@ -16,7 +16,7 @@
 
 #include "kd_camera_feature.h"
 #include "kd_imgsensor_define.h"
-//#define MIPI_SWITCH  //del by ming.liao@reallytek.com for X604 camera
+#define MIPI_SWITCH
 
 /******************************************************************************
  * Debug configuration

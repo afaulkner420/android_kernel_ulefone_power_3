@@ -42,7 +42,6 @@
 #include <asm/memblock.h>
 #include <asm/mmu_context.h>
 #include <mt-plat/mtk_memcfg.h>
-#include <mt-plat/mtk_meminfo.h>
 
 #include "mm.h"
 
@@ -78,7 +77,7 @@ static phys_addr_t __init early_pgtable_alloc(void)
 	phys_addr_t phys;
 	void *ptr;
 
-	phys = memblock_alloc_base(PAGE_SIZE, PAGE_SIZE, arm64_dma_phys_limit);
+	phys = memblock_alloc(PAGE_SIZE, PAGE_SIZE);
 	BUG_ON(!phys);
 
 	/*
@@ -250,10 +249,7 @@ static inline bool use_1G_block(unsigned long addr, unsigned long next,
 	 * and SVP to prevent illegal fetch of EMI MPU Violation.
 	 * Return false to make all memory become pmd mapping.
 	 */
-	if (memory_ssvp_inited()) {
-		pr_info("%s, memory-ssvp inited\n", __func__);
-		return false;
-	}
+	return false;
 #endif
 
 	return true;

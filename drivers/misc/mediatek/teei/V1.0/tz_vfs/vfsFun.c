@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -30,12 +30,10 @@
 #include "teei_id.h"
 #include "fp_vendor.h"
 #include "VFS.h"
-#include <linux/uaccess.h>
 #include "../tz_driver/include/backward_driver.h"
 #include "../tz_driver/include/teei_client_main.h"
 #include <imsg_log.h>
 
-#define SEMA_INIT_ZERO	0
 #define VFS_SIZE	0x80000
 #define MEM_CLEAR	0x1
 #define VFS_MAJOR	253
@@ -48,16 +46,10 @@
 #define SOTER_TUI_LEAVE				    _IOWR(TEEI_CONFIG_IOC_MAGIC, 0x71, int)
 int enter_tui_flag;
 #else
-int enter_tui_flag;
+int enter_tui_flag = 1;
 #endif
 
-//modify XLLSHLSS-97 by haiping.bai 20171222 start
-#ifdef FP_TA_COMPATIBLE_SUPPORT
-#define GET_FP_VENDOR_NAME_CMD				  _IOWR(TEEI_CONFIG_IOC_MAGIC, 0x80, int)
-#else
 #define GET_FP_VENDOR_CMD				  _IOWR(TEEI_CONFIG_IOC_MAGIC, 0x80, int)
-#endif
-//modify XLLSHLSS-97 by haiping.bai 20171222 end
 
 static int vfs_major = VFS_MAJOR;
 static struct class *driver_class;
@@ -108,17 +100,10 @@ int tz_vfs_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static long tz_vfs_ioctl(struct file *filp,
-			unsigned int cmd, unsigned long arg)
+static long tz_vfs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
-//delete XLLSHLSS-97 by haiping.bai 20171222 start
-#ifdef FP_TA_COMPATIBLE_SUPPORT
-        char fp_ta_load_path[MAX_TA_NAME];
-#else
-        int fp_vendor;
-#endif
-//delete XLLSHLSS-97 by haiping.bai 20171222 end
+	int fp_vendor;
 
 	switch (cmd) {
 #ifdef CONFIG_MICROTRUST_TUI_DRIVER
@@ -160,21 +145,12 @@ static long tz_vfs_ioctl(struct file *filp,
 		enter_tui_flag = 0;
 		break;
 #endif
-//modify XLLSHLSS-97 by haiping.bai 20171222 start
-#ifdef FP_TA_COMPATIBLE_SUPPORT
-	case GET_FP_VENDOR_NAME_CMD:
-		memset(fp_ta_load_path, 0, sizeof(fp_ta_load_path));
-		get_fp_ta_load_path(fp_ta_load_path);
-		IMSG_ERROR("%s:%d get_fp_ta_load_path ok , fp_ta_load_path = %s",__func__, __LINE__, fp_ta_load_path);
-		ret = copy_to_user((void *)arg, fp_ta_load_path, sizeof(fp_ta_load_path));
-		break;
-#else
-        case GET_FP_VENDOR_CMD:
+
+	case GET_FP_VENDOR_CMD:
 		fp_vendor = get_fp_vendor();
 		ret = copy_to_user((void *)arg, &fp_vendor, sizeof(int));
 		break;
-#endif
-//modify XLLSHLSS-97 by haiping.bai 20171222 end
+
 	default:
 		return -EINVAL;
 	}
@@ -182,8 +158,7 @@ static long tz_vfs_ioctl(struct file *filp,
 	return ret;
 }
 
-static ssize_t tz_vfs_read(struct file *filp, char __user *buf,
-		size_t size, loff_t *ppos)
+static ssize_t tz_vfs_read(struct file *filp, char __user *buf, size_t size, loff_t *ppos)
 {
 	struct TEEI_vfs_command *vfs_p = NULL;
 	int length = 0;
@@ -208,8 +183,7 @@ static ssize_t tz_vfs_read(struct file *filp, char __user *buf,
 	ret = wait_for_completion_interruptible(&VFS_rd_comp);
 
 	if (ret == -ERESTARTSYS) {
-		IMSG_DEBUG("[%s][%d] wait timeout interrupt\n",
-				__func__, __LINE__);
+		IMSG_DEBUG("[%s][%d] wait_for_completion_interruptible_timeout interrupt\n", __func__, __LINE__);
 		complete(&global_down_lock);
 		return ret;
 	}
@@ -235,8 +209,7 @@ static ssize_t tz_vfs_read(struct file *filp, char __user *buf,
 	return ret;
 }
 
-static ssize_t tz_vfs_write(struct file *filp, const char __user *buf,
-			size_t size, loff_t *ppos)
+static ssize_t tz_vfs_write(struct file *filp, const char __user *buf, size_t size, loff_t *ppos)
 {
 	if (buf == NULL)
 		return -EINVAL;
@@ -249,13 +222,13 @@ static ssize_t tz_vfs_write(struct file *filp, const char __user *buf,
 	if (size > VFS_SIZE)
 		return -EINVAL;
 
+
 	/*IMSG_DEBUG("write begin cpu_id[%d]\n",cpu_id);*/
 	if (copy_from_user((void *)daulOS_VFS_share_mem, buf, size))
 		return -EFAULT;
 
 
-	Flush_Dcache_By_Area((unsigned long)daulOS_VFS_share_mem,
-			(unsigned long)daulOS_VFS_share_mem + size);
+	Flush_Dcache_By_Area((unsigned long)daulOS_VFS_share_mem, (unsigned long)daulOS_VFS_share_mem + size);
 
 #ifdef VFS_RDWR_SEM
 	up(&VFS_wr_sem);
@@ -359,8 +332,7 @@ static int vfs_init(void)
 		goto unregister_chrdev_region;
 	}
 
-	class_dev = device_create(driver_class,
-						NULL, devno, NULL, "tz_vfs");
+	class_dev = device_create(driver_class, NULL, devno, NULL, "tz_vfs");
 
 	if (!class_dev) {
 		result = -ENOMEM;
@@ -380,8 +352,8 @@ static int vfs_init(void)
 	sema_init(&vfs_devp->sem, 1);
 
 #ifdef VFS_RDWR_SEM
-	sema_init(&VFS_rd_sem, SEMA_INIT_ZERO);
-	sema_init(&VFS_wr_sem, SEMA_INIT_ZERO);
+	sema_init(&VFS_rd_sem, 0);
+	sema_init(&VFS_wr_sem, 0);
 #endif
 	goto return_fn;
 

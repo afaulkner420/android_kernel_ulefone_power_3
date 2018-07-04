@@ -77,7 +77,7 @@ bool get_voice_md2_bt_status(void)
 }
 EXPORT_SYMBOL(get_voice_md2_bt_status);
 
-static struct audio_digital_pcm  voice_md2_btPcm = {
+static AudioDigitalPCM  voice_md2_btPcm = {
 	.mBclkOutInv = false,
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
 	.mVbt16kModeSel  = Soc_Aud_VBT_16K_MODE_VBT_16K_MODE_DISABLE,
@@ -218,7 +218,7 @@ static struct page *mtk_pcm_page(struct snd_pcm_substream *substream,
 
 static bool  SetModemSpeechDAIBTAttribute(int sample_rate)
 {
-	struct audio_digital_dai_bt daibt_attribute;
+	AudioDigitalDAIBT daibt_attribute;
 
 	memset_io((void *)&daibt_attribute, 0, sizeof(daibt_attribute));
 
@@ -245,8 +245,9 @@ static int mtk_voice_md2_bt_prepare(struct snd_pcm_substream *substream)
 	pr_warn("%s(), stream(%d), rate = %d  channels = %d period_size = %lu\n",
 	       __func__, substream->stream, runtimeStream->rate, runtimeStream->channels, runtimeStream->period_size);
 
-	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
+	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		return 0;
+	}
 
 	/* here start digital part */
 	SetIntfConnection(Soc_Aud_InterCon_Connection,

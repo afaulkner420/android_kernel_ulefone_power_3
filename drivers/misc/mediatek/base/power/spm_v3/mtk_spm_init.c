@@ -29,15 +29,10 @@ static int __init mt_spm_init(void)
 	spm_module_init();
 	slp_module_init();
 #endif
-	return 0;
-}
 
-late_initcall(mt_spm_init);
-
-static int __init mt_spm_resource_init(void)
-{
 	spm_resource_req_init();
 
 	return 0;
 }
-subsys_initcall(mt_spm_resource_init);
+
+late_initcall(mt_spm_init);

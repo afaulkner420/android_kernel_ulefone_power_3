@@ -336,17 +336,9 @@ static long cmdq_driver_destroy_secure_medadata(struct cmdqCommandStruct *pComma
 
 static long cmdq_driver_create_secure_medadata(struct cmdqCommandStruct *pCommand)
 {
-#ifdef CMDQ_SECURE_PATH_SUPPORT
 	void *pAddrMetadatas = NULL;
-	u32 length;
-
-	if (pCommand->secData.addrMetadataCount >= CMDQ_IWC_MAX_ADDR_LIST_LENGTH) {
-		CMDQ_ERR("Metadata %u reach the max allowed number = %u\n",
-			 pCommand->secData.addrMetadataCount, CMDQ_IWC_MAX_ADDR_LIST_LENGTH);
-		return -EFAULT;
-	}
-
-	length = pCommand->secData.addrMetadataCount * sizeof(struct cmdqSecAddrMetadataStruct);
+	const uint32_t length =
+	    (pCommand->secData.addrMetadataCount) * sizeof(struct cmdqSecAddrMetadataStruct);
 
 	/* verify parameter */
 	if ((pCommand->secData.is_secure == false) && (pCommand->secData.addrMetadataCount != 0)) {
@@ -394,7 +386,7 @@ static long cmdq_driver_create_secure_medadata(struct cmdqCommandStruct *pComman
 #if 0
 	cmdq_core_dump_secure_metadata(&(pCommand->secData));
 #endif
-#endif
+
 	return 0;
 }
 
@@ -408,10 +400,6 @@ static long cmdq_driver_process_command_request(struct cmdqCommandStruct *pComma
 		CMDQ_ERR("mismatch regRequest and regValue\n");
 		return -EFAULT;
 	}
-
-	/* avoid copy large string */
-	if (pCommand->userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
-		pCommand->userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
 
 	/* allocate secure medatata */
 	status = cmdq_driver_create_secure_medadata(pCommand);
@@ -569,10 +557,6 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		if (status != 0)
 			return status;
 
-		/* avoid copy large string */
-		if (job.command.userDebugStrLen > CMDQ_MAX_DBG_STR_LEN)
-			job.command.userDebugStrLen = CMDQ_MAX_DBG_STR_LEN;
-
 		/* scenario id fixup */
 		cmdq_core_fix_command_scenario_for_user_space(&job.command);
 
@@ -615,12 +599,11 @@ static long cmdq_ioctl(struct file *pFile, unsigned int code, unsigned long para
 		}
 
 		/* verify job handle */
-		pTask = cmdq_core_get_task_ptr((void *)(unsigned long)jobResult.hJob);
-		if (!pTask) {
+		if (!cmdqIsValidTaskPtr((struct TaskStruct *) (unsigned long)jobResult.hJob)) {
 			CMDQ_ERR("invalid task ptr = 0x%llx\n", jobResult.hJob);
 			return -EFAULT;
 		}
-
+		pTask = (struct TaskStruct *) (unsigned long)jobResult.hJob;
 		if (pTask->regCount > CMDQ_MAX_DUMP_REG_COUNT)
 			return -EINVAL;
 
@@ -1002,6 +985,12 @@ static int cmdq_probe(struct platform_device *pDevice)
 		return -EFAULT;
 	}
 #endif
+
+	/* global ioctl access point (/proc/mtk_cmdq) */
+	if (proc_create(CMDQ_DRIVER_DEVICE_NAME, 0644, NULL, &cmdqOP) == NULL) {
+		CMDQ_ERR("CMDQ procfs node create failed\n");
+		return -EFAULT;
+	}
 
 	/* proc debug access point */
 	cmdq_create_debug_entries();

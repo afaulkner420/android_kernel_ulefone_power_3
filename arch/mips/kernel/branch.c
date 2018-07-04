@@ -399,7 +399,7 @@ int __MIPS16e_compute_return_epc(struct pt_regs *regs)
  *
  * @regs:	Pointer to pt_regs
  * @insn:	branch instruction to decode
- * @returns:	-EFAULT on error and forces SIGILL, and on success
+ * @returns:	-EFAULT on error and forces SIGBUS, and on success
  *		returns 0 or BRANCH_LIKELY_TAKEN as appropriate after
  *		evaluating the branch.
  *
@@ -431,7 +431,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 			/* Fall through */
 		case jr_op:
 			if (NO_R6EMU && insn.r_format.func == jr_op)
-				goto sigill_r2r6;
+				goto sigill_r6;
 			regs->cp0_epc = regs->regs[insn.r_format.rs];
 			break;
 		}
@@ -446,7 +446,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 		switch (insn.i_format.rt) {
 		case bltzl_op:
 			if (NO_R6EMU)
-				goto sigill_r2r6;
+				goto sigill_r6;
 		case bltz_op:
 			if ((long)regs->regs[insn.i_format.rs] < 0) {
 				epc = epc + 4 + (insn.i_format.simmediate << 2);
@@ -459,7 +459,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 
 		case bgezl_op:
 			if (NO_R6EMU)
-				goto sigill_r2r6;
+				goto sigill_r6;
 		case bgez_op:
 			if ((long)regs->regs[insn.i_format.rs] >= 0) {
 				epc = epc + 4 + (insn.i_format.simmediate << 2);
@@ -473,8 +473,10 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 		case bltzal_op:
 		case bltzall_op:
 			if (NO_R6EMU && (insn.i_format.rs ||
-			    insn.i_format.rt == bltzall_op))
-				goto sigill_r2r6;
+			    insn.i_format.rt == bltzall_op)) {
+				ret = -SIGILL;
+				break;
+			}
 			regs->regs[31] = epc + 8;
 			/*
 			 * OK we are here either because we hit a NAL
@@ -505,8 +507,10 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 		case bgezal_op:
 		case bgezall_op:
 			if (NO_R6EMU && (insn.i_format.rs ||
-			    insn.i_format.rt == bgezall_op))
-				goto sigill_r2r6;
+			    insn.i_format.rt == bgezall_op)) {
+				ret = -SIGILL;
+				break;
+			}
 			regs->regs[31] = epc + 8;
 			/*
 			 * OK we are here either because we hit a BAL
@@ -552,7 +556,6 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 	/*
 	 * These are unconditional and in j_format.
 	 */
-	case jalx_op:
 	case jal_op:
 		regs->regs[31] = regs->cp0_epc + 8;
 	case j_op:
@@ -570,7 +573,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 	 */
 	case beql_op:
 		if (NO_R6EMU)
-			goto sigill_r2r6;
+			goto sigill_r6;
 	case beq_op:
 		if (regs->regs[insn.i_format.rs] ==
 		    regs->regs[insn.i_format.rt]) {
@@ -584,7 +587,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 
 	case bnel_op:
 		if (NO_R6EMU)
-			goto sigill_r2r6;
+			goto sigill_r6;
 	case bne_op:
 		if (regs->regs[insn.i_format.rs] !=
 		    regs->regs[insn.i_format.rt]) {
@@ -598,7 +601,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 
 	case blezl_op: /* not really i_format */
 		if (!insn.i_format.rt && NO_R6EMU)
-			goto sigill_r2r6;
+			goto sigill_r6;
 	case blez_op:
 		/*
 		 * Compact branches for R6 for the
@@ -633,7 +636,7 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 
 	case bgtzl_op:
 		if (!insn.i_format.rt && NO_R6EMU)
-			goto sigill_r2r6;
+			goto sigill_r6;
 	case bgtz_op:
 		/*
 		 * Compact branches for R6 for the
@@ -813,10 +816,8 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 			break;
 		}
 		/* Compact branch: BNEZC || JIALC */
-		if (!insn.i_format.rs) {
-			/* JIALC: set $31/ra */
+		if (insn.i_format.rs)
 			regs->regs[31] = epc + 4;
-		}
 		regs->cp0_epc += 8;
 		break;
 #endif
@@ -840,12 +841,11 @@ int __compute_return_epc_for_insn(struct pt_regs *regs,
 	return ret;
 
 sigill_dsp:
-	pr_info("%s: DSP branch but not DSP ASE - sending SIGILL.\n",
-		current->comm);
-	force_sig(SIGILL, current);
+	printk("%s: DSP branch but not DSP ASE - sending SIGBUS.\n", current->comm);
+	force_sig(SIGBUS, current);
 	return -EFAULT;
-sigill_r2r6:
-	pr_info("%s: R2 branch but r2-to-r6 emulator is not present - sending SIGILL.\n",
+sigill_r6:
+	pr_info("%s: R2 branch but r2-to-r6 emulator is not preset - sending SIGILL.\n",
 		current->comm);
 	force_sig(SIGILL, current);
 	return -EFAULT;

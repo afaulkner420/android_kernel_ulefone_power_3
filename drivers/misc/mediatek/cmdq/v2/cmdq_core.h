@@ -115,7 +115,6 @@ else								\
 #define CMDQ_MAX_COMMAND_SIZE		(0x10000)
 #define CMDQ_MAX_DUMP_REG_COUNT		(2048)
 #define CMDQ_MAX_WRITE_ADDR_COUNT	(PAGE_SIZE / sizeof(u32))
-#define CMDQ_MAX_DBG_STR_LEN		1024
 
 #ifdef CMDQ_DUMP_FIRSTERROR
 #ifdef CMDQ_LARGE_MAX_FIRSTERROR_BUFFER
@@ -136,30 +135,34 @@ struct DumpFirstErrorStruct {
 #endif
 
 #define CMDQ_LOG(string, args...) \
-do {			\
+{			\
+if (1) {	\
 	pr_notice("[CMDQ]"string, ##args); \
 	cmdq_core_save_first_dump("[CMDQ]"string, ##args); \
-} while (0)
+}			\
+}
 
 #define CMDQ_MSG(string, args...) \
-do {			\
+{			\
 if (cmdq_core_should_print_msg()) { \
 	pr_notice("[CMDQ]"string, ##args); \
 }			\
-} while (0)
+}
 
 #define CMDQ_VERBOSE(string, args...) \
-do {			\
+{			\
 if (cmdq_core_should_print_msg()) { \
 	pr_debug("[CMDQ]"string, ##args); \
 }			\
-} while (0)
+}
 
 #define CMDQ_ERR(string, args...) \
-do {			\
+{			\
+if (1) {	\
 	pr_notice("[CMDQ][ERR]"string, ##args); \
 	cmdq_core_save_first_dump("[CMDQ][ERR]"string, ##args); \
-} while (0)
+}			\
+}
 
 #ifdef CMDQ_AEE_READY
 #define CMDQ_AEE_EX(DB_OPTs, tag, string, args...) \
@@ -187,8 +190,8 @@ do {			\
 do {			\
 	char dispatchedTag[50]; \
 	snprintf(dispatchedTag, 50, "CRDISPATCH_KEY:%s", tag); \
-	pr_debug("[CMDQ][AEE] AEE not READY!!!"); \
-	pr_debug("[CMDQ][AEE]"string, ##args); \
+	pr_err("[CMDQ][AEE] AEE not READY!!!"); \
+	pr_err("[CMDQ][AEE]"string, ##args); \
 	cmdq_core_save_first_dump("[CMDQ][AEE]"string, ##args); \
 	cmdq_core_turnoff_first_dump(); \
 } while (0);	\
@@ -842,13 +845,15 @@ extern "C" {
  */
 	int32_t cmdqCoreSubmitTask(struct cmdqCommandStruct *pCommandDesc);
 
+
 /**
- * Helper function get valid task pointer
+ * Helper function checking validity of a task pointer
  *
  * Return:
- *     task pointer if available
+ *     false if NOT a valid pointer
+ *     true if valid
  */
-	struct TaskStruct *cmdq_core_get_task_ptr(void *task_handle);
+	bool cmdqIsValidTaskPtr(void *pTask);
 
 /**
  * Immediately clear CMDQ event to 0 with CPU

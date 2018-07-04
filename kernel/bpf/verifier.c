@@ -313,7 +313,7 @@ static const char *const bpf_jmp_string[16] = {
 	[BPF_EXIT >> 4] = "exit",
 };
 
-static void print_bpf_insn(const struct verifier_env *env,
+static void print_bpf_insn(const struct bpf_verifier_env *env,
 			   const struct bpf_insn *insn)
 {
 	u8 class = BPF_CLASS(insn->code);
@@ -765,11 +765,6 @@ static int check_xadd(struct verifier_env *env, struct bpf_insn *insn)
 	if (err)
 		return err;
 
-	if (is_pointer_value(env, insn->src_reg)) {
-		verbose("R%d leaks addr into mem\n", insn->src_reg);
-		return -EACCES;
-	}
-
 	/* check whether atomic_add can read the memory */
 	err = check_mem_access(env, insn->dst_reg, insn->off,
 			       BPF_SIZE(insn->code), BPF_READ, -1);
@@ -1044,8 +1039,7 @@ static int check_alu_op(struct verifier_env *env, struct bpf_insn *insn)
 			}
 		} else {
 			if (insn->src_reg != BPF_REG_0 || insn->off != 0 ||
-			    (insn->imm != 16 && insn->imm != 32 && insn->imm != 64) ||
-			    BPF_CLASS(insn->code) == BPF_ALU64) {
+			    (insn->imm != 16 && insn->imm != 32 && insn->imm != 64)) {
 				verbose("BPF_END uses reserved fields\n");
 				return -EINVAL;
 			}

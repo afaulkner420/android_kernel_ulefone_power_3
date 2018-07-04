@@ -174,7 +174,7 @@ int find_idle_vip_cpu(struct task_struct *p)
 
 		new_util = cpu_util(i) + task_util_boosted;
 
-		if (!cpu_online(i) || !cpumask_test_cpu(i, tsk_cpus_allow) || cpu_isolated(i))
+		if (!cpu_online(i) || !cpumask_test_cpu(i, tsk_cpus_allow))
 			continue;
 
 #ifdef CONFIG_MTK_SCHED_INTEROP
@@ -304,8 +304,7 @@ static int vip_active_task_migration_cpu_stop(void *data)
 	if (busiest_rq->nr_running <= 1)
 		goto out_unlock;
 	/* Are both target and busiest cpu online */
-	if (!cpu_online(busiest_cpu) || !cpu_online(target_cpu) ||
-		cpu_isolated(busiest_cpu) || cpu_isolated(target_cpu))
+	if (!cpu_online(busiest_cpu) || !cpu_online(target_cpu))
 		goto out_unlock;
 	/* Task has migrated meanwhile, abort forced migration */
 	if ((!p) || (task_rq(p) != busiest_rq))
@@ -388,9 +387,6 @@ int vip_idle_pull(int this_cpu)
 	for (iter_cpu = 0; iter_cpu < (nr_cpu_ids); iter_cpu++) {
 
 		if (!cpu_online(iter_cpu))
-			continue;
-
-		if (cpu_isolated(iter_cpu))
 			continue;
 
 		if (iter_cpu == this_cpu)
@@ -498,9 +494,6 @@ int vip_task_force_migrate(void)
 		if (!cpu_online(iter_cpu))
 			continue;
 
-		if (cpu_isolated(iter_cpu))
-			continue;
-
 		target = cpu_rq(iter_cpu);
 		raw_spin_lock_irqsave(&target->lock, flags);
 
@@ -532,7 +525,7 @@ int vip_task_force_migrate(void)
 		mt_sched_printf(sched_lb, "%s:iter_cpu: vip=%d, i=%d",
 				__func__, p->pid, i);
 
-		if (!cpu_online(i) || !cpumask_test_cpu(i, tsk_cpus_allow) || cpu_isolated(i)) {
+		if (!cpu_online(i) || !cpumask_test_cpu(i, tsk_cpus_allow)) {
 			mt_sched_printf(sched_lb, "%s:!cpu_online: vip=%d, i=%d",
 					__func__, p->pid, i);
 			continue;

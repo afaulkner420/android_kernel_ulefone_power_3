@@ -3031,12 +3031,8 @@ static void eem_buck_set_mode(unsigned int mode)
 	vproc_pmic_set_mode(mode);
 	vcore_pmic_set_mode(mode);
 #endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20171207 start
-#if defined(CONFIG_EXTBUCK_MT6311)
 	if (is_ext_buck_exist())
 		mt6311_vdvfs11_set_mode(mode);
-#endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20171207 end
 }
 
 void eem_init01(void)
@@ -3069,25 +3065,17 @@ void eem_init01(void)
 			}
 
 			#if defined(__KERNEL__) && !(DVT) && !(EARLY_PORTING)
-			while (det->real_vboot != det->VBOOT) {
-				eem_error("@%s():%d, get_volt(%s) = 0x%x, VBOOT = 0x%x\n",
-					__func__, __LINE__, det->name, det->real_vboot, det->VBOOT);
-
-				#if 0
-				aee_kernel_warning("mt_eem",
-					"@%s():%d, get_volt(%s) = 0x%08X, VBOOT = 0x%08X\n",
-					__func__, __LINE__, det->name, det->real_vboot, det->VBOOT);
-				/* WARN_ON(det->real_vboot != det->VBOOT); */
-				/* BUG_ON(vboot != det->VBOOT); */
-				#endif
-
-				det->real_vboot = det->ops->volt_2_eem(det, det->ops->get_volt(det));
-				if (det->real_vboot == det->VBOOT) {
-					eem_error("@%s():%d, get_volt(%s) = 0x%x, VBOOT = 0x%x\n",
+			if (det->real_vboot != det->VBOOT) {
+				eem_error("@%s():%d, get_volt(%s) = 0x%08X, VBOOT = 0x%08X\n",
 						__func__, __LINE__, det->name, det->real_vboot, det->VBOOT);
-					break;
-				}
+				/*
+				*aee_kernel_warning("mt_eem",
+				*	"@%s():%d, get_volt(%s) = 0x%08X, VBOOT = 0x%08X\n",
+				*	__func__, __LINE__, det->name, det->real_vboot, det->VBOOT);
+				*/
 			}
+			/* BUG_ON(vboot != det->VBOOT);*/
+			WARN_ON(det->real_vboot != det->VBOOT);
 			#endif
 
 			mt_ptp_lock(&flag); /* <-XXX */

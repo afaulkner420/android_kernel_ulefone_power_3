@@ -28,7 +28,7 @@
 #define smi_clk_disable(master_id, user_name, enable_mtcmos) ((void)0)
 #else
 /* SMI extern API */
-extern enum MTK_SMI_BWC_SCEN smi_get_current_profile(void);
+extern MTK_SMI_BWC_SCEN smi_get_current_profile(void);
 extern int smi_bus_enable(enum SMI_MASTER_ID master_id, char *user_name);
 extern int smi_bus_disable(enum SMI_MASTER_ID master_id, char *user_name);
 extern int smi_clk_prepare(enum SMI_MASTER_ID master_id, char *user_name, int enable_mtcmos);
@@ -38,9 +38,5 @@ extern int smi_clk_disable(enum SMI_MASTER_ID master_id, char *user_name, int en
 extern void smi_common_ostd_setting(int enable);
 extern unsigned long get_larb_base_addr(int larb_id);
 extern unsigned long get_common_base_addr(void);
-extern unsigned int smi_clk_get_ref_count(const unsigned int reg_indx);
-#if IS_ENABLED(CONFIG_MACH_MT6771)
-void smi_larb_mon_act_cnt(void);
-#endif
 #endif
 #endif

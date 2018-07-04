@@ -27,7 +27,7 @@
 #define SMI_EVENT_OVL_CASCADE  (0x1 << 2)
 #define SMI_EVENT_OVL1_EXTERNAL  (0x1 << 3)
 
-#define SMIMSG(string, args...) pr_debug("[pid=%d]" string, current->tgid, ##args)
+#define SMIMSG(string, args...) pr_warn("[pid=%d]" string, current->tgid, ##args)
 #define SMIMSG2(string, args...) pr_debug(string, ##args)
 #ifdef CONFIG_MTK_CMDQ
 #define SMIMSG3(onoff, string, args...)\
@@ -37,13 +37,13 @@
 		SMIMSG(string, ##args);\
 	} while (0)
 #else
-#define SMIMSG3(onoff, string, args...) SMIMSG(string, ##args)
+#define SMIMSG3(string, args...) SMIMSG(string, ##args)
 #endif
 #define SMITMP(string, args...) pr_debug("[pid=%d]"string, current->tgid, ##args)
 
 #define SMIERR(string, args...)\
 	do {\
-		pr_notice("error: " string, ##args); \
+		pr_debug("error: " string, ##args); \
 		aee_kernel_warning(SMI_LOG_TAG, "error: "string, ##args);  \
 	} while (0)
 #define smi_aee_print(string, args...)\

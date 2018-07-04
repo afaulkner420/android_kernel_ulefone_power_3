@@ -17,15 +17,7 @@ else
 obj-y += eeprom_driver.o
 # obj-y += cam_cal_drv.o
 obj-y += cam_cal_list.o
-#add otp by ming.liao 20171129 start
-ARCH_MTK_PROJECT := $(subst ",,$(CONFIG_CUSTOM_TRAN_PROJECT))
-ARCH_MTK_PROJECT := $(word 1, $(ARCH_MTK_PROJECT))
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/cam_cal/src/$(ARCH_MTK_PROJECT)/cam_cal),)
-obj-y				+= $(ARCH_MTK_PROJECT)/cam_cal/
-else
-#add otp by ming.liao 20171129 end
 obj-y += common/
-endif
 endif
 #$(info cam_cal: makefile end)
 

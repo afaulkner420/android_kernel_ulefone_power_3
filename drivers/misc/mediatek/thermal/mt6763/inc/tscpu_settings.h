@@ -124,11 +124,11 @@
 
 /* chip dependent */
 /* TODO: change to new reg addr. */
-#define ADDRESS_INDEX_0  101
-#define ADDRESS_INDEX_1	 100
-#define ADDRESS_INDEX_2	 102
-#define ADDRESS_INDEX_3	 111
-#define ADDRESS_INDEX_4	 112
+#define ADDRESS_INDEX_0  101 /*0x11F10184*/
+#define ADDRESS_INDEX_1	 100 /*0x11F10180*/
+#define ADDRESS_INDEX_2	 102 /*0x11F10188*/
+#define ADDRESS_INDEX_3	 111 /*0x104501AC*/
+#define ADDRESS_INDEX_4	 112 /*0x104501B0*/
 
 #define CLEAR_TEMP 26111
 
@@ -220,11 +220,11 @@ do {                                    \
  * Structures
  *=============================================================
  */
-enum thermal_controller_name {
+typedef enum {
 	THERMAL_CONTROLLER0 = 0,
 	THERMAL_CONTROLLER1,
 	THERMAL_CONTROLLER_NUM
-};
+} thermal_controller_name;
 
 struct thermal_controller_speed {
 	unsigned int tempMonCtl1;
@@ -377,7 +377,7 @@ extern void tscpu_reset_thermal(void);
 extern void tscpu_thermal_initial_all_tc(void);
 extern void tscpu_thermal_read_tc_temp(int tc_num, enum thermal_sensor type, int order);
 extern void tscpu_thermal_cal_prepare(void);
-extern void tscpu_thermal_cal_prepare_2(unsigned int ret);
+extern void tscpu_thermal_cal_prepare_2(U32 ret);
 extern irqreturn_t tscpu_thermal_all_tc_interrupt_handler(int irq, void *dev_id);
 extern int tscpu_thermal_clock_on(void);
 extern int tscpu_thermal_clock_off(void);

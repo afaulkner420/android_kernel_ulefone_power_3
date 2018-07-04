@@ -1,0 +1,19 @@
+#
+# Touchscreen driver configuration
+#
+if TOUCHSCREEN_MTK_NT36XXX                    
+
+config NT36XXX_FIRMWARE                       
+string "NT36XXX for Mediatek firmware"    
+
+config NT36XXX_PROC                         
+string "NT36XXX for Mediatek proc"      
+
+config NT36XXX_MP                 
+bool "NT36XXX for Mediatek mp"
+
+config NT36XXX
+string "NT36XXX FOR Mediatek"
+default n                               
+help                                    
+Say Y here if you have GT1XX touch panel

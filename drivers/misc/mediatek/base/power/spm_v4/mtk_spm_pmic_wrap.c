@@ -19,9 +19,7 @@
 #include <mtk_spm_pmic_wrap.h>
 
 #include <mtk_spm.h>
-#if defined(CONFIG_MTK_PMIC) || defined(CONFIG_MTK_PMIC_NEW_ARCH)
 #include <mt-plat/upmu_common.h>
-#endif
 
 /*
  * Macro and Definition

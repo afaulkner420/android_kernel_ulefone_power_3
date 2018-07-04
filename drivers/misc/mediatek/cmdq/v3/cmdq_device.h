@@ -48,13 +48,13 @@ void cmdq_dev_enable_gce_clock(bool enable);
 bool cmdq_dev_gce_clock_is_enable(void);
 /* virtual address */
 long cmdq_dev_get_module_base_VA_GCE(void);
+long cmdq_dev_get_module_base_VA_MMSYS_CONFIG(void);
 unsigned long cmdq_dev_alloc_reference_VA_by_name(const char *ref_name);
 /* Other modules information */
 void cmdq_dev_free_module_base_VA(const long VA);
 uint32_t cmdq_dev_get_mmsys_dummy_reg_offset(void);
 /* physical address */
 phys_addr_t cmdq_dev_get_reference_PA(const char *ref_name, int index);
-void cmdq_dev_get_module_PA(const char *name, int index, long *startPA, long *endPA);
 phys_addr_t cmdq_dev_get_module_base_PA_GCE(void);
 /* GCE event */
 void cmdq_dev_init_event_table(struct device_node *node);
@@ -70,7 +70,6 @@ struct cmdq_dts_setting {
 	u32 prefetch_thread_count;
 	u32 *prefetch_size;
 	u32 ctl_int0;
-	u32 cpr_size;
 };
 
 /* callback when read resource from device tree */

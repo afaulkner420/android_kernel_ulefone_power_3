@@ -52,6 +52,20 @@
 #define SPI_TRUSTONIC_TEE_SUPPORT
 #endif
 
+#ifdef CONFIG_TRUSTKERNEL_TEE_SUPPORT
+#define SPI_TRUSTKERNEL_TEE_SUPPORT
+#ifdef CONFIG_TRUSTKERNEL_TEE_FP_SUPPORT
+#define SPI_CLK_TRUSTKERNEL_TEE_SUPPORT
+#endif
+#endif
+
+#ifdef SPI_TRUSTKERNEL_TEE_SUPPORT
+#include <tee_kernel_lowlevel_api.h>
+#ifdef SPI_CLK_TRUSTKERNEL_TEE_SUPPORT
+#include <tee_fp.h>
+#endif
+#endif
+
 #ifdef SPI_TRUSTONIC_TEE_SUPPORT
 #include <mobicore_driver_api.h>
 #include <tlspi_Api.h>
@@ -564,7 +578,11 @@ static int is_pause_mode(struct spi_message *msg)
 	return conf->pause;
 }
 
+#ifdef SPI_TRUSTKERNEL_TEE_SUPPORT
+static int __used is_fifo_read(struct spi_message *msg)
+#else
 static int is_fifo_read(struct spi_message *msg)
+#endif
 {
 	struct mt_chip_conf *conf;
 
@@ -1200,6 +1218,18 @@ out:
 
 }
 
+#ifdef SPI_TRUSTKERNEL_TEE_SUPPORT
+#define SMC_SPI_IRQ	0xbf000101
+static irqreturn_t mt_spi_interrupt(int irq, void *dev_id)
+{
+	struct smc_param param;
+
+	param.a0 = SMC_SPI_IRQ;
+	tee_smc_call(&param);
+
+	return IRQ_HANDLED;
+}
+#else
 static irqreturn_t mt_spi_interrupt(int irq, void *dev_id)
 {
 	struct mt_spi_t *ms = (struct mt_spi_t *)dev_id;
@@ -1276,6 +1306,7 @@ out:
 	SPI_DBG("return IRQ_NONE.\n");
 	return IRQ_NONE;
 }
+#endif
 
 /* Write chip configuration to HW register */
 static int mt_do_spi_setup(struct mt_spi_t *ms, struct mt_chip_conf *chip_config)
@@ -1474,6 +1505,10 @@ static void mt_spi_cleanup(struct spi_device *spidev)
 
 }
 
+#ifdef SPI_CLK_TRUSTKERNEL_TEE_SUPPORT
+int tee_register_spi_clk(void (*) (struct mt_spi_t *), void (*) (struct mt_spi_t *), struct mt_spi_t *);
+#endif
+
 static int mt_spi_probe(struct platform_device *pdev)
 {
 	int ret = 0;
@@ -1606,9 +1641,7 @@ static int mt_spi_probe(struct platform_device *pdev)
 
 	master->dev.of_node = pdev->dev.of_node;
 	/* hardware can only connect 1 slave.if you want to multiple, using gpio CS */
-        //modify XLLSHLSS-97 by chengwenwu 20171226 start
-	master->num_chipselect = 3;
-        //modify XLLSHLSS-97 by chengwenwu 20171226 end
+	master->num_chipselect = 2;
 
 	master->mode_bits = (SPI_CPOL | SPI_CPHA);
 	master->bus_num = pdev->id;
@@ -1671,6 +1704,15 @@ static int mt_spi_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "spi_register_master fails.\n");
 		goto out_free;
 	} else {
+#ifdef SPI_CLK_TRUSTKERNEL_TEE_SUPPORT
+		/* tee_spi_transfer_disable(); */
+		if (master->bus_num == 0) {
+			tee_register_spi_clk(enable_clk, disable_clk, ms);
+			//tee_spi_cfg_padsel(master->bus_num, ms->pad_macro);
+			printk("tee_spi%u configured\n", master->bus_num);
+		}
+
+#endif
 		SPI_DBG("spi register master success.\n");
 		/* reg_val = spi_readl ( ms, SPI_CMD_REG ); */
 		/* reg_val &= SPI_CMD_RST_MASK; */

@@ -93,17 +93,8 @@ static unsigned long __read_mostly tracing_mark_write_addr;
 
 /*  #include "smi_common.h" */
 
-#ifdef CONFIG_PM_WAKELOCKS
-#include <linux/pm_wakeup.h>
-#else
 #include <linux/wakelock.h>
-#endif
 
-#ifdef CONFIG_PM_WAKELOCKS
-struct wakeup_source tsf_wake_lock;
-#else
-struct wake_lock tsf_wake_lock;
-#endif
 /*  */
 
 /* TSF Command Queue */
@@ -230,6 +221,8 @@ static struct Tasklet_table TSF_tasklet[TSF_IRQ_TYPE_AMOUNT] = {
 	{ISP_TaskletFunc_TSF, &TSFtkt[TSF_IRQ_TYPE_INT_TSF_ST]},
 };
 
+struct wake_lock TSF_wake_lock;
+
 static DEFINE_MUTEX(gTSFDveMutex);
 static DEFINE_MUTEX(gTSFDveDequeMutex);
 
@@ -337,11 +330,8 @@ static struct SV_LOG_STR gSvLog[TSF_IRQ_TYPE_AMOUNT];
 #define IRQ_LOG_KEEPER(irq, ppb, logT, fmt, ...) do {\
 	char *ptr; \
 	char *pDes;\
-	int avaLen;\
 	unsigned int *ptr2 = &gSvLog[irq]._cnt[ppb][logT];\
 	unsigned int str_leng;\
-	unsigned int logi;\
-	struct SV_LOG_STR *pSrc = &gSvLog[irq];\
 	if (logT == _LOG_ERR) {\
 		str_leng = NORMAL_STR_LEN*ERR_PAGE; \
 	} else if (logT == _LOG_DBG) {\
@@ -352,67 +342,13 @@ static struct SV_LOG_STR gSvLog[TSF_IRQ_TYPE_AMOUNT];
 		str_leng = 0;\
 	} \
 	ptr = pDes = (char *)&(gSvLog[irq]._str[ppb][logT][gSvLog[irq]._cnt[ppb][logT]]);    \
-	avaLen = str_leng - 1 - gSvLog[irq]._cnt[ppb][logT];\
-	if (avaLen > 1) {\
-		snprintf((char *)(pDes), avaLen, fmt,\
-			##__VA_ARGS__);   \
-		if ('\0' != gSvLog[irq]._str[ppb][logT][str_leng - 1]) {\
-			LOG_ERR("log str over flow(%d)", irq);\
-		} \
-		while (*ptr++ != '\0') {        \
-			(*ptr2)++;\
-		}     \
-	} else { \
-		LOG_INF("(%d)(%d)log str avalible=0, print log\n", irq, logT);\
-		ptr = pSrc->_str[ppb][logT];\
-		if (pSrc->_cnt[ppb][logT] != 0) {\
-			if (logT == _LOG_DBG) {\
-				for (logi = 0; logi < DBG_PAGE; logi++) {\
-					if (ptr[NORMAL_STR_LEN*(logi+1) - 1] != '\0') {\
-						ptr[NORMAL_STR_LEN*(logi+1) - 1] = '\0';\
-						LOG_DBG("%s", &ptr[NORMAL_STR_LEN*logi]);\
-					} else{\
-						LOG_DBG("%s", &ptr[NORMAL_STR_LEN*logi]);\
-						break;\
-					} \
-				} \
-			} \
-			else if (logT == _LOG_INF) {\
-				for (logi = 0; logi < INF_PAGE; logi++) {\
-					if (ptr[NORMAL_STR_LEN*(logi+1) - 1] != '\0') {\
-						ptr[NORMAL_STR_LEN*(logi+1) - 1] = '\0';\
-						LOG_INF("%s", &ptr[NORMAL_STR_LEN*logi]);\
-					} else{\
-						LOG_INF("%s", &ptr[NORMAL_STR_LEN*logi]);\
-						break;\
-					} \
-				} \
-			} \
-			else if (logT == _LOG_ERR) {\
-				for (logi = 0; logi < ERR_PAGE; logi++) {\
-					if (ptr[NORMAL_STR_LEN*(logi+1) - 1] != '\0') {\
-						ptr[NORMAL_STR_LEN*(logi+1) - 1] = '\0';\
-						LOG_INF("%s", &ptr[NORMAL_STR_LEN*logi]);\
-					} else{\
-						LOG_INF("%s", &ptr[NORMAL_STR_LEN*logi]);\
-						break;\
-					} \
-				} \
-			} \
-			else {\
-				LOG_INF("N.S.%d", logT);\
-			} \
-			ptr[0] = '\0';\
-			pSrc->_cnt[ppb][logT] = 0;\
-			avaLen = str_leng - 1;\
-			ptr = pDes = (char *)&(pSrc->_str[ppb][logT][pSrc->_cnt[ppb][logT]]);\
-			ptr2 = &(pSrc->_cnt[ppb][logT]);\
-			snprintf((char *)(pDes), avaLen, fmt, ##__VA_ARGS__);   \
-			while (*ptr++ != '\0') {\
-				(*ptr2)++;\
-			} \
-		} \
+	sprintf((char *)(pDes), fmt, ##__VA_ARGS__);   \
+	if ('\0' != gSvLog[irq]._str[ppb][logT][str_leng - 1]) {\
+		LOG_ERR("log str over flow(%d)", irq);\
 	} \
+	while (*ptr++ != '\0') {        \
+		(*ptr2)++;\
+	}     \
 } while (0)
 #else
 #define IRQ_LOG_KEEPER(irq, ppb, logT, fmt, ...)  xlog_printk(ANDROID_LOG_DEBUG,\
@@ -961,8 +897,7 @@ static signed int TSF_WriteRegToHw(struct TSF_REG_STRUCT *pReg, unsigned int Cou
 				(unsigned int) (pReg[i].Val));
 		}
 
-		if (((ISP_TSF_BASE + pReg[i].Addr) < (ISP_TSF_BASE + TSF_REG_RANGE))
-			 && (pReg[i].Addr < TSF_REG_RANGE)) {
+		if (((ISP_TSF_BASE + pReg[i].Addr) < (ISP_TSF_BASE + TSF_REG_RANGE))) {
 			TSF_WR32(ISP_TSF_BASE + pReg[i].Addr, pReg[i].Val);
 		} else {
 			LOG_ERR("wrong tsf address(0x%lx)\n",
@@ -1507,18 +1442,8 @@ static signed int TSF_open(struct inode *pInode, struct file *pFile)
 
 	/* do wait queue head init when re-enter in camera */
 	/* Enable clock */
-#ifdef CONFIG_PM_WAKELOCKS
-	__pm_stay_awake(&tsf_wake_lock);
-#else
-	wake_lock(&tsf_wake_lock);
-#endif
 	TSF_EnableClock(MTRUE);
 	g_u4TsfCnt = 0;
-#ifdef CONFIG_PM_WAKELOCKS
-	__pm_relax(&tsf_wake_lock);
-#else
-	wake_unlock(&tsf_wake_lock);
-#endif
 	LOG_INF("TSF open g_u4EnableClockCount: %d", g_u4EnableClockCount);
 	/*  */
 
@@ -1576,17 +1501,7 @@ static signed int TSF_release(struct inode *pInode, struct file *pFile)
 
 
 	/* Disable clock. */
-#ifdef CONFIG_PM_WAKELOCKS
-	__pm_stay_awake(&tsf_wake_lock);
-#else
-	wake_lock(&tsf_wake_lock);
-#endif
 	TSF_EnableClock(MFALSE);
-#ifdef CONFIG_PM_WAKELOCKS
-	__pm_relax(&tsf_wake_lock);
-#else
-	wake_unlock(&tsf_wake_lock);
-#endif
 	LOG_INF("TSF release g_u4EnableClockCount: %d", g_u4EnableClockCount);
 
 	/*  */
@@ -1859,14 +1774,11 @@ static signed int TSF_probe(struct platform_device *pDev)
 		for (n = 0; n < TSF_IRQ_TYPE_AMOUNT; n++)
 			spin_lock_init(&(TSFInfo.SpinLockIrq[n]));
 
-#ifdef CONFIG_PM_WAKELOCKS
-		wakeup_source_init(&tsf_wake_lock, "tsf_lock_wakelock");
-#else
-		wake_lock_init(&tsf_wake_lock, WAKE_LOCK_SUSPEND, "tsf_lock_wakelock");
-#endif
 		/*  */
 		init_waitqueue_head(&TSFInfo.WaitQueueHead);
 		INIT_WORK(&TSFInfo.ScheduleTsfWork, TSF_ScheduleWork);
+
+		wake_lock_init(&TSF_wake_lock, WAKE_LOCK_SUSPEND, "TSF_lock_wakelock");
 
 		for (i = 0; i < TSF_IRQ_TYPE_AMOUNT; i++)
 			tasklet_init(TSF_tasklet[i].pTSF_tkt, TSF_tasklet[i].tkt_cb, 0);
@@ -2074,26 +1986,26 @@ static int TSF_dump_read(struct seq_file *m, void *v)
 	seq_puts(m, "\n============ TSF dump register============\n");
 	seq_puts(m, "TSF Config Info\n");
 
-	if (TSFInfo.UserCount > 0) {
-		seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + 0x4),
-			   (unsigned int)TSF_RD32(ISP_TSF_BASE + 0x4));
+	seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + 0x4),
+		   (unsigned int)TSF_RD32(ISP_TSF_BASE + 0x4));
 
 
-		for (i = 0x80C; i < 0x82C; i = i + 4) {
-			seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
-		}
-		seq_puts(m, "TSF DMA Debug Info\n");
-		for (i = 0x60; i < 0x88; i = i + 4) {
-			seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
-		}
-
-		for (i = 0xC0; i < 0xE4; i = i + 4) {
-			seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
-		}
+	for (i = 0x80C; i < 0x82C; i = i + 4) {
+		seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
 	}
+	seq_puts(m, "TSF DMA Debug Info\n");
+	for (i = 0x60; i < 0x88; i = i + 4) {
+		seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
+	}
+
+	for (i = 0xC0; i < 0xE4; i = i + 4) {
+		seq_printf(m, "[0x%08X %08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(ISP_TSF_BASE + i));
+	}
+
+
 	seq_puts(m, "\n============ TSF dump debug ============\n");
 
 	return 0;
@@ -2118,26 +2030,24 @@ static int TSF_reg_read(struct seq_file *m, void *v)
 
 	seq_puts(m, "======== read TSF register ========\n");
 
-	if (TSFInfo.UserCount > 0) {
-
-		seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + 0x4),
+	seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + 0x4),
 		   (unsigned int)TSF_RD32(TSF_INT_EN_REG));
 
-		for (i = 0x80C; i <= 0x82C; i = i + 4) {
-			seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(TSF_START_REG + i));
-		}
-
-		for (i = 0x60; i <= 0x88; i = i + 4) {
-			seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(TSF_START_REG + i));
-		}
-
-		for (i = 0xC0; i <= 0xE4; i = i + 4) {
-			seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
-				   (unsigned int)TSF_RD32(TSF_START_REG + i));
-		}
+	for (i = 0x80C; i <= 0x82C; i = i + 4) {
+		seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(TSF_START_REG + i));
 	}
+
+	for (i = 0x60; i <= 0x88; i = i + 4) {
+		seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(TSF_START_REG + i));
+	}
+
+	for (i = 0xC0; i <= 0xE4; i = i + 4) {
+		seq_printf(m, "[0x%08X 0x%08X]\n", (unsigned int)(TSF_BASE_HW + i),
+			   (unsigned int)TSF_RD32(TSF_START_REG + i));
+	}
+
 
 	return 0;
 }
@@ -2157,9 +2067,6 @@ static ssize_t TSF_reg_write(struct file *file, const char __user *buffer, size_
 
 	len = (count < (sizeof(desc) - 1)) ? count : (sizeof(desc) - 1);
 	if (copy_from_user(desc, buffer, len))
-		return 0;
-
-	if (TSFInfo.UserCount <= 0)
 		return 0;
 
 	desc[len] = '\0';
@@ -2391,15 +2298,15 @@ static irqreturn_t ISP_Irq_TSF(signed int Irq, void *DeviceId)
 	wake_up_interruptible(&TSFInfo.WaitQueueHead);
 
 	/* dump log, use tasklet */
-	/* IRQ_LOG_KEEPER(TSF_IRQ_TYPE_INT_TSF_ST, m_CurrentPPB, _LOG_INF, */
-	/*	       "ISP_Irq_TSF:%d, reg 0x%x : 0x%x\n", Irq, TSF_INT_HW, TSFIntStatus); */
+	IRQ_LOG_KEEPER(TSF_IRQ_TYPE_INT_TSF_ST, m_CurrentPPB, _LOG_INF,
+		       "ISP_Irq_TSF:%d, reg 0x%x : 0x%x\n", Irq, TSF_INT_HW, TSFIntStatus);
 
 	/* IRQ_LOG_KEEPER(TSF_IRQ_TYPE_INT_TSF_ST, m_CurrentPPB, _LOG_INF, "DveHWSta:0x%x, WmfeHWSta:0x%x,
 	**TSFDveSta0:0x%x\n", DveStatus, WmfeStatus, TSFDveSta0);
 	*/
 
-	/* if (TSFIntStatus & TSF_INT_ST) */
-	/*	tasklet_schedule(TSF_tasklet[TSF_IRQ_TYPE_INT_TSF_ST].pTSF_tkt); */
+	if (TSFIntStatus & TSF_INT_ST)
+		tasklet_schedule(TSF_tasklet[TSF_IRQ_TYPE_INT_TSF_ST].pTSF_tkt);
 
 	return IRQ_HANDLED;
 }

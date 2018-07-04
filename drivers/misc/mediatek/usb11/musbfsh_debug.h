@@ -44,15 +44,6 @@ extern void musbfsh_bug(void);
 
 /* for normal log, very detail, impact performance a lot */
 extern int musbfsh_debug;
-
-#define xprintk(level,  format, args...)  \
-	do { \
-		if (_dbg_level(level)) { \
-			pr_info("[MUSB]%s %d: " format, \
-				__func__, __LINE__, ## args); \
-		} \
-	} while (0)
-
 #define yprintk(facility, format, args...) \
 	do { \
 		if (musbfsh_debug) { \
@@ -60,16 +51,6 @@ extern int musbfsh_debug;
 					__func__, __LINE__, ## args); \
 		} \
 	} while (0)
-
-static inline int _dbg_level(unsigned level)
-{
-	return level <= musbfsh_debug;
-}
-
-#ifdef DBG
-#undef DBG
-#endif
-#define DBG(level, fmt, args...) xprintk(level, fmt, ## args)
 
 #define INFO(fmt, args...) yprintk(KERN_NOTICE, fmt, ## args)
 

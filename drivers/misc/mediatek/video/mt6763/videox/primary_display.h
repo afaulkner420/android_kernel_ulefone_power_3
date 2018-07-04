@@ -190,6 +190,11 @@ struct disp_frm_seq_info {
 	enum DISP_FRM_SEQ_STATE state;
 };
 
+struct OPT_BACKUP {
+	enum DISP_HELPER_OPT option;
+	int value;
+};
+
 /* AOD */
 enum lcm_power_state {
 	LCM_OFF = 0,
@@ -248,7 +253,7 @@ struct display_primary_path_context {
 	cmdqBackupSlotHandle dsi_vfp_line;
 
 	int is_primary_sec;
-	int scen;
+	int primary_display_scenario;
 #ifdef CONFIG_MTK_DISPLAY_120HZ_SUPPORT
 	int request_fps;
 #endif
@@ -417,7 +422,6 @@ UINT32 DISP_GetActiveHeight(void);
 UINT32 DISP_GetActiveWidth(void);
 UINT32 DISP_GetActiveHeightUm(void);
 UINT32 DISP_GetActiveWidthUm(void);
-UINT32 DISP_GetDensity(void);
 unsigned long get_dim_layer_mva_addr(void);
 int disp_hal_allocate_framebuffer(phys_addr_t pa_start, phys_addr_t pa_end, unsigned long *va,
 				  unsigned long *mva);
@@ -434,8 +438,7 @@ size_t mtkfb_get_fb_size(void);
 int primary_fps_ctx_set_wnd_sz(unsigned int wnd_sz);
 int primary_fps_ext_ctx_set_interval(unsigned int interval);
 
-int dynamic_debug_msg_print(unsigned int mva, int w, int h,
-			int pitch, int bytes_per_pix, unsigned int h_offset);
+int dynamic_debug_msg_print(unsigned int mva, int w, int h, int pitch, int bytes_per_pix);
 
 int display_enter_tui(void);
 int display_exit_tui(void);
@@ -443,13 +446,8 @@ int display_exit_tui(void);
 int primary_display_config_full_roi(struct disp_ddp_path_config *pconfig, disp_path_handle disp_handle,
 		struct cmdqRecStruct *cmdq_handle);
 int primary_display_set_scenario(int scenario);
-int prim_disp_get_scenario(void);
 enum DISP_MODULE_ENUM _get_dst_module_by_lcm(struct disp_lcm_handle *plcm);
 extern void check_mm0_clk_sts(void);
 int display_freeze_mode(int enable, int need_lock);
 
-extern unsigned int dump_output;
-extern unsigned int dump_output_comp;
-extern void *composed_buf;
-extern struct completion dump_buf_comp;
 #endif

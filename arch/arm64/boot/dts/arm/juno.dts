@@ -60,28 +60,6 @@
 			};
 		};
 
-		idle-states {
-			entry-method = "arm,psci";
-
-			CPU_SLEEP_0: cpu-sleep-0 {
-				compatible = "arm,idle-state";
-				arm,psci-suspend-param = <0x0010000>;
-				local-timer-stop;
-				entry-latency-us = <300>;
-				exit-latency-us = <1200>;
-				min-residency-us = <2000>;
-			};
-
-			CLUSTER_SLEEP_0: cluster-sleep-0 {
-				compatible = "arm,idle-state";
-				arm,psci-suspend-param = <0x1010000>;
-				local-timer-stop;
-				entry-latency-us = <400>;
-				exit-latency-us = <1200>;
-				min-residency-us = <2500>;
-			};
-		};
-
 		A57_0: cpu@0 {
 			compatible = "arm,cortex-a57","arm,armv8";
 			reg = <0x0 0x0>;
@@ -89,8 +67,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A57_L2>;
 			clocks = <&scpi_dvfs 0>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A57 &CLUSTER_COST_A57>;
 		};
 
 		A57_1: cpu@1 {
@@ -100,8 +76,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A57_L2>;
 			clocks = <&scpi_dvfs 0>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A57 &CLUSTER_COST_A57>;
 		};
 
 		A53_0: cpu@100 {
@@ -111,8 +85,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A53_L2>;
 			clocks = <&scpi_dvfs 1>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
 		};
 
 		A53_1: cpu@101 {
@@ -122,8 +94,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A53_L2>;
 			clocks = <&scpi_dvfs 1>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
 		};
 
 		A53_2: cpu@102 {
@@ -133,8 +103,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A53_L2>;
 			clocks = <&scpi_dvfs 1>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
 		};
 
 		A53_3: cpu@103 {
@@ -144,8 +112,6 @@
 			enable-method = "psci";
 			next-level-cache = <&A53_L2>;
 			clocks = <&scpi_dvfs 1>;
-			cpu-idle-states = <&CPU_SLEEP_0 &CLUSTER_SLEEP_0>;
-			sched-energy-costs = <&CPU_COST_A53 &CLUSTER_COST_A53>;
 		};
 
 		A57_L2: l2-cache0 {
@@ -155,8 +121,6 @@
 		A53_L2: l2-cache1 {
 			compatible = "cache";
 		};
-
-		/include/ "juno-sched-energy.dtsi"
 	};
 
 	pmu_a57 {

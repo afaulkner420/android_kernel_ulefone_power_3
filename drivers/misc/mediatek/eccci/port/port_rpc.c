@@ -70,18 +70,11 @@ static int get_md_gpio_val(unsigned int num)
 
 static int get_md_adc_val(unsigned int num)
 {
-#ifdef CONFIG_MTK_AUXADC
 	int data[4] = { 0, 0, 0, 0 };
-#endif
 	int val = 0;
 	int ret = 0;
 
-#ifdef CONFIG_MTK_AUXADC
 	ret = IMM_GetOneChannelValue(num, data, &val);
-#else
-	CCCI_ERROR_LOG(0, RPC, "CONFIG_MTK_AUXADC not ready\n");
-	ret = -1;
-#endif
 	if (ret == 0)
 		return val;
 	else
@@ -95,103 +88,49 @@ static int get_td_eint_info(char *eint_name, unsigned int len)
 
 static int get_md_adc_info(char *adc_name, unsigned int len)
 {
-#ifdef CONFIG_MTK_AUXADC
 	return IMM_get_adc_channel_num(adc_name, len);
-#else
-	CCCI_ERROR_LOG(0, RPC, "CONFIG_MTK_AUXADC not ready\n");
-	return -1;
-#endif
 }
 
-
-static char *md_gpio_name_convert(char *gpio_name, unsigned int len)
+static int get_md_gpio_info(char *gpio_name, unsigned int len)
 {
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(gpio_mapping_table); i++) {
-		if (!strncmp(gpio_name, gpio_mapping_table[i].gpio_name_from_md, len))
-			return gpio_mapping_table[i].gpio_name_from_dts;
-	}
-
-	return NULL;
-}
-
-static int get_gpio_id_from_dt(struct device_node *node, char *gpio_name, int *md_view_id)
-{
-	int gpio_id = -1;
-	int md_view_gpio_id = -1;
-	int ret = 0;
-
-	/* For new API, there is a shift between AP GPIO ID and MD GPIO ID */
-	gpio_id = of_get_named_gpio(node, gpio_name, 0);
-	ret = of_property_read_u32_index(node, gpio_name, 1, &md_view_gpio_id);
-	if (ret) {
-		CCCI_ERROR_LOG(0, RPC, "get md view gpio id from dt fail\n");
-		return -1;
-	}
-	if (gpio_id >= 0)
-		*md_view_id = md_view_gpio_id;
-	return gpio_id;
-}
-
-static int get_md_gpio_info(char *gpio_name, unsigned int len, int *md_view_gpio_id)
-{
+	int i = 0;
 	struct device_node *node = of_find_compatible_node(NULL, NULL, "mediatek,gpio_usage_mapping");
 	int gpio_id = -1;
-	char *name;
-
-	if (len >= 4096) {
-		CCCI_NORMAL_LOG(0, RPC, "MD GPIO name length abnoremal(%d)\n", len);
-		return gpio_id;
-	}
 
 	if (!node) {
 		CCCI_NORMAL_LOG(0, RPC, "MD_USE_GPIO is not set in device tree,need to check?\n");
 		return gpio_id;
 	}
 
-	name = md_gpio_name_convert(gpio_name, len);
-	if (name) {
-		gpio_id = get_gpio_id_from_dt(node, name, md_view_gpio_id);
-		return gpio_id;
-	}
-	if (gpio_name[len-1] != 0) {
-		name = kmalloc(len + 1, GFP_KERNEL);
-		if (name) {
-			memcpy(name, gpio_name, len);
-			name[len] = 0;
-			gpio_id = get_gpio_id_from_dt(node, name, md_view_gpio_id);
-			kfree(name);
-			return gpio_id;
-		}
-		CCCI_BOOTUP_LOG(0, RPC, "alloc memory fail for gpio with size:%d\n", len);
-		return gpio_id;
-	}
-	gpio_id = get_gpio_id_from_dt(node, gpio_name, md_view_gpio_id);
-	return gpio_id;
-}
-
-static void md_drdi_gpio_status_scan(void)
-{
-	int i;
-	int size;
-	int gpio_id;
-	int gpio_md_view;
-	char *curr;
-	int val;
-
-	CCCI_BOOTUP_LOG(0, RPC, "scan didr gpio status\n");
+	CCCI_BOOTUP_LOG(0, RPC, "looking for %s id, len %d\n", gpio_name, len);
 	for (i = 0; i < ARRAY_SIZE(gpio_mapping_table); i++) {
-		curr = gpio_mapping_table[i].gpio_name_from_md;
-		size = strlen(curr) + 1;
-		gpio_md_view = -1;
-		gpio_id = get_md_gpio_info(curr, size, &gpio_md_view);
-		if (gpio_id >= 0) {
-			val = get_md_gpio_val(gpio_id);
-			CCCI_BOOTUP_LOG(0, RPC, "GPIO[%s]%d(%d@md),val:%d\n",
-					curr, gpio_id, gpio_md_view, val);
+		CCCI_DEBUG_LOG(0, RPC, "compare with %s\n", gpio_mapping_table[i].gpio_name_from_md);
+		if (!strncmp(gpio_name, gpio_mapping_table[i].gpio_name_from_md, len)) {
+			CCCI_BOOTUP_LOG(0, RPC, "searching %s in device tree\n",
+							gpio_mapping_table[i].gpio_name_from_dts);
+#ifdef CONFIG_MTK_GPIOLIB_STAND
+			gpio_id = of_get_named_gpio(node, gpio_mapping_table[i].gpio_name_from_dts, 0);
+#else
+			of_property_read_u32(node, gpio_mapping_table[i].gpio_name_from_dts, &gpio_id);
+#endif
+			CCCI_BOOTUP_LOG(0, RPC, "name:%s value:%d\n",
+					gpio_mapping_table[i].gpio_name_from_dts, gpio_id);
+			break;
 		}
 	}
+
+	/*
+	 * if gpio_name_from_md and gpio_name_from_dts are the same,
+	 * it will not be listed in gpio_mapping_table,
+	 * so try read directly from device tree here.
+	 */
+	if (gpio_id < 0) {
+		CCCI_BOOTUP_LOG(0, RPC, "try directly get id from device tree\n");
+		of_property_read_u32(node, gpio_name, &gpio_id);
+	}
+
+	CCCI_BOOTUP_LOG(0, RPC, "%s id %d\n", gpio_name, gpio_id);
+	return gpio_id;
 }
 
 static int get_dram_type_clk(int *clk, int *type)
@@ -249,8 +188,7 @@ static int get_eint_attr_val(int md_id, struct device_node *node, int index)
 		if (ret != 0) {
 			md_eint_struct[type].value_sim[index] = ERR_SIM_HOT_PLUG_QUERY_TYPE;
 			CCCI_NORMAL_LOG(md_id, RPC, "%s:  not found\n", md_eint_struct[type].property);
-			ret = ERR_SIM_HOT_PLUG_QUERY_TYPE;
-			continue;
+			return ERR_SIM_HOT_PLUG_QUERY_TYPE;
 		}
 		/* special case: polarity's position == sensitivity's start[ */
 		if (type == SIM_HOT_PLUG_EINT_POLARITY) {
@@ -279,7 +217,7 @@ static int get_eint_attr_val(int md_id, struct device_node *node, int index)
 		} else
 			md_eint_struct[type].value_sim[index] = value;
 	}
-	return ret;
+	return 0;
 }
 
 void get_dtsi_eint_node(int md_id)
@@ -328,8 +266,7 @@ int get_eint_attr_DTSVal(int md_id, char *name, unsigned int name_len,
 			CCCI_BOOTUP_LOG(md_id, RPC, "md_eint:%s, sizeof: %d, sim_info: %d, %d\n",
 					eint_node_prop.eint_value[type].property,
 					*len, *sim_info, eint_node_prop.eint_value[type].value_sim[i]);
-			if (sim_value >= 0)
-				return 0;
+			return 0;
 		}
 	}
 	return ERR_SIM_HOT_PLUG_QUERY_STRING;
@@ -370,7 +307,6 @@ static void get_md_dtsi_debug(void)
 	struct ccci_rpc_md_dtsi_output output;
 
 	input.req = RPC_REQ_PROP_VALUE;
-	output.retValue = 0;
 	snprintf(input.strName, sizeof(input.strName), "%s", "mediatek,md_drdi_rf_set_idx");
 	get_md_dtsi_val(&input, &output);
 }
@@ -378,14 +314,14 @@ static void get_md_dtsi_debug(void)
 static void ccci_rpc_get_gpio_adc(struct ccci_rpc_gpio_adc_intput *input, struct ccci_rpc_gpio_adc_output *output)
 {
 	int num;
-	unsigned int val, i, md_val = -1;
+	unsigned int val, i;
 
 	if ((input->reqMask & (RPC_REQ_GPIO_PIN | RPC_REQ_GPIO_VALUE)) == (RPC_REQ_GPIO_PIN | RPC_REQ_GPIO_VALUE)) {
 		for (i = 0; i < GPIO_MAX_COUNT; i++) {
 			if (input->gpioValidPinMask & (1 << i)) {
-				num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]), &md_val);
+				num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]));
 				if (num >= 0) {
-					output->gpioPinNum[i] = md_val;
+					output->gpioPinNum[i] = num;
 					val = get_md_gpio_val(num);
 					output->gpioPinValue[i] = val;
 				}
@@ -395,10 +331,9 @@ static void ccci_rpc_get_gpio_adc(struct ccci_rpc_gpio_adc_intput *input, struct
 		if (input->reqMask & RPC_REQ_GPIO_PIN) {
 			for (i = 0; i < GPIO_MAX_COUNT; i++) {
 				if (input->gpioValidPinMask & (1 << i)) {
-					num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]),
-								&md_val);
+					num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]));
 					if (num >= 0)
-						output->gpioPinNum[i] = md_val;
+						output->gpioPinNum[i] = num;
 				}
 			}
 		}
@@ -440,15 +375,15 @@ static void ccci_rpc_get_gpio_adc(struct ccci_rpc_gpio_adc_intput *input, struct
 static void ccci_rpc_get_gpio_adc_v2(struct ccci_rpc_gpio_adc_intput_v2 *input,
 				     struct ccci_rpc_gpio_adc_output_v2 *output)
 {
-	int num, md_val = -1;
+	int num;
 	unsigned int val, i;
 
 	if ((input->reqMask & (RPC_REQ_GPIO_PIN | RPC_REQ_GPIO_VALUE)) == (RPC_REQ_GPIO_PIN | RPC_REQ_GPIO_VALUE)) {
 		for (i = 0; i < GPIO_MAX_COUNT_V2; i++) {
 			if (input->gpioValidPinMask & (1 << i)) {
-				num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]), &md_val);
+				num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]));
 				if (num >= 0) {
-					output->gpioPinNum[i] = md_val;
+					output->gpioPinNum[i] = num;
 					val = get_md_gpio_val(num);
 					output->gpioPinValue[i] = val;
 				}
@@ -458,10 +393,9 @@ static void ccci_rpc_get_gpio_adc_v2(struct ccci_rpc_gpio_adc_intput_v2 *input,
 		if (input->reqMask & RPC_REQ_GPIO_PIN) {
 			for (i = 0; i < GPIO_MAX_COUNT_V2; i++) {
 				if (input->gpioValidPinMask & (1 << i)) {
-					num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]),
-								&md_val);
+					num = get_md_gpio_info(input->gpioPinName[i], strlen(input->gpioPinName[i]));
 					if (num >= 0)
-						output->gpioPinNum[i] = md_val;
+						output->gpioPinNum[i] = num;
 				}
 			}
 		}
@@ -536,7 +470,6 @@ static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 	 */
 	int pkt_num = p_rpc_buf->para_num;
 	int md_id = port->md_id;
-	int md_val = -1;
 
 	CCCI_DEBUG_LOG(md_id, RPC, "ccci_rpc_work_helper++ %d\n", p_rpc_buf->para_num);
 	tmp_data[0] = 0;
@@ -578,11 +511,9 @@ static void ccci_rpc_work_helper(struct port_t *port, struct rpc_pkt *pkt,
 					if (get_num < 0)
 						get_num = FS_FUNC_FAIL;
 				} else if (p_rpc_buf->op_id == IPC_RPC_GET_GPIO_NUM_OP) {
-					get_num = get_md_gpio_info(name, length, &md_val);
+					get_num = get_md_gpio_info(name, length);
 					if (get_num < 0)
 						get_num = FS_FUNC_FAIL;
-					else
-						get_num = md_val;
 				} else if (p_rpc_buf->op_id == IPC_RPC_GET_ADC_NUM_OP) {
 					get_num = get_md_adc_info(name, length);
 					if (get_num < 0)
@@ -1120,10 +1051,6 @@ static int port_rpc_init(struct port_t *port)
 	port->interception = 0;
 	if (port->flags & PORT_F_WITH_CHAR_NODE) {
 		dev = kmalloc(sizeof(struct cdev), GFP_KERNEL);
-		if (unlikely(!dev)) {
-			CCCI_ERROR_LOG(port->md_id, CHAR, "alloc rpc char dev fail!!\n");
-			return -1;
-		}
 		cdev_init(dev, &rpc_dev_fops);
 		dev->owner = THIS_MODULE;
 		ret = cdev_add(dev, MKDEV(port->major, port->minor_base + port->minor), 1);
@@ -1137,7 +1064,6 @@ static int port_rpc_init(struct port_t *port)
 	if (first_init) {
 		get_dtsi_eint_node(port->md_id);
 		get_md_dtsi_debug();
-		md_drdi_gpio_status_scan();
 		first_init = 0;
 	}
 	return 0;
@@ -1174,10 +1100,6 @@ int port_rpc_recv_match(struct port_t *port, struct sk_buff *skb)
 		case RPC_CCCI_LGE_FAC_INIT_SIM_LOCK_DATA:
 			is_userspace_msg = 1;
 #endif
-			break;
-
-		case IPC_RPC_QUERY_AP_SYS_PROPERTY:
-			is_userspace_msg = 1;
 			break;
 		default:
 			is_userspace_msg = 0;

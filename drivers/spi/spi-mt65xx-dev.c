@@ -39,7 +39,6 @@ static struct spi_device *spi_test;
 
 struct mtk_spi {
 	void __iomem *base;
-	void __iomem *peri_regs;
 	u32 state;
 	int pad_num;
 	u32 *pad_sel;
@@ -49,9 +48,7 @@ struct mtk_spi {
 	struct scatterlist *tx_sgl, *rx_sgl;
 	u32 tx_sgl_len, rx_sgl_len;
 	const struct mtk_spi_compatible *dev_comp;
-	u32 dram_8gb_offset;
 };
-
 
 
 #ifdef SPI_TRUSTONIC_TEE_SUPPORT
@@ -283,13 +280,14 @@ void spi_detach_irq_tee(u32 spinum)
 #endif
 void mt_spi_disable_master_clk(struct spi_device *spidev)
 {
+	int ret;
 	struct mtk_spi *ms;
 
 	ms = spi_master_get_devdata(spidev->master);
 	/*
-	 * unprepare the clock source
+	 * prepare the clock source
 	 */
-	clk_disable_unprepare(ms->spi_clk);
+	ret = clk_prepare_enable(ms->spi_clk);
 }
 EXPORT_SYMBOL(mt_spi_disable_master_clk);
 
@@ -324,11 +322,7 @@ static int spi_setup_xfer(struct device *dev, struct spi_transfer *xfer, u32 len
 	 * 2. set msg.is_dma_mapped = 1 before calling spi_sync();
 	 */
 
-#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 	SPIDEV_LOG("Transfer addr:Tx:0x%llx, Rx:0x%llx\n", xfer->tx_dma, xfer->rx_dma);
-#else
-	SPIDEV_LOG("Transfer addr:Tx:0x%x, Rx:0x%x\n", xfer->tx_dma, xfer->rx_dma);
-#endif
 
 	if ((xfer->tx_buf == NULL) || (xfer->rx_buf == NULL))
 		return -1;
@@ -561,11 +555,7 @@ static int spi_test_probe(struct spi_device *spi)
 	return 0;
 }
 
-struct spi_device_id spi_id_table[] = {
-	{"spi-ut", 0},
-	{},
-};
-
+struct spi_device_id spi_id_table = {"spi-ut", 0};
 static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "mediatek,spi-mt65xx-test" },
 	{},
@@ -581,7 +571,7 @@ static struct spi_driver spi_test_driver = {
 	},
 	.probe = spi_test_probe,
 	.remove = spi_test_remove,
-	.id_table = spi_id_table,
+	.id_table = &spi_id_table,
 };
 
 static int __init spi_dev_init(void)

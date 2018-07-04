@@ -133,8 +133,9 @@ static int pmic_lp_type_set(unsigned short en_cfg_adr, enum PMU_LP_TABLE_ENUM na
 #if defined(LGS) || defined(LGSWS)
 	const PMU_LP_TABLE_ENTRY *pFlag = &pmu_lp_table[name];
 
-	if (user == SW || user == SPM)
+	if (user == SW || user == SPM) {
 		pmic_lp_golden_set((unsigned int)pFlag->en_adr, op_en, op_cfg);
+	}
 #endif
 
 	if (op_cfg_adr && op_en_adr) {

@@ -349,6 +349,10 @@ static void task_cpus_allowed(struct seq_file *m, struct task_struct *task)
 		   cpumask_pr_args(&task->cpus_allowed));
 	seq_printf(m, "Cpus_allowed_list:\t%*pbl\n",
 		   cpumask_pr_args(&task->cpus_allowed));
+#ifdef CONFIG_MTK_ACAO_SUPPORT
+	seq_printf(m, "Cpus_isolation_allowed_list:\t%*pbl\n",
+		   cpumask_pr_args(tsk_cpus_allowed(task)));
+#endif
 }
 
 int proc_pid_status(struct seq_file *m, struct pid_namespace *ns,

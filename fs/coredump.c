@@ -1,7 +1,6 @@
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
-#include <linux/freezer.h>
 #include <linux/mm.h>
 #include <linux/stat.h>
 #include <linux/fcntl.h>
@@ -400,9 +399,7 @@ static int coredump_wait(int exit_code, struct core_state *core_state)
 	if (core_waiters > 0) {
 		struct core_thread *ptr;
 
-		freezer_do_not_count();
 		wait_for_completion(&core_state->startup);
-		freezer_count();
 		/*
 		 * Wait for all the threads to become inactive, so that
 		 * all the thread context (extended register state, like
@@ -454,19 +451,7 @@ static bool dump_interrupted(void)
 	 * but then we need to teach dump_write() to restart and clear
 	 * TIF_SIGPENDING.
 	 */
-#ifdef CONFIG_MTK_AEE_FEATURE
-	/* avoid coredump truncated */
-	int ret = signal_pending(current);
-
-	if (ret) {
-		pr_info("%s: clear sig pending flag\n", __func__);
-		clear_thread_flag(TIF_SIGPENDING);
-		ret = signal_pending(current);
-	}
-	return ret;
-#else
 	return signal_pending(current);
-#endif
 }
 
 static void wait_for_dump_helpers(struct file *file)
@@ -791,7 +776,7 @@ void do_coredump(const siginfo_t *siginfo)
 			goto close_fail;
 		if (!(cprm.file->f_mode & FMODE_CAN_WRITE))
 			goto close_fail;
-		if (do_truncate2(cprm.file->f_path.mnt, cprm.file->f_path.dentry, 0, 0, cprm.file))
+		if (do_truncate(cprm.file->f_path.dentry, 0, 0, cprm.file))
 			goto close_fail;
 	}
 
@@ -847,22 +832,7 @@ int dump_emit(struct coredump_params *cprm, const void *addr, int nr)
 		n = __kernel_write(file, addr, nr, &pos);
 		if (n <= 0) {
 			pr_err("%s: __kernel_write fail: %zd\n", __func__, n);
-#ifdef CONFIG_MTK_AEE_FEATURE
-			if (n == -ERESTARTSYS) {  /* retry for avoid coredump truncated */
-				if (signal_pending(current)) {
-					pr_info("%s: clear sig pending flag\n", __func__);
-					clear_thread_flag(TIF_SIGPENDING);
-				}
-				n = __kernel_write(file, addr, nr, &pos);
-				if (n <= 0) {
-					pr_info("%s: retry fail: %zd\n", __func__, n);
-					return 0;
-				}
-			} else
-				return 0;
-#else
 			return 0;
-#endif
 		}
 		file->f_pos = pos;
 		cprm->written += n;
@@ -903,21 +873,3 @@ int dump_align(struct coredump_params *cprm, int align)
 	return mod ? dump_skip(cprm, align - mod) : 1;
 }
 EXPORT_SYMBOL(dump_align);
-
-/*
- * Ensures that file size is big enough to contain the current file
- * postion. This prevents gdb from complaining about a truncated file
- * if the last "write" to the file was dump_skip.
- */
-void dump_truncate(struct coredump_params *cprm)
-{
-	struct file *file = cprm->file;
-	loff_t offset;
-
-	if (file->f_op->llseek && file->f_op->llseek != no_llseek) {
-		offset = file->f_op->llseek(file, 0, SEEK_CUR);
-		if (i_size_read(file->f_mapping->host) < offset)
-			do_truncate(file->f_path.dentry, offset, 0, file);
-	}
-}
-EXPORT_SYMBOL(dump_truncate);

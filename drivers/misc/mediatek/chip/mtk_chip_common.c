@@ -150,11 +150,68 @@ static void __init create_procfs(void)
 	}
 }
 
+/* Vanzo:maxiaojun on: Mon, 26 Aug 2013 17:04:18 +0800
+ * board device name support.
+ */
+#ifdef VANZO_DEVICE_NAME_SUPPORT
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
+static struct proc_dir_entry *device_name_proc_entry;
+enum DEV_NAME_E {
+    CPU = 0,
+    LCM,
+    TP,
+    CAM,
+    CAM2,
+    DEV_MAX_NUM
+};
+static char v_dev_name[DEV_MAX_NUM][32];
+
+static int mt_mtkdev_show(struct seq_file *m, void *v)
+{
+    seq_printf(m, "Boardinfo:\nCPU:\t%s\nLCM:\t%s\nTP:\t%s\nCAM:\t%s\nCAM2:\t%s\n\n", \
+        &v_dev_name[CPU][0], &v_dev_name[LCM][0], &v_dev_name[TP][0], &v_dev_name[CAM][0], &v_dev_name[CAM2][0]);
+    return 0;
+}
+
+static int mt_mtkdev_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, mt_mtkdev_show, inode->i_private);
+}
+
+void v_set_dev_name(int id, char *name)
+{
+    if(id<DEV_MAX_NUM && strlen(name)){
+        memcpy(&v_dev_name[id][0], name, strlen(name)>31?31:strlen(name));
+    }
+}
+EXPORT_SYMBOL(v_set_dev_name);
+
+static const struct file_operations mtkdev_fops = {
+    .open = mt_mtkdev_open,
+    .read = seq_read
+};
+#endif
+// End of Vanzo:maxiaojun
+
 static int __init chip_common_init(void)
 {
 	create_procfs();
+/* Vanzo:maxiaojun on: Mon, 26 Aug 2013 17:04:18 +0800
+ * board device name support.
+ */
+#ifdef VANZO_DEVICE_NAME_SUPPORT
+    v_set_dev_name(0, "MT6763");
+    device_name_proc_entry = proc_create("mtkdev", 0666, NULL, &mtkdev_fops);
+    if (NULL == device_name_proc_entry) {
+        pr_err("create_proc_entry mtkdev failed");
+    }
+#endif
+// End of Vanzo:maxiaojun
 	return 0;
 }
+
 
 arch_initcall(chip_common_init);
 MODULE_DESCRIPTION("MTK Chip Common");

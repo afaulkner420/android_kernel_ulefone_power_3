@@ -30,7 +30,7 @@ static spinlock_t slock;
 static struct wake_lock wlock;
 static wait_queue_head_t wait_que;
 static bool coulomb_thread_timeout;
-static int fgclog_level;
+static int ftlog_level = 1;
 static int pre_coulomb;
 static bool init;
 static int coulomb_lock_cnt, hw_coulomb_lock_cnt;
@@ -41,21 +41,21 @@ static int coulomb_lock_cnt, hw_coulomb_lock_cnt;
 
 #define ft_err(fmt, args...)   \
 do {									\
-	if (fgclog_level >= FTLOG_ERROR_LEVEL) {			\
+	if (ftlog_level >= FTLOG_ERROR_LEVEL) {			\
 		pr_notice(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define ft_debug(fmt, args...)   \
 do {									\
-	if (fgclog_level >= FTLOG_DEBUG_LEVEL) {		\
+	if (ftlog_level >= FTLOG_DEBUG_LEVEL) {		\
 		pr_notice(fmt, ##args); \
 	}								   \
 } while (0)
 
 #define ft_trace(fmt, args...)\
 do {									\
-	if (fgclog_level >= FTLOG_TRACE_LEVEL) {			\
+	if (ftlog_level >= FTLOG_TRACE_LEVEL) {			\
 		pr_notice(fmt, ##args);\
 	}						\
 } while (0)
@@ -95,12 +95,6 @@ void wake_up_gauge_coulomb(void)
 		return;
 	}
 
-	if (is_fg_disable()) {
-		gauge_set_coulomb_interrupt1_ht(0);
-		gauge_set_coulomb_interrupt1_lt(0);
-		return;
-	}
-
 	ft_err("wake_up_gauge_coulomb %d %d %d %d\n",
 		wake_lock_active(&wlock),
 		coulomb_thread_timeout,
@@ -123,7 +117,7 @@ void wake_up_gauge_coulomb(void)
 
 void gauge_coulomb_set_log_level(int x)
 {
-	fgclog_level = x;
+	ftlog_level = x;
 }
 
 void gauge_coulomb_consumer_init(struct gauge_consumer *coulomb, struct device *dev, char *name)
@@ -253,12 +247,6 @@ void gauge_coulomb_start(struct gauge_consumer *coulomb, int car)
 		return;
 	}
 
-	if (is_fg_disable()) {
-		gauge_set_coulomb_interrupt1_ht(0);
-		gauge_set_coulomb_interrupt1_lt(0);
-		return;
-	}
-
 	if (car == 0)
 		return;
 
@@ -339,12 +327,6 @@ void gauge_coulomb_stop(struct gauge_consumer *coulomb)
 		return;
 	}
 
-	if (is_fg_disable()) {
-		gauge_set_coulomb_interrupt1_ht(0);
-		gauge_set_coulomb_interrupt1_lt(0);
-		return;
-	}
-
 	ft_debug("coulomb_stop name:%s %ld %ld %d\n",
 	coulomb->name, coulomb->start, coulomb->end,
 	coulomb->variable);
@@ -406,7 +388,6 @@ void gauge_coulomb_int_handler(void)
 		ft_trace("+ list is empty\n");
 	} else
 		ft_trace("+ list is empty\n");
-
 
 	if (list_empty(&coulomb_head_minus) != true) {
 		pos = coulomb_head_minus.next;

@@ -1313,17 +1313,9 @@ int mcp_start(void)
 
 	irq_d = irq_get_irq_data(mcp_ctx.irq);
 	if (irq_d) {
-#ifdef CONFIG_MTK_SYSIRQ
-		if (irq_d->parent_data) {
-			mcp_ctx.mcp_buffer->message.init_values.flags |= MC_IV_FLAG_IRQ;
-			mcp_ctx.mcp_buffer->message.init_values.irq = irq_d->parent_data->hwirq;
-			mc_dev_info("irq_d->parent_data->hwirq is 0x%lx\n", irq_d->parent_data->hwirq);
-		}
-#else
 		mcp_ctx.mcp_buffer->message.init_values.flags |= MC_IV_FLAG_IRQ;
 		mcp_ctx.mcp_buffer->message.init_values.irq = irq_d->hwirq;
 		mc_dev_info("irq_d->hwirq is 0x%lx\n", irq_d->hwirq);
-#endif
 	}
 	mcp_ctx.mcp_buffer->message.init_values.time_ofs =
 		(u32)((uintptr_t)mcp_ctx.time - (uintptr_t)mcp_ctx.base);
@@ -1383,7 +1375,6 @@ int mcp_start(void)
 		mc_dev_err("irq_bh_worker thread creation failed\n");
 		return PTR_ERR(mcp_ctx.irq_bh_thread);
 	}
-	set_user_nice(mcp_ctx.irq_bh_thread, -20);
 	return request_irq(mcp_ctx.irq, irq_handler, IRQF_TRIGGER_RISING,
 			   "trustonic", NULL);
 }

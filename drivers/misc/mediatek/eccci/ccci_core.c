@@ -25,9 +25,6 @@
 #include "ccci_modem.h"
 #include "ccci_port.h"
 #include "ccci_hif.h"
-#ifdef FEATURE_SCP_CCCI_SUPPORT
-#include "scp_helper.h"
-#endif
 
 static void *dev_class;
 /*
@@ -107,40 +104,20 @@ void ccci_sysfs_add_md(int md_id, void *kobj)
 	ccci_sysfs_add_modem(md_id, (void *)kobj, (void *)&ccci_md_ktype, boot_md_show, boot_md_store);
 }
 
-#ifdef FEATURE_SCP_CCCI_SUPPORT
-static int apsync_event(struct notifier_block *this, unsigned long event, void *ptr)
-{
-	switch (event) {
-	case SCP_EVENT_READY:
-		fsm_scp_init0();
-		break;
-	}
-
-	return NOTIFY_DONE;
-}
-
-static struct notifier_block apsync_notifier = {
-	.notifier_call = apsync_event,
-};
-#endif
-
 static int __init ccci_init(void)
 {
 	CCCI_INIT_LOG(-1, CORE, "ccci core init\n");
 	dev_class = class_create(THIS_MODULE, "ccci_node");
 	ccci_subsys_bm_init();
-#ifdef FEATURE_SCP_CCCI_SUPPORT
-	scp_A_register_notify(&apsync_notifier);
+#ifdef FEATURE_MTK_SWITCH_TX_POWER
+	swtp_init(0);
 #endif
 	return 0;
 }
 
-static unsigned int exec_count;
-
 int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned int len)
 {
 	int ret = 0;
-	int tmp_data;
 
 	if (!get_modem_is_enabled(md_id)) {
 		CCCI_ERROR_LOG(md_id, CORE, "wrong MD ID from %ps for %d\n", __builtin_return_address(0), id);
@@ -155,9 +132,6 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned
 #if (MD_GENERATION >= 6293)
 			ccci_hif_set_wakeup_src(CCIF_HIF_ID, 1);
 #endif
-		exec_count++;
-		CCCI_NORMAL_LOG(md_id, CORE, "spm trigger execute function(%u)\n", exec_count);
-
 		if (md_id == MD_SYS3)
 			ccci_hif_set_wakeup_src(CCIF_HIF_ID, 1);
 		break;
@@ -207,6 +181,7 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned
 		ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX, MD_THROTTLING, *((int *)buf), 1);
 		break;
 		/* used for throttling feature - end */
+#ifdef FEATURE_MTK_SWITCH_TX_POWER
 	case ID_UPDATE_TX_POWER:
 		{
 			unsigned int msg_id = (md_id == 0) ? MD_SW_MD1_TX_POWER : MD_SW_MD2_TX_POWER;
@@ -215,6 +190,7 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned
 			ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX, msg_id, mode, 0);
 		}
 		break;
+#endif
 	case ID_DUMP_MD_SLEEP_MODE:
 		ccci_md_dump_info(md_id, DUMP_FLAG_SMEM_MDSLP, NULL, 0);
 		break;
@@ -224,11 +200,6 @@ int exec_ccci_kern_func_by_md_id(int md_id, unsigned int id, char *buf, unsigned
 		break;
 	case ID_LWA_CONTROL_MSG:
 		ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX, LWA_CONTROL_MSG, *((int *)buf), 1);
-		break;
-	case MD_DISPLAY_DYNAMIC_MIPI:
-		tmp_data = 0;
-		memcpy((void *)&tmp_data, buf, len);
-		ret = ccci_port_send_msg_to_md(md_id, CCCI_SYSTEM_TX, id, tmp_data, 0);
 		break;
 	default:
 		ret = -CCCI_ERR_FUNC_ID_ERROR;
@@ -270,6 +241,32 @@ int ccci_register_dev_node(const char *name, int major_id, int minor)
 
 	return ret;
 }
+
+#if defined(FEATURE_MTK_SWITCH_TX_POWER)
+static int switch_Tx_Power(int md_id, unsigned int mode)
+{
+	int ret = 0;
+	unsigned int resv = mode;
+
+	ret = exec_ccci_kern_func_by_md_id(md_id, ID_UPDATE_TX_POWER, (char *)&resv, sizeof(resv));
+	CCCI_DEBUG_LOG(md_id, "ctl", "switch_MD%d_Tx_Power(%d): %d\n", md_id + 1, resv, ret);
+
+	return ret;
+}
+
+int switch_MD1_Tx_Power(unsigned int mode)
+{
+	return switch_Tx_Power(0, mode);
+}
+EXPORT_SYMBOL(switch_MD1_Tx_Power);
+
+int switch_MD2_Tx_Power(unsigned int mode)
+{
+	return switch_Tx_Power(1, mode);
+}
+EXPORT_SYMBOL(switch_MD2_Tx_Power);
+#endif
+
 
 subsys_initcall(ccci_init);
 

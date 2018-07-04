@@ -439,7 +439,6 @@ void mt_auxadc_hal_init(struct platform_device *dev)
 	/* AUXADC_DRV_SetBits16((volatile u16 *)AUXADC_CON_RTP, 1);             //disable RTP */
 }
 
-#ifdef CONFIG_PM
 static void mt_auxadc_hal_suspend(void)
 {
 	pr_debug("******** MT auxadc driver suspend!! ********\n");
@@ -492,7 +491,6 @@ static void mt_auxadc_hal_resume(void)
 #endif
 	/* AUXADC_DRV_SetBits16((volatile u16 *)AUXADC_CON_RTP, 1);             //disable RTP */
 }
-#endif
 
 static int mt_auxadc_dump_register(char *buf)
 {
@@ -1384,23 +1382,12 @@ static ssize_t show_AUXADC_channel(struct device *dev, struct device_attribute *
 {/* for support factory mode, It will make a fatal error if you delete this */
 	int ret = 0;
 	int i = 0;
-	int j = 0;
 	int tmp_len = 0;
 	int rawdata = 0;
 	int tmp_vol[4] = { 0, 0, 0, 0 };
 	char tmp_buf[256];
-	char channel_name[64];
 
 	for (i = 0; i < ADC_CHANNEL_MAX; i++) {
-		/* Find correct channel name to show */
-		memset(channel_name, 0, 64);
-		for (j = 0; j < ADC_CHANNEL_MAX; j++) {
-			if (i == g_adc_info[j].channel_number) {
-				memcpy(channel_name, g_adc_info[j].channel_name, 64);
-				break;
-			}
-		}
-
 		if (i == PAD_AUX_XP || i == PAD_AUX_YM) {
 		/* For avoid the illegal pointer access as auxadc_apmix_base get error. */
 		/* As the channels don't use,  we set a consist value. */
@@ -1408,7 +1395,7 @@ static ssize_t show_AUXADC_channel(struct device *dev, struct device_attribute *
 			rawdata = 0;
 			tmp_vol[0] = 0;
 			tmp_len = snprintf(tmp_buf, 255, "[%2d,%4d,%4d]-%15.15s-\n",
-				i, rawdata, tmp_vol[0], channel_name);
+				i, rawdata, tmp_vol[0], g_adc_info[i].channel_name);
 			strncat(buf, tmp_buf, strlen(tmp_buf));
 		} else {
 			ret = IMM_auxadc_GetOneChannelValue(i, tmp_vol, &rawdata);
@@ -1417,14 +1404,14 @@ static ssize_t show_AUXADC_channel(struct device *dev, struct device_attribute *
 				rawdata = 0;
 				tmp_vol[0] = -1;
 				tmp_len = snprintf(tmp_buf, 255, "[%2d,%4d,%4d]-%15.15s-\n",
-					i, rawdata, tmp_vol[0], channel_name);
+					i, rawdata, tmp_vol[0], g_adc_info[i].channel_name);
 				strncat(buf, tmp_buf, strlen(tmp_buf));
 			} else {
 				tmp_len = snprintf(tmp_buf, 255, "[%2d,%4d,%4d]-%15.15s-\n", i, rawdata,
-					(tmp_vol[0]*1000+tmp_vol[2]), channel_name);
+					(tmp_vol[0]*1000+tmp_vol[2]), g_adc_info[i].channel_name);
 				strncat(buf, tmp_buf, strlen(tmp_buf));
 				pr_err("[auxadc]:len:%d,chn[%d]=%d mv, [%s]\n", (int)strlen(buf), i,
-					(tmp_vol[0]*1000+tmp_vol[2]), channel_name);
+					(tmp_vol[0]*1000+tmp_vol[2]), g_adc_info[i].channel_name);
 			}
 		}
 	}

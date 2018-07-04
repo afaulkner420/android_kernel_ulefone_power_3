@@ -26,15 +26,9 @@
  */
 #define STATIC
 /* #define STATIC static */
-#if defined(CONFIG_MACH_MT6799)
+#ifdef CONFIG_MACH_MT6799
 static struct regulator *mtk_regulator_vproc2;
 #endif
-
-#if defined(CONFIG_MACH_MT6771) || defined(CONFIG_MACH_MT6775)
-struct regulator *cpu_vproc11_id;
-struct regulator *cpu_vsram11_id;
-#endif
-
 static int hps_probe(struct platform_device *pdev);
 static int hps_suspend(struct device *dev);
 static int hps_resume(struct device *dev);
@@ -54,7 +48,7 @@ const struct dev_pm_ops hps_dev_pm_ops = {
 	.thaw = hps_restore,
 };
 
-struct hps_sys_struct hps_sys = {
+hps_sys_t hps_sys = {
 	.cluster_num = 0,
 	.func_num = 0,
 	.is_set_root_cluster = 0,
@@ -67,7 +61,7 @@ struct hps_sys_struct hps_sys = {
 	.action_id = 0,
 };
 
-struct hps_ctxt_struct hps_ctxt = {
+hps_ctxt_t hps_ctxt = {
 	/* state */
 	.init_state = INIT_STATE_NOT_READY,
 	.state = STATE_LATE_RESUME,
@@ -76,7 +70,11 @@ struct hps_ctxt_struct hps_ctxt = {
 	.hps_regular_ktime = {0},
 	.hps_hrt_ktime = {0},
 	/* enabled */
+#if defined(CONFIG_MACH_MT6758)
+	.enabled = 0,
+#else
 	.enabled = 1,
+#endif
 	.eas_enabled = 1,
 	.suspend_enabled = 1,
 	.cur_dump_enabled = 0,
@@ -167,7 +165,7 @@ struct hps_ctxt_struct hps_ctxt = {
 	.test1 = 0,
 };
 
-DEFINE_PER_CPU(struct hps_cpu_ctxt_struct, hps_percpu_ctxt);
+DEFINE_PER_CPU(hps_cpu_ctxt_t, hps_percpu_ctxt);
 
 /*
  * hps hps_ctxt_t control interface
@@ -383,7 +381,7 @@ void hps_ctxt_print_algo_stats_tlp(int toUart)
 		hps_debug("hps_ctxt.rush_count: %u\n", hps_ctxt.rush_count);
 	}
 }
-#if defined(CONFIG_MACH_MT6799)
+#ifdef CONFIG_MACH_MT6799
 void hps_power_off_vproc2(void)
 {
 	int ret;
@@ -417,7 +415,8 @@ void hps_power_on_vproc2(void)
 	if (ret == 0) {
 		hps_warn("[%s]Vproc2 Status ==> Disable\n", __func__);
 		WARN_ON(1);
-	} else
+	}
+	else
 		hps_warn("[%s]Vproc2 Status ==> Enable\n", __func__);
 }
 #endif
@@ -426,36 +425,12 @@ void hps_power_on_vproc2(void)
  */
 static int hps_probe(struct platform_device *pdev)
 {
-#if defined(CONFIG_MACH_MT6799) || defined(CONFIG_MACH_MT6771) || defined(CONFIG_MACH_MT6775)
+#ifdef CONFIG_MACH_MT6799
 	int ret;
 #endif
 
 	hps_warn("hps_probe\n");
-#if defined(CONFIG_MACH_MT6771) || defined(CONFIG_MACH_MT6775)
-	cpu_vproc11_id = regulator_get(&pdev->dev, "vproc11");
-	if (!cpu_vproc11_id)
-		pr_debug("cpu_vproc11_id regulator_get failed\n");
-	else
-		pr_info("cpu_vproc11_id regulator_get success\n");
-
-	if (cpu_vproc11_id)
-		ret = regulator_enable(cpu_vproc11_id);
-
-#if defined(CONFIG_MACH_MT6771)
-	cpu_vsram11_id = regulator_get(&pdev->dev, "vsram_proc11");
-#else
-	cpu_vsram11_id = regulator_get(&pdev->dev, "vsram_gpu");
-#endif
-	if (!cpu_vsram11_id)
-		pr_debug("cpu_vsram_id regulator_get failed\n");
-	else
-		pr_info("cpu_vsram_id regulator_get success\n");
-
-	if (cpu_vsram11_id)
-		ret = regulator_enable(cpu_vsram11_id);
-#endif /* CONFIG_MACH_MT6771 || CONFIG_MACH_MT6775 */
-
-#if defined(CONFIG_MACH_MT6799)
+#ifdef CONFIG_MACH_MT6799
 	mtk_regulator_vproc2 = regulator_get(&pdev->dev, "ext_buck_proc2");
 	if (mtk_regulator_vproc2 == NULL) {
 		hps_warn("%s No this Regulator\n", __func__);
@@ -473,9 +448,13 @@ static int hps_probe(struct platform_device *pdev)
  */
 static int hps_suspend(struct device *dev)
 {
+#if !defined(CONFIG_MACH_MT6763) && !defined(CONFIG_MACH_MT6758)
 	int cpu = 9;
+#endif
+	int ret = 0;
 
-/*	hps_warn("%s\n", __func__);*/
+	hps_warn("%s\n", __func__);
+
 	if (!hps_ctxt.suspend_enabled)
 		goto suspend_end;
 
@@ -483,11 +462,12 @@ suspend_end:
 	hps_ctxt.state = STATE_SUSPEND;
 #ifndef CONFIG_MTK_ACAO_SUPPORT
 	if (hps_ctxt.periodical_by == HPS_PERIODICAL_BY_HR_TIMER)
-		hps_del_timer();
+		ret = hps_del_timer();
 #endif
-	hps_warn("%s state: %u, enabled: %u, suspend_enabled: %u, rush_boost_enabled: %u\n",
-		 __func__, hps_ctxt.state, hps_ctxt.enabled,
-		 hps_ctxt.suspend_enabled, hps_ctxt.rush_boost_enabled);
+	hps_warn("state: %u, enabled: %u, suspend_enabled: %u, rush_boost_enabled: %u, ret: %d\n",
+		 hps_ctxt.state, hps_ctxt.enabled,
+		 hps_ctxt.suspend_enabled, hps_ctxt.rush_boost_enabled, ret);
+#if !defined(CONFIG_MACH_MT6763) && !defined(CONFIG_MACH_MT6758)
 	/* offline big cores only */
 	cpu_hotplug_enable();
 	for (cpu = 9; cpu >= 8; cpu--) {
@@ -495,7 +475,7 @@ suspend_end:
 			cpu_down(cpu);
 	}
 	cpu_hotplug_disable();
-
+#endif
 	return 0;
 }
 
@@ -504,10 +484,7 @@ suspend_end:
  */
 static int hps_resume(struct device *dev)
 {
-#if 0
-	int cpu = 0;
-#endif
-/*	hps_warn("%s\n", __func__);*/
+	hps_warn("%s\n", __func__);
 
 	if (!hps_ctxt.suspend_enabled)
 		goto resume_end;
@@ -532,8 +509,8 @@ resume_end:
 		hps_restart_timer();
 	}
 #endif
-	hps_warn("%s state: %u, enabled: %u, suspend_enabled: %u, rush_boost_enabled: %u\n",
-		 __func__, hps_ctxt.state, hps_ctxt.enabled,
+	hps_warn("state: %u, enabled: %u, suspend_enabled: %u, rush_boost_enabled: %u\n",
+		 hps_ctxt.state, hps_ctxt.enabled,
 		 hps_ctxt.suspend_enabled, hps_ctxt.rush_boost_enabled);
 
 

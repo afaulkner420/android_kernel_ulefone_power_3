@@ -20,9 +20,6 @@
 #else
 subdir-ccflags-y += -I$(srctree)/drivers/i2c/busses/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/ccu/inc
-#modify factory camera fail by ming.liao 20171215 start
-subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
-#modify factory camera fail by ming.liao 20171215 end
 #endif
 define FILTER_PROJECT_DRV
 ifeq ($(wildcard $(srctree)/drivers/misc/mediatek/imgsensor/src/$(MTK_PLATFORM)/camera_project/$(ARCH_MTK_PROJECT)/$(1)),)
@@ -45,49 +42,37 @@ obj-y				+= imgsensor_sensor_list.o
 
 #$(info -= project path  $(srctree)/drivers/misc/mediatek/imgsensor/src/$(MTK_PLATFORM)/camera_project/$(ARCH_MTK_PROJECT)/ =-)
 
-mtk_project_folder = $(ARCH_MTK_PROJECT)
-ifneq ($(findstring k63v1us, $(ARCH_MTK_PROJECT)),)
-mtk_project_folder = k63v1us_64_bsp
-else
-ifneq ($(findstring zoom, $(ARCH_MTK_PROJECT)),)
-mtk_project_folder = k63v1_64_bsp_zoom
-else
-ifneq ($(findstring du3rd, $(ARCH_MTK_PROJECT)),)
-mtk_project_folder = k63v1_64_bsp_zoom
-endif
-endif
-endif
-
-# add custom camera by ming.liao@reallytek.com 20171124 start
-ARCH_MTK_PROJECT := $(subst ",,$(CONFIG_CUSTOM_TRAN_PROJECT))
-ARCH_MTK_PROJECT := $(word 1, $(ARCH_MTK_PROJECT))
-$(info camera_build ARCH_MTK_PROJECT is $(ARCH_MTK_PROJECT)****************)
-# add custom camera by ming.liao@reallytek.com 20171124 end
-
-# modify  by ming.liao 20171130 start
 ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/imgsensor/src/$(MTK_PLATFORM)/camera_project/$(ARCH_MTK_PROJECT)/camera_hw),)
 obj-y				+= camera_project/$(ARCH_MTK_PROJECT)/camera_hw/
-$(foreach drv,$(subst $\",,$(CONFIG_CUSTOM_KERNEL_IMGSENSOR)),$(eval $(call FILTER_PROJECT_DRV,$(drv))))
-custom_kernel_imgsensor_by_project := $(addsuffix /, $(shell echo $(project_drv)))
-
-obj-y += $(word 1, $(custom_kernel_imgsensor_by_project))
-obj-y += $(word 2, $(custom_kernel_imgsensor_by_project))
-obj-y += $(word 3, $(custom_kernel_imgsensor_by_project))
-obj-y += $(word 4, $(custom_kernel_imgsensor_by_project))
-$(info camera_build custom_kernel_imgsensor_by_project is $(custom_kernel_imgsensor_by_project)*************)
 subdir-ccflags-y		+= -I$(srctree)/drivers/misc/mediatek/imgsensor/src/$(MTK_PLATFORM)/camera_project/$(ARCH_MTK_PROJECT)/camera_hw
+#$(info by porject kd_camera_hw)
 else
 obj-y				+= camera_hw/
 subdir-ccflags-y		+= -I$(srctree)/drivers/misc/mediatek/imgsensor/src/$(MTK_PLATFORM)/camera_hw
-
+endif
 
 $(foreach drv,$(subst $\",,$(CONFIG_CUSTOM_KERNEL_IMGSENSOR)),$(eval $(call FILTER_PROJECT_DRV,$(drv))))
 custom_kernel_imgsensor_by_platform := $(addsuffix /, $(shell echo $(platform_drv)))
 custom_kernel_imgsensor_by_project := $(addsuffix /, $(shell echo $(project_drv)))
 
-obj-y += $(custom_kernel_imgsensor_by_platform)
-obj-y += $(custom_kernel_imgsensor_by_project)
+# Vanzo:wangfei on: Wed, 12 Nov 2014 21:06:42 +0800
+# for compatible the old style ,so use CUSTOM_KERNEL_IMGSENSOR
+custom_kernel_imgsensor := $(addsuffix /, $(shell echo $(CUSTOM_KERNEL_IMGSENSOR)))
+
+ifeq ($(custom_kernel_imgsensor),)
+# End of Vanzo:wangfei
+    $(foreach drv,$(subst $\",,$(CONFIG_CUSTOM_KERNEL_IMGSENSOR)),$(eval $(call FILTER_PROJECT_DRV,$(drv))))
+    custom_kernel_imgsensor := $(addsuffix /, $(shell echo $(platform_drv)))
+# Vanzo:wangfei on: Thu, 13 Nov 2014 16:15:59 +0800
+# added for project config prio the defconfig
 endif
-# modify  by ming.liao 20171130 end
+# End of Vanzo:wangfei
+# Vanzo:yucheng on: Sat, 16 Jan 2016 17:58:29 +0800
+# Modified for camera customization
+#obj-y += $(custom_kernel_imgsensor_by_platform)
+#obj-y += $(custom_kernel_imgsensor_by_project)
+
+obj-y += $(custom_kernel_imgsensor)
+# End of Vanzo: yucheng
 $(info imgsensor drv by platform $(platform_drv))
 $(info imgsensor drv by project $(project_drv))

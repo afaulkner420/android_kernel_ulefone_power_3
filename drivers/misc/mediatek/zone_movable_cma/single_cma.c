@@ -21,7 +21,6 @@
 #include <linux/printk.h>
 #include <linux/memblock.h>
 #include <linux/page-isolation.h>
-#include <linux/kernel.h>
 
 #include "mt-plat/mtk_meminfo.h"
 #include "single_cma.h"
@@ -30,7 +29,6 @@ static struct cma *cma[MAX_CMA_AREAS];
 static phys_addr_t movable_min = ULONG_MAX;
 static phys_addr_t movable_max;
 
-phys_addr_t zmc_max_zone_dma_phys = 0xc0000000ULL;
 bool zmc_reserved_mem_inited;
 
 #define END_OF_REGISTER ((void *)(0x7a6d63))
@@ -56,110 +54,24 @@ static struct single_cma_registration *single_cma_list[NR_ZMC_LOCATIONS][4] = {
 	},
 };
 
-#ifdef CONFIG_MTK_MEMORY_LOWPOWER
-#define ZMC_CHECK_FIX_ALIGNMENT	(0x20000000ULL)	/* 512MB alignment for DRAM size > 4GB */
-/*
- * Resize ZMC base & size according to total physical size (T).
- * After resizing, zmc_max_zone_dma_phys will be,
- * 0xc0000000 if T <= 4GB
- * 0xc0000000 ~ 0x100000000 if 4GB < T <= 6GB
- * 0x100000000 if T > 6GB
- */
-static void __init check_and_fix_base(struct reserved_mem *rmem, phys_addr_t total_phys_size)
-{
-	phys_addr_t new_zmc_base, return_size;
-
-	/* Not default value. Extend zmc_max_zone_dma_phys if needed */
-	if (rmem->base > zmc_max_zone_dma_phys) {
-		zmc_max_zone_dma_phys = min(rmem->base, (phys_addr_t)(1ULL << 32));
-		return;
-	}
-
-	pr_info("%s: total phys size: %pa\n", __func__, &total_phys_size);
-
-	/* No need to fix if the size of DRAM is less or equal to 4GB */
-	if (total_phys_size <= 0x100000000ULL)
-		return;
-
-	/* Find a new base */
-	new_zmc_base = round_up(memblock_start_of_DRAM() + (total_phys_size >> 1),
-			ZMC_CHECK_FIX_ALIGNMENT);
-
-	/* Don't exceed the limitation of DMA zone */
-	zmc_max_zone_dma_phys = new_zmc_base = min(new_zmc_base, (phys_addr_t)(1ULL << 32));
-
-	/* Resize it */
-	if (rmem->base < new_zmc_base) {
-		return_size = new_zmc_base - rmem->base;
-		memblock_free(rmem->base, return_size);
-		memblock_add(rmem->base, return_size);
-		rmem->base = new_zmc_base;
-		rmem->size -= return_size;
-		pr_info("%s: new base: %pa, new size: %pa\n", __func__, &rmem->base, &rmem->size);
-	}
-}
-#else	/* !CONFIG_MTK_MEMORY_LOWPOWER */
-static void __init check_and_fix_base(struct reserved_mem *rmem, phys_addr_t total_phys_size)
-{
-	/* do nothing */
-}
-#endif
-
-static bool __init zmc_is_the_last(struct reserved_mem *rmem)
-{
-	phys_addr_t phys_end = memblock_end_of_DRAM();
-	phys_addr_t rmem_end_max = rmem->base + rmem->size + (pageblock_nr_pages << PAGE_SHIFT);
-
-	pr_info("%s: phys end: %pa, rmem end max: %pa\n", __func__, &phys_end, &rmem_end_max);
-
-	if (rmem_end_max >= phys_end)
-		return true;
-
-	return false;
-}
-
 static int __init zmc_memory_init(struct reserved_mem *rmem)
 {
 	int ret;
 	int order, i;
 	int cma_area_count = 0;
-	phys_addr_t zmc_size;
-	phys_addr_t total_phys_size = memblock_phys_mem_size();
-
-#ifdef CONFIG_KASAN
-#define ZMC_SEG_SIZE (512 * 1024 * 1024)
-	phys_addr_t kasan_shadow_size = total_phys_size / 8;
-
-	kasan_shadow_size = roundup(kasan_shadow_size, ZMC_SEG_SIZE);
-	memblock_free(rmem->base, kasan_shadow_size);
-	memblock_add(rmem->base, kasan_shadow_size);
-	rmem->base += kasan_shadow_size;
-	rmem->size -= kasan_shadow_size;
-	pr_info("zmc: Modify zmc size because KASAN enabled\n");
-#undef ZMC_SEG_SIZE
-#endif
-	zmc_size = rmem->size;
+	phys_addr_t zmc_size = rmem->size;
 
 	pr_alert("%s, name: %s, base: %pa, size: %pa\n", __func__,
 			rmem->name, &rmem->base, &rmem->size);
 
-	if (total_phys_size > 0x80000000ULL && rmem->base < zmc_max_zone_dma_phys) {
+	if (rmem->base < (phys_addr_t)ZMC_MAX_ZONE_DMA_PHYS) {
 		pr_warn("[Fail] Unsupported memory range under 0x%lx (DMA max range).\n",
-				(unsigned long)zmc_max_zone_dma_phys);
+				(unsigned long)ZMC_MAX_ZONE_DMA_PHYS);
 		pr_warn("Abort reserve memory.\n");
 		memblock_free(rmem->base, rmem->size);
 		memblock_add(rmem->base, rmem->size);
 		return -1;
 	}
-
-	if (!zmc_is_the_last(rmem)) {
-		pr_info("[Fail] ZMC is not the last\n");
-		memblock_free(rmem->base, rmem->size);
-		memblock_add(rmem->base, rmem->size);
-		return -1;
-	}
-
-	check_and_fix_base(rmem, total_phys_size);
 
 	/*
 	 * Init CMAs -
@@ -179,11 +91,6 @@ static int __init zmc_memory_init(struct reserved_mem *rmem)
 			p = single_cma_list[order][i];
 			if (p == END_OF_REGISTER)
 				break;
-
-			if (p->preinit) {
-				if (p->preinit(rmem))
-					break;
-			}
 
 			end = rmem->base + rmem->size;
 			pr_info("::[%s]: size: %pa, align: %pa\n", p->name, &p->size, &p->align);
@@ -265,13 +172,13 @@ void zmc_get_range(phys_addr_t *base, phys_addr_t *size)
 	}
 }
 
-static bool system_mem_status_ok(unsigned long count)
+static bool system_mem_status_ok(unsigned long minus)
 {
 	struct pglist_data *pgdat;
 	enum zone_type zoneidx;
 	struct zone *z;
 	unsigned long free = 0, file = 0;
-	unsigned long high_wmark = 0;
+	unsigned long min_wmark = 0, low_wmark = 0, high_wmark = 0;
 
 	/* Go through all zones below OPT_ZONE_MOVABLE_CMA */
 	for_each_online_pgdat(pgdat) {
@@ -279,16 +186,20 @@ static bool system_mem_status_ok(unsigned long count)
 			z = pgdat->node_zones + zoneidx;
 			free += zone_page_state(z, NR_FREE_PAGES);
 			file += (zone_page_state(z, NR_FILE_PAGES) - zone_page_state(z, NR_SHMEM));
+			min_wmark += min_wmark_pages(z) + z->nr_reserved_highatomic;
+			low_wmark += low_wmark_pages(z) + z->nr_reserved_highatomic;
 			high_wmark += high_wmark_pages(z) + z->nr_reserved_highatomic;
 		}
 	}
 
-	pr_info("%s: free(%lu) file(%lu) high(%lu) count(%lu)\n",
-			__func__, free, file, high_wmark, count);
+	pr_info("%s: free(%lu) file(%lu) min(%lu) low(%lu) high(%lu)\n",
+			__func__, free, file, min_wmark, low_wmark, high_wmark);
 
-	/* Hope the system has as less memory reclaim as possible */
-	high_wmark += count;
-	if (free < high_wmark)
+	if (free < min_wmark)
+		return false;
+
+	low_wmark += minus;
+	if (free < low_wmark)
 		return false;
 
 	return true;
@@ -298,20 +209,18 @@ static bool zmc_check_mem_status_ok(unsigned long count)
 {
 	struct pglist_data *pgdat;
 	struct zone *z;
-	unsigned long free = 0, available = 0, minus = 0;
+	unsigned long available = 0, minus = 0;
 
 	/* Check OPT_ZONE_MOVABLE_CMA first */
 	for_each_online_pgdat(pgdat) {
 		z = pgdat->node_zones + OPT_ZONE_MOVABLE_CMA;
-		free += zone_page_state(z, NR_FREE_PAGES);
 		available += zone_page_state(z, NR_FREE_PAGES);
 		minus += zone_page_state(z, NR_INACTIVE_ANON) + zone_page_state(z, NR_ACTIVE_ANON) +
 			zone_page_state(z, NR_INACTIVE_FILE) + zone_page_state(z, NR_ACTIVE_FILE);
 		available += minus;
 	}
 
-	pr_info("%s: count(%lu) free(%lu) available(%lu) minus(%lu)\n",
-			__func__, count, free, available, minus);
+	pr_info("%s: count(%lu) available(%lu) minus(%lu)\n", __func__, count, available, minus);
 
 	/*
 	 * Could "minus" be put into remaining area?
@@ -320,12 +229,7 @@ static bool zmc_check_mem_status_ok(unsigned long count)
 	if (available > count && (minus <= (available - count)))
 		return true;
 
-	/* Remaining needed size */
-	if (count > free)
-		count -= free;
-
-	/* If we need more lower zones' space... */
-	return system_mem_status_ok(count);
+	return system_mem_status_ok(minus);
 }
 
 struct page *zmc_cma_alloc(struct cma *cma, int count, unsigned int align, struct single_cma_registration *p)
@@ -384,6 +288,7 @@ bool zmc_cma_release(struct cma *cma, struct page *pages, int count)
 	return cma_release(cma, pages, count);
 }
 
+#ifdef CONFIG_MTK_MEMORY_LOWPOWER
 static int __init fix_up_normal_zone(void)
 {
 	struct pglist_data *pgdat;
@@ -395,15 +300,12 @@ static int __init fix_up_normal_zone(void)
 		unsigned long pfn;
 		struct page *page;
 
-		z = pgdat->node_zones + OPT_ZONE_MOVABLE_CMA;
+		z = pgdat->node_zones + ZONE_NORMAL;
 		zone_start_pfn = z->zone_start_pfn;
 		zone_end_pfn = zone_start_pfn + z->present_pages;
 		for (pfn = zone_start_pfn;
 				pfn < zone_end_pfn;
 				pfn += pageblock_nr_pages) {
-			if (!pfn_valid(pfn))
-				continue;
-
 			page = pfn_to_page(pfn);
 			set_pageblock_migratetype(page, MIGRATE_CMA);
 			move_freepages_block(z, page, MIGRATE_CMA);
@@ -412,3 +314,4 @@ static int __init fix_up_normal_zone(void)
 	return 0;
 }
 core_initcall(fix_up_normal_zone);
+#endif

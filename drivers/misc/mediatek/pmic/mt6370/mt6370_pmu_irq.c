@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -126,7 +126,9 @@ static void mt6370_pmu_irq_bus_lock(struct irq_data *data)
 	struct mt6370_pmu_chip *chip = data->chip_data;
 	int ret = 0;
 
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_CHGMASK1, 16, mt6370_pmu_curr_irqmask);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_CHGMASK1, 16,
+					mt6370_pmu_curr_irqmask);
 	if (ret < 0)
 		dev_err(chip->dev, "%s: read irq mask fail\n", __func__);
 }
@@ -136,7 +138,9 @@ static void mt6370_pmu_irq_bus_sync_unlock(struct irq_data *data)
 	struct mt6370_pmu_chip *chip = data->chip_data;
 	int ret = 0;
 
-	ret = mt6370_pmu_reg_block_write(chip, MT6370_PMU_CHGMASK1, 16, mt6370_pmu_curr_irqmask);
+	ret = mt6370_pmu_reg_block_write(chip,
+					 MT6370_PMU_CHGMASK1, 16,
+					 mt6370_pmu_curr_irqmask);
 	if (ret < 0)
 		dev_err(chip->dev, "%s: write irq mask fail\n", __func__);
 }
@@ -167,7 +171,8 @@ static struct irq_chip mt6370_pmu_irq_chip = {
 	.irq_disable = mt6370_pmu_irq_disable,
 };
 
-static int mt6370_pmu_irq_domain_map(struct irq_domain *d, unsigned int virq, irq_hw_number_t hw)
+static int mt6370_pmu_irq_domain_map(struct irq_domain *d, unsigned int virq,
+				     irq_hw_number_t hw)
 {
 	struct mt6370_pmu_chip *chip = d->host_data;
 
@@ -176,7 +181,7 @@ static int mt6370_pmu_irq_domain_map(struct irq_domain *d, unsigned int virq, ir
 	irq_set_chip_data(virq, chip);
 	irq_set_chip_and_handler(virq, &mt6370_pmu_irq_chip, handle_simple_irq);
 	irq_set_nested_thread(virq, true);
-#if 1				/*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) */
+#if 1 /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)) */
 	irq_set_parent(virq, chip->irq);
 #endif
 	irq_set_noprobe(virq);
@@ -198,12 +203,9 @@ static const struct irq_domain_ops mt6370_pmu_irq_domain_ops = {
 static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 {
 	struct mt6370_pmu_chip *chip = (struct mt6370_pmu_chip *)priv;
-	u8 irq_ind = 0, data[16] = { 0 }, mask[16] = {
-	0};
-	u8 stat_chg[16] = { 0 }, stat_old[16] = {
-	0}, stat_new[16] = {
-	0};
-	u8 valid_chg[16] = { 0 };
+	u8 irq_ind = 0, data[16] = {0}, mask[16] = {0};
+	u8 stat_chg[16] = {0}, stat_old[16] = {0}, stat_new[16] = {0};
+	u8 valid_chg[16] = {0};
 	int i = 0, j = 0, ret = 0;
 
 	pr_info_ratelimited("%s\n", __func__);
@@ -221,30 +223,35 @@ static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 	irq_ind = ret;
 
 	/* read stat before reading irq evt */
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_REG_CHGSTAT1, 16, stat_old);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_REG_CHGSTAT1, 16, stat_old);
 	if (ret < 0) {
 		dev_err(chip->dev, "read prev irq stat fail\n");
 		goto out_irq_handler;
 	}
 	/* workaround for irq, divided irq event into upper and lower */
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_REG_CHGIRQ1, 5, data);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_REG_CHGIRQ1, 5, data);
 	if (ret < 0) {
 		dev_err(chip->dev, "read upper irq event fail\n");
 		goto out_irq_handler;
 	}
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_REG_QCIRQ, 10, data + 6);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_REG_QCIRQ, 10, data + 6);
 	if (ret < 0) {
 		dev_err(chip->dev, "read lower irq event fail\n");
 		goto out_irq_handler;
 	}
 
 	/* read stat after reading irq evt */
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_REG_CHGSTAT1, 16, stat_new);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_REG_CHGSTAT1, 16, stat_new);
 	if (ret < 0) {
 		dev_err(chip->dev, "read post irq stat fail\n");
 		goto out_irq_handler;
 	}
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_CHGMASK1, 16, mask);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_CHGMASK1, 16, mask);
 	if (ret < 0) {
 		dev_err(chip->dev, "read irq mask fail\n");
 		goto out_irq_handler;
@@ -257,7 +264,7 @@ static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 	for (i = 0; i < 16; i++) {
 		stat_chg[i] = stat_old[i] ^ stat_new[i];
 		valid_chg[i] = (stat_new[i] & mt6370_irqr_filter[i]) |
-		    (~stat_new[i] & mt6370_irqf_filter[i]);
+				(~stat_new[i] & mt6370_irqf_filter[i]);
 		data[i] |= (stat_chg[i] & valid_chg[i]);
 		data[i] &= ~mask[i];
 		if (!data[i])
@@ -267,11 +274,10 @@ static irqreturn_t mt6370_pmu_irq_handler(int irq, void *priv)
 				continue;
 			ret = irq_find_mapping(chip->irq_domain, i * 8 + j);
 			if (ret) {
-				dev_info_ratelimited(chip->dev,
-						     "%s: handler irq_domain = (%d, %d)\n",
-						     __func__, i, j);
+				dev_info_ratelimited(chip->dev, "%s: handler irq_domain = (%d, %d)\n", __func__, i, j);
 				handle_nested_irq(ret);
-			} else
+			}
+			else
 				dev_err(chip->dev, "unmapped %d %d\n", i, j);
 		}
 	}
@@ -282,7 +288,7 @@ out_irq_handler:
 
 static int mt6370_pmu_irq_init(struct mt6370_pmu_chip *chip)
 {
-	u8 data[16] = { 0 };
+	u8 data[16] = {0};
 	int ret = 0;
 
 	/* mask all */
@@ -293,7 +299,8 @@ static int mt6370_pmu_irq_init(struct mt6370_pmu_chip *chip)
 	ret = mt6370_pmu_reg_block_write(chip, MT6370_PMU_CHGMASK1, 16, data);
 	if (ret < 0)
 		return ret;
-	ret = mt6370_pmu_reg_block_read(chip, MT6370_PMU_REG_CHGIRQ1, 16, data);
+	ret = mt6370_pmu_reg_block_read(chip,
+					MT6370_PMU_REG_CHGIRQ1, 16, data);
 	if (ret < 0)
 		return ret;
 	/* re-enable all, but the all part irq event masks are enabled */
@@ -328,7 +335,7 @@ int mt6370_pmu_get_virq_number(struct mt6370_pmu_chip *chip, const char *name)
 	for (i = 0; i < ARRAY_SIZE(mt6370_pmu_irq_mapping_tbl); i++) {
 		if (!strcmp(mt6370_pmu_irq_mapping_tbl[i].name, name)) {
 			return irq_create_mapping(chip->irq_domain,
-						  mt6370_pmu_irq_mapping_tbl[i].id);
+					mt6370_pmu_irq_mapping_tbl[i].id);
 		}
 	}
 	return -EINVAL;
@@ -355,7 +362,8 @@ int mt6370_pmu_irq_register(struct mt6370_pmu_chip *chip)
 	ret = mt6370_pmu_irq_init(chip);
 	if (ret < 0)
 		return ret;
-	ret = gpio_request_one(pdata->intr_gpio, GPIOF_IN, "mt6370_pmu_irq_gpio");
+	ret = gpio_request_one(pdata->intr_gpio, GPIOF_IN,
+			       "mt6370_pmu_irq_gpio");
 	if (ret < 0) {
 		dev_err(chip->dev, "%s: gpio request fail\n", __func__);
 		return ret;
@@ -367,7 +375,8 @@ int mt6370_pmu_irq_register(struct mt6370_pmu_chip *chip)
 	}
 	chip->irq_domain = irq_domain_add_linear(chip->dev->of_node,
 						 MT6370_PMU_IRQ_EVT_MAX,
-						 &mt6370_pmu_irq_domain_ops, chip);
+						 &mt6370_pmu_irq_domain_ops,
+						 chip);
 	if (!chip->irq_domain) {
 		dev_err(chip->dev, "irq domain register fail\n");
 		ret = -EINVAL;
@@ -375,8 +384,8 @@ int mt6370_pmu_irq_register(struct mt6370_pmu_chip *chip)
 	}
 	chip->irq = ret;
 	ret = devm_request_threaded_irq(chip->dev, chip->irq, NULL,
-					mt6370_pmu_irq_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-					"mt6370_pmu_irq", chip);
+		mt6370_pmu_irq_handler, IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+		"mt6370_pmu_irq", chip);
 	if (ret < 0)
 		goto out_pmu_irq;
 	device_init_wakeup(chip->dev, true);
@@ -393,7 +402,7 @@ void mt6370_pmu_irq_unregister(struct mt6370_pmu_chip *chip)
 
 	device_init_wakeup(chip->dev, false);
 	devm_free_irq(chip->dev, chip->irq, chip);
-#if 1				/* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)) */
+#if 1 /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)) */
 	irq_domain_remove(chip->irq_domain);
 #endif
 	gpio_free(pdata->intr_gpio);

@@ -65,8 +65,8 @@ struct {
 #define CLEARBIT(longlong, bit) (longlong[bit/8] &= (~(1 << bit%8)))
 #define QUERYBIT(longlong, bit) (!!(longlong[bit/8] & (1 << bit%8)))
 
-int gesture_enabled;
-enum DOZE_T gesture_doze_status = DOZE_DISABLED;
+int gesture_enabled = 0;
+DOZE_T gesture_doze_status = DOZE_DISABLED;
 
 static u8 gestures_flag[32];
 static st_gesture_data gesture_data;
@@ -141,7 +141,7 @@ s32 gesture_event_handler(struct input_dev *dev)
 	s32 ret = -1;
 	int len, extra_len;
 
-	if (gesture_doze_status == DOZE_ENABLED) {
+	if (DOZE_ENABLED == gesture_doze_status) {
 		ret = gt1x_i2c_read(GTP_REG_WAKEUP_GESTURE, doze_buf, 4);
 		GTP_DEBUG("0x%x = 0x%02X,0x%02X,0x%02X,0x%02X", GTP_REG_WAKEUP_GESTURE, doze_buf[0], doze_buf[1],
 			  doze_buf[2], doze_buf[3]);
@@ -218,8 +218,8 @@ void gesture_clear_wakeup_data(void)
 
 #define HOTKNOT_NODE "hotknot"
 
-u8 hotknot_enabled;
-u8 hotknot_transfer_mode;
+u8 hotknot_enabled = 0;
+u8 hotknot_transfer_mode = 0;
 
 static int hotknot_open(struct inode *node, struct file *flip)
 {
@@ -377,7 +377,7 @@ static u8 got_hotknot_extra_state;
 static u8 wait_hotknot_state;
 static u8 force_wake_flag;
 static u8 block_enable;
-s32 hotknot_paired_flag;
+s32 hotknot_paired_flag = 0;
 
 static s32 hotknot_block_rw(u8 rqst_hotknot_state, s32 wait_hotknot_timeout)
 {
@@ -432,7 +432,7 @@ s32 hotknot_event_handler(u8 *data)
 		id = data[1];
 		hn_pxy_state = data[2] & 0x80;
 		hn_pxy_state_bak = data[3] & 0x80;
-		if ((id == 32) && (hn_pxy_state == 0x80) && (hn_pxy_state_bak == 0x80)) {
+		if ((32 == id) && (0x80 == hn_pxy_state) && (0x80 == hn_pxy_state_bak)) {
 #ifdef HN_DBLCFM_PAIRED
 			if (hn_paired_cnt++ < 2)
 				return 0;
@@ -467,29 +467,29 @@ s32 hotknot_event_handler(u8 *data)
 			  hn_state_buf[3]);
 
 		if (wait_hotknot_state & HN_MASTER_SEND) {
-			if ((hn_state_buf[0] == 0x03) || (hn_state_buf[0] == 0x04)
-			    || (hn_state_buf[0] == 0x07)) {
+			if ((0x03 == hn_state_buf[0]) || (0x04 == hn_state_buf[0])
+			    || (0x07 == hn_state_buf[0])) {
 				GTP_DEBUG("Wakeup HN_MASTER_SEND block polling waiter");
 				got_hotknot_state |= HN_MASTER_SEND;
 				got_hotknot_extra_state = hn_state_buf[0];
 				wake_up_interruptible(&bp_waiter);
 			}
 		} else if (wait_hotknot_state & HN_SLAVE_RECEIVED) {
-			if ((hn_state_buf[1] == 0x03) || (hn_state_buf[1] == 0x04)
-			    || (hn_state_buf[1] == 0x07)) {
+			if ((0x03 == hn_state_buf[1]) || (0x04 == hn_state_buf[1])
+			    || (0x07 == hn_state_buf[1])) {
 				GTP_DEBUG("Wakeup HN_SLAVE_RECEIVED block polling waiter:0x%x", hn_state_buf[1]);
 				got_hotknot_state |= HN_SLAVE_RECEIVED;
 				got_hotknot_extra_state = hn_state_buf[1];
 				wake_up_interruptible(&bp_waiter);
 			}
 		} else if (wait_hotknot_state & HN_MASTER_DEPARTED) {
-			if (hn_state_buf[0] == 0x07) {
+			if (0x07 == hn_state_buf[0]) {
 				GTP_DEBUG("Wakeup HN_MASTER_DEPARTED block polling waiter");
 				got_hotknot_state |= HN_MASTER_DEPARTED;
 				wake_up_interruptible(&bp_waiter);
 			}
 		} else if (wait_hotknot_state & HN_SLAVE_DEPARTED) {
-			if (hn_state_buf[1] == 0x07) {
+			if (0x07 == hn_state_buf[1]) {
 				GTP_DEBUG("Wakeup HN_SLAVE_DEPARTED block polling waiter");
 				got_hotknot_state |= HN_SLAVE_DEPARTED;
 				wake_up_interruptible(&bp_waiter);
@@ -566,7 +566,7 @@ s32 hotknot_event_handler(u8 *data)
 #define COMPAT_IO_PRINT                     (_IOW(GOODIX_MAGIC_NUMBER, 111, u8) & NEGLECT_SIZE_MASK)
 #endif
 #define CMD_HEAD_LENGTH             20
-static s32 io_iic_read(u8 *data, int buf_size, void __user *arg)
+static s32 io_iic_read(u8 *data, void __user *arg)
 {
 	s32 err = ERROR;
 	s32 data_length = 0;
@@ -580,11 +580,6 @@ static s32 io_iic_read(u8 *data, int buf_size, void __user *arg)
 
 	addr = data[0] << 8 | data[1];
 	data_length = data[2] << 8 | data[3];
-
-	if (data_length + CMD_HEAD_LENGTH > buf_size) {
-		GTP_ERROR("incorrect data length, data = %d, buffer = %d\n", data_length, buf_size);
-		return ERROR_MEM;
-	}
 
 	err = gt1x_i2c_read(addr, &data[CMD_HEAD_LENGTH], data_length);
 	if (!err) {
@@ -624,16 +619,14 @@ static s32 io_iic_write(u8 *data)
 }
 
 /*@return, 0:operate successfully
- *         > 0: the length of memory size ioctl has accessed,
- *         error otherwise.
- */
+/         > 0: the length of memory size ioctl has accessed,
+/         error otherwise.*/
 static long gt1x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	u32 value = 0;
 	s32 ret = 0;		/*the initial value must be 0*/
 	u8 *data = NULL;
 	int cnt = 30;
-	s32 data_length = 0;
 	static struct ratelimit_state ratelimit = {
 		.lock = __RAW_SPIN_LOCK_UNLOCKED(ratelimit.lock),
 		.interval = HZ/2,
@@ -647,12 +640,11 @@ static long gt1x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	GTP_DEBUG("IOCTL CMD:%x", cmd);
 	/*GTP_DEBUG("command:%d, length:%d, rw:%s", _IOC_NR(cmd), _IOC_SIZE(cmd),
-	 *	(_IOC_DIR(cmd) & _IOC_READ) ? "read" : (_IOC_DIR(cmd) & _IOC_WRITE) ? "write" : "-");
-	 */
+		(_IOC_DIR(cmd) & _IOC_READ) ? "read" : (_IOC_DIR(cmd) & _IOC_WRITE) ? "write" : "-");*/
 
 	if (_IOC_DIR(cmd)) {
 		s32 err = -1;
-		data_length = _IOC_SIZE(cmd);
+		s32 data_length = _IOC_SIZE(cmd);
 
 		data = kzalloc(data_length, GFP_KERNEL);
 		memset(data, 0, data_length);
@@ -679,19 +671,19 @@ static long gt1x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IO_IIC_READ:
-		if (gt1x_is_tpd_halt() == 1) {
+		if (1 == gt1x_is_tpd_halt()) {
 			if (__ratelimit(&ratelimit))
 				GTP_ERROR("touch is suspended.");
 			break;
 		}
 		if (data != NULL)
-			ret = io_iic_read(data, data_length, (void __user *)arg);
+			ret = io_iic_read(data, (void __user *)arg);
 		else
 			GTP_ERROR("Touch read data is NULL.");
 		break;
 
 	case IO_IIC_WRITE:
-		if (gt1x_is_tpd_halt() == 1) {
+		if (1 == gt1x_is_tpd_halt()) {
 			if (__ratelimit(&ratelimit))
 				GTP_ERROR("touch is suspended.");
 			break;
@@ -785,7 +777,7 @@ static long gt1x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case HOTKNOT_LOAD_AUTHENTICATION:
-		if (gt1x_is_tpd_halt() == 1) {
+		if (1 == gt1x_is_tpd_halt()) {
 			GTP_ERROR("touch is suspended.");
 			break;
 		}
@@ -796,7 +788,7 @@ static long gt1x_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case HOTKNOT_RECOVERY_MAIN:
-		if (gt1x_is_tpd_halt() == 1) {
+		if (1 == gt1x_is_tpd_halt()) {
 			GTP_ERROR("touch is suspended.");
 			break;
 		}
@@ -1011,7 +1003,7 @@ s32 gt1x_init_node(void)
 	memset(gestures_flag, 0, sizeof(gestures_flag));
 	memset((u8 *) &gesture_data, 0, sizeof(st_gesture_data));
 
-	proc_entry = proc_create(GESTURE_NODE, 0644, NULL, &gt1x_fops);
+	proc_entry = proc_create(GESTURE_NODE, 0666, NULL, &gt1x_fops);
 	if (proc_entry == NULL) {
 		GTP_ERROR("Couldn't create proc entry[GESTURE_NODE]!");
 		return -1;

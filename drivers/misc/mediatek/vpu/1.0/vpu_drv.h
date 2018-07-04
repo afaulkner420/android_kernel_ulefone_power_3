@@ -21,8 +21,7 @@
 typedef uint8_t vpu_id_t;
 
 /* the last byte of string must be '/0' */
-/*typedef char vpu_name_t[32];*/
-#define VPU_NAME_SIZE 32
+typedef char vpu_name_t[32];
 
 /**
  * Documentation index:
@@ -163,7 +162,7 @@ struct vpu_prop_desc {
 	uint8_t access;    /* directional data exchange */
 	uint32_t offset;   /* offset = previous offset + previous size */
 	uint32_t count;    /* size = sizeof(type) x count */
-	char name[VPU_NAME_SIZE];
+	vpu_name_t name;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -205,7 +204,7 @@ struct vpu_port {
 	vpu_id_t id;
 	uint8_t usage;
 	uint8_t dir;
-	char name[VPU_NAME_SIZE];
+	vpu_name_t name;
 };
 
 /*---------------------------------------------------------------------------*/
@@ -221,7 +220,7 @@ struct vpu_algo {
 	uint32_t bin_length;
 	uint64_t info_ptr;       /* the pointer to info data buffer */
 	uint64_t bin_ptr;        /* mva of algo bin, which is accessible by VPU */
-	char name[VPU_NAME_SIZE];
+	vpu_name_t name;
 	struct vpu_prop_desc info_descs[VPU_MAX_NUM_PROPS];
 	struct vpu_prop_desc sett_descs[VPU_MAX_NUM_PROPS];
 	struct vpu_port ports[VPU_MAX_NUM_PORTS];

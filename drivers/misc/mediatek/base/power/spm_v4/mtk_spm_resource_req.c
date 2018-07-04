@@ -89,7 +89,6 @@ bool spm_resource_req(unsigned int user, unsigned int req_mask)
 
 	return true;
 }
-EXPORT_SYMBOL(spm_resource_req);
 
 unsigned int spm_get_resource_usage(void)
 {
@@ -102,7 +101,6 @@ unsigned int spm_get_resource_usage(void)
 
 	return resource_usage;
 }
-EXPORT_SYMBOL(spm_get_resource_usage);
 
 static void spm_update_curr_resource_usage(void)
 {
@@ -149,7 +147,8 @@ static ssize_t resource_req_read(struct file *filp,
 	p[0] = '\0';
 
 	for (i = 0; i < NF_SPM_RESOURCE; i++) {
-		p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "resource_req_bypass_stat[%s] = %x %x, usage %x %x\n",
+		p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf),
+			"resource_req_bypass_stat[%s] = %x %x, usage %x %x\n",
 						spm_resource_name[i],
 						~resc_desc[i].user_usage_mask[1],
 						~resc_desc[i].user_usage_mask[0],
@@ -163,7 +162,7 @@ static ssize_t resource_req_read(struct file *filp,
 	p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "echo bypass [bit] > /d/spm/resource_req\n");
 	p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "\n");
 	p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "[1] UFS, [2] SSUSB, [3] AUDIO, [4] UART, ");
-	p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "[5] CONN, [6] MSDC [7] SCP\n");
+	p += scnprintf(p, DBG_BUF_LEN - strlen(dbg_buf), "[5] CONN, [6] MSDC\n");
 
 	len = p - dbg_buf;
 

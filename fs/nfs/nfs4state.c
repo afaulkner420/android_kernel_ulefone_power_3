@@ -1072,7 +1072,6 @@ static void nfs_increment_seqid(int status, struct nfs_seqid *seqid)
 		case -NFS4ERR_BADXDR:
 		case -NFS4ERR_RESOURCE:
 		case -NFS4ERR_NOFILEHANDLE:
-		case -NFS4ERR_MOVED:
 			/* Non-seqid mutating errors */
 			return;
 	};
@@ -1494,9 +1493,6 @@ restart:
 					__func__, status);
 			case -ENOENT:
 			case -ENOMEM:
-			case -EACCES:
-			case -EROFS:
-			case -EIO:
 			case -ESTALE:
 				/* Open state on this file cannot be recovered */
 				nfs4_state_mark_recovery_failed(state, status);

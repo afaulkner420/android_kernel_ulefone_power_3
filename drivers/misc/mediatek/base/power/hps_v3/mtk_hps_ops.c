@@ -51,7 +51,6 @@ static int hps_algo_rush_boost(void)
 {
 	int val, base_val;
 	unsigned int idx, total_rel_load;
-	int ret = 0;
 
 	idx = total_rel_load = 0;
 	for (idx = 0 ; idx < hps_sys.cluster_num ; idx++)
@@ -86,13 +85,12 @@ static int hps_algo_rush_boost(void)
 		/* [MET] debug for geekbench */
 		met_tag_oneshot(0, "sched_rush_boost", 1);
 
-		ret = 1;
+		return 1;
 	} else {
 		/* [MET] debug for geekbench */
 		met_tag_oneshot(0, "sched_rush_boost", 0);
-		ret = 0;
+		return 0;
 	}
-	return ret;
 }
 static int hps_algo_eas(void)
 {

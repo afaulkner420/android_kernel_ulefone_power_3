@@ -65,8 +65,10 @@
 #include <upmu_common.h>
 /* #include <mach/upmu_hw.h> */
 #include <mtk_pmic_wrap.h>
+#if defined CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #include <mtk_boot.h>
 #include <mt-plat/mtk_boot_common.h>
+#endif
 /* #include <linux/printk.h> */
 #include <mtk_reboot.h>
 #ifdef CONFIG_MTK_SMART_BATTERY
@@ -265,7 +267,7 @@ bool rtc_low_power_detected(void)
 }
 EXPORT_SYMBOL(rtc_low_power_detected);
 
-void rtc_gpio_enable_32k(enum rtc_gpio_user_t user)
+void rtc_gpio_enable_32k(rtc_gpio_user_t user)
 {
 	unsigned long flags;
 
@@ -280,7 +282,7 @@ void rtc_gpio_enable_32k(enum rtc_gpio_user_t user)
 }
 EXPORT_SYMBOL(rtc_gpio_enable_32k);
 
-void rtc_gpio_disable_32k(enum rtc_gpio_user_t user)
+void rtc_gpio_disable_32k(rtc_gpio_user_t user)
 {
 	unsigned long flags;
 
@@ -368,6 +370,7 @@ void rtc_mark_recovery(void)
 	spin_unlock_irqrestore(&rtc_lock, flags);
 }
 
+#if defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 void rtc_mark_kpoc(void)
 {
 	unsigned long flags;
@@ -376,7 +379,7 @@ void rtc_mark_kpoc(void)
 	hal_rtc_set_spare_register(RTC_KPOC, 0x1);
 	spin_unlock_irqrestore(&rtc_lock, flags);
 }
-
+#endif
 void rtc_mark_fast(void)
 {
 	unsigned long flags;
@@ -505,6 +508,7 @@ static void rtc_handler(void)
 		time = mktime(tm.tm_year, tm.tm_mon, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 
 		if (now_time >= time - 1 && now_time <= time + 4) {	/* power on */
+#if defined(CONFIG_MTK_KERNEL_POWER_OFF_CHARGING)
 			if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT
 			    || get_boot_mode() == LOW_POWER_OFF_CHARGING_BOOT) {
 				do {
@@ -528,6 +532,10 @@ static void rtc_handler(void)
 				hal_rtc_save_pwron_alarm();
 				pwron_alm = true;
 			}
+#else
+			hal_rtc_save_pwron_alarm();
+			pwron_alm = true;
+#endif
 		} else if (now_time < time) {	/* set power-on alarm */
 			time -= 1;
 			rtc_time_to_tm(time, &tm);
@@ -557,11 +565,30 @@ void rtc_irq_handler(void)
 }
 
 #if RTC_OVER_TIME_RESET
+/* Vanzo:yucheng on: Sat, 07 Mar 2015 18:39:58 +0800
+ * Added for default date&time customization
+ */
+#if defined(VANZO_FEATURE_DEFAULT_TIME_BY_NAME_VALUE)
+static int atoi_ext(const char *a)
+{
+    int s = 0;
+
+    while(*a >= '0' && *a <= '9')
+    {
+        s = (s << 3) + (s << 1) + *a++ - '0';
+    }
+    return s;
+}
+#endif
+// End of Vanzo: yucheng
+
 static void rtc_reset_to_deftime(struct rtc_time *tm)
 {
 	unsigned long flags;
 	struct rtc_time defaulttm;
 
+/* Vanzo:yucheng on: Sat, 07 Mar 2015 18:39:58 +0800
+ * Modified for default date&time customization
 	tm->tm_year = RTC_DEFAULT_YEA - 1900;
 	tm->tm_mon = RTC_DEFAULT_MTH - 1;
 	tm->tm_mday = RTC_DEFAULT_DOM;
@@ -569,8 +596,38 @@ static void rtc_reset_to_deftime(struct rtc_time *tm)
 	tm->tm_hour = 0;
 	tm->tm_min = 0;
 	tm->tm_sec = 0;
+ */
+    int date = 20150101;
+    int times = 80101;
+#if defined(VANZO_FEATURE_DEFAULT_TIME_BY_NAME_VALUE)
+    if (VANZO_FEATURE_DEFAULT_TIME_BY_NAME_VALUE!=NULL
+        && strlen((char*)VANZO_FEATURE_DEFAULT_TIME_BY_NAME_VALUE)!=0) {
+
+        times = atoi_ext((char*)VANZO_FEATURE_DEFAULT_TIME_BY_NAME_VALUE);
+    }
+#endif
+
+#if defined(VANZO_FEATURE_DEFAULT_DATE_BY_NAME_VALUE)
+    if (VANZO_FEATURE_DEFAULT_DATE_BY_NAME_VALUE!=NULL
+        && strlen((char*)VANZO_FEATURE_DEFAULT_DATE_BY_NAME_VALUE)!=0) {
+
+        date = atoi_ext((char*)VANZO_FEATURE_DEFAULT_DATE_BY_NAME_VALUE);
+    }
+#else
+    date = RTC_DEFAULT_YEA*10000 + RTC_DEFAULT_MTH*100 + RTC_DEFAULT_DOM;
+#endif
+	tm->tm_year = date / 10000 - 1900;
+	tm->tm_mon = (date % 10000) / 100 - 1;
+	tm->tm_mday = date % 100;
+	tm->tm_wday = 1;
+	tm->tm_hour = times / 10000;
+	tm->tm_min = (times % 10000) / 100;
+	tm->tm_sec = times % 100;
+// End of Vanzo: yucheng
 
 	/* set default alarm time */
+/* Vanzo:yucheng on: Sat, 07 Mar 2015 18:48:05 +0800
+ * Modified for default date&time customization
 	defaulttm.tm_year = RTC_DEFAULT_YEA - RTC_MIN_YEAR;
 	defaulttm.tm_mon = RTC_DEFAULT_MTH;
 	defaulttm.tm_mday = RTC_DEFAULT_DOM;
@@ -578,6 +635,15 @@ static void rtc_reset_to_deftime(struct rtc_time *tm)
 	defaulttm.tm_hour = 0;
 	defaulttm.tm_min = 0;
 	defaulttm.tm_sec = 0;
+ */
+	defaulttm.tm_year = date / 10000 - RTC_MIN_YEAR;
+	defaulttm.tm_mon = (date % 10000) / 100;
+	defaulttm.tm_mday = date % 100;
+	defaulttm.tm_wday = 1;
+	defaulttm.tm_hour = times / 10000;
+	defaulttm.tm_min = (times % 10000) / 100;
+	defaulttm.tm_sec = times % 100;
+// End of Vanzo: yucheng
 	spin_lock_irqsave(&rtc_lock, flags);
 	hal_rtc_set_alarm(&defaulttm);
 	spin_unlock_irqrestore(&rtc_lock, flags);
@@ -765,8 +831,6 @@ static int rtc_pdrv_probe(struct platform_device *pdev)
 	/* only enable LPD interrupt in engineering build */
 	spin_lock_irqsave(&rtc_lock, flags);
 	hal_rtc_set_lp_irq();
-	/* lpsd */
-	rtc_lpsd_restore_al_mask();
 	spin_unlock_irqrestore(&rtc_lock, flags);
 
 	device_init_wakeup(&pdev->dev, 1);

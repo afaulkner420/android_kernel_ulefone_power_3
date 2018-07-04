@@ -34,7 +34,9 @@
 
 #include "u_fs.h"
 
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #include "f_hid.c"
+#endif
 #ifdef CONFIG_SND_RAWMIDI
 #include "f_midi.c"
 #endif
@@ -48,6 +50,9 @@
 /* note ERROR macro both appear on cdev & u_ether, make sure what you want */
 #include "rndis.c"
 #include "u_ether.c"
+
+#include "mbim_ether.c"
+#include "f_mbim.c"
 
 USB_ETHERNET_MODULE_PARAMETERS();
 
@@ -71,9 +76,12 @@ static const char longname[] = "Gadget Android";
 #define PRODUCT_ID		0x0001
 
 #include <mt-plat/mtk_boot_common.h>
+
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #define KPOC_USB_FUNC "hid"
 #define KPOC_USB_VENDOR_ID 0x0E8D
 #define KPOC_USB_PRODUCT_ID 0x20FF
+#endif
 
 #ifdef CONFIG_SND_RAWMIDI
 /* f_midi configuration */
@@ -85,6 +93,8 @@ static const char longname[] = "Gadget Android";
 #ifdef CONFIG_MTPROF
 #include "bootprof.h"
 #endif
+
+static int quick_vcom_num;
 
 struct android_usb_function {
 	char *name;
@@ -289,6 +299,7 @@ static void android_disable(struct android_dev *dev)
 
 /*-------------------------------------------------------------------------*/
 /* Supported functions initialization */
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 static int hid_function_init(struct android_usb_function *f,
 		struct usb_composite_dev *cdev)
 {
@@ -309,6 +320,7 @@ static struct android_usb_function hid_function = {
 	.cleanup	= hid_function_cleanup,
 	.bind_config	= hid_function_bind_config,
 };
+#endif
 
 struct functionfs_config {
 	bool opened;
@@ -577,6 +589,10 @@ acm_function_bind_config(struct android_usb_function *f,
 		}
 	}
 
+	if (quick_vcom_num != 0) {
+		config->instances = quick_vcom_num;
+		quick_vcom_num = 0;
+	}
 
 	config->instances_on = config->instances;
 	for (i = 0; i < config->instances_on; i++) {
@@ -1413,6 +1429,73 @@ static struct android_usb_function rndis_function = {
 	.attributes	= rndis_function_attributes,
 };
 
+
+
+struct mbim_function_config {
+	u8      ethaddr[ETH_ALEN];
+	char	manufacturer[256];
+	struct mbim_eth_dev *dev;
+};
+
+#define MAX_MBIM_INSTANCES 1
+
+static int mbim_function_init(struct android_usb_function *f,
+					 struct usb_composite_dev *cdev)
+{
+	int ret;
+
+	f->config = kzalloc(sizeof(struct mbim_function_config), GFP_KERNEL);
+	if (!f->config)
+		return -ENOMEM;
+
+	ret = mbim_init(MAX_MBIM_INSTANCES);
+	if (ret)
+		kfree(f->config);
+
+	return ret;
+}
+
+static void mbim_function_cleanup(struct android_usb_function *f)
+{
+	kfree(f->config);
+	f->config = NULL;
+	mbim_cleanup();
+}
+
+static int mbim_function_bind_config(struct android_usb_function *f,
+					  struct usb_configuration *c)
+{
+	int ret;
+	struct mbim_function_config *mbim = f->config;
+	struct mbim_eth_dev *dev;
+
+	dev = mbim_ether_setup_name(c->cdev->gadget);
+	if (IS_ERR(dev)) {
+		ret = PTR_ERR(dev);
+		pr_err("%s: mbim_gether_setup failed\n", __func__);
+		return ret;
+	}
+	mbim->dev = dev;
+	return mbim_bind_config(c, 0, mbim->dev);
+}
+static void mbim_function_unbind_config(struct android_usb_function *f,
+						struct usb_configuration *c)
+{
+	struct mbim_function_config *mbim = f->config;
+
+	mbim_ether_cleanup(mbim->dev);
+}
+
+static struct android_usb_function mbim_function = {
+	.name		= "mbim",
+	.init		= mbim_function_init,
+	.cleanup	= mbim_function_cleanup,
+	.bind_config	= mbim_function_bind_config,
+	.unbind_config	= mbim_function_unbind_config,
+};
+
+
+
 struct mass_storage_function_config {
 	struct usb_function *f_ms;
 	struct usb_function_instance *f_ms_inst;
@@ -1448,8 +1531,17 @@ static int mass_storage_function_init(struct android_usb_function *f,
 		ret = PTR_ERR(config->f_ms);
 		goto err_usb_get_function;
 	}
+#ifdef CONFIG_MTK_MULTI_STORAGE_SUPPORT
+#ifdef CONFIG_MTK_SHARED_SDCARD
+#define NLUN_STORAGE 1
+#else
+#define NLUN_STORAGE 2
+#endif
+#else
+#define NLUN_STORAGE 1
+#endif
 
-	fsg_mod_data.file_count = 1;
+	fsg_mod_data.file_count = NLUN_STORAGE;
 	for (i = 0 ; i < fsg_mod_data.file_count; i++) {
 		fsg_mod_data.file[i] = "";
 		fsg_mod_data.removable[i] = true;
@@ -1638,7 +1730,7 @@ static struct android_usb_function accessory_function = {
 	.ctrlrequest	= accessory_function_ctrlrequest,
 };
 
-#ifdef CONFIG_SND_PCM
+
 struct audio_source_function_config {
 	struct usb_function *f_aud;
 	struct usb_function_instance *f_aud_inst;
@@ -1694,7 +1786,7 @@ static struct android_usb_function audio_source_function = {
 	.cleanup	= audio_source_function_cleanup,
 	.bind_config	= audio_source_function_bind_config,
 };
-#endif
+
 
 #ifdef CONFIG_MTK_ECCCI_C2K
 static int rawbulk_function_init(struct android_usb_function *f,
@@ -1834,6 +1926,7 @@ static struct android_usb_function midi_function = {
 
 static struct android_usb_function *supported_functions[] = {
 	&ffs_function,
+	&mbim_function,
 	&acm_function,
 	&mtp_function,
 	&ptp_function,
@@ -1842,9 +1935,7 @@ static struct android_usb_function *supported_functions[] = {
 	&rndis_function,
 	&mass_storage_function,
 	&accessory_function,
-#ifdef CONFIG_SND_PCM
 	&audio_source_function,
-#endif
 #ifdef CONFIG_SND_RAWMIDI
 	&midi_function,
 #endif
@@ -1858,7 +1949,9 @@ static struct android_usb_function *supported_functions[] = {
 #ifdef CONFIG_USB_F_SS_LB
 	&loopback_function,
 #endif
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 	&hid_function,
+#endif
 	NULL
 };
 
@@ -2044,6 +2137,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	}
 
 	INIT_LIST_HEAD(&dev->enabled_functions);
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 	if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT || get_boot_mode() == LOW_POWER_OFF_CHARGING_BOOT) {
 		pr_notice("[USB]KPOC, func%s\n", KPOC_USB_FUNC);
 		err = android_enable_function(dev, KPOC_USB_FUNC);
@@ -2053,6 +2147,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 		mutex_unlock(&dev->mutex);
 		return size;
 	}
+#endif
 
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
@@ -2145,12 +2240,14 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 		 */
 		cdev->desc.idVendor = device_desc.idVendor;
 		cdev->desc.idProduct = device_desc.idProduct;
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 		if (get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT
 				|| get_boot_mode() == LOW_POWER_OFF_CHARGING_BOOT) {
 			pr_notice("[USB]KPOC, vid:%d, pid:%d\n", KPOC_USB_VENDOR_ID, KPOC_USB_PRODUCT_ID);
 			cdev->desc.idVendor = cpu_to_le16(KPOC_USB_VENDOR_ID);
 			cdev->desc.idProduct = cpu_to_le16(KPOC_USB_PRODUCT_ID);
 		}
+#endif
 		cdev->desc.bcdDevice = device_desc.bcdDevice;
 		cdev->desc.bDeviceClass = device_desc.bDeviceClass;
 		cdev->desc.bDeviceSubClass = device_desc.bDeviceSubClass;
@@ -2591,10 +2688,6 @@ void trigger_android_usb_state_monitor_work(void)
 {
 	static int inited;
 
-#ifdef CONFIG_FPGA_EARLY_PORTING
-	pr_info("SKIP %s\n", __func__);
-	return;
-#endif
 	if (!inited) {
 		/* TIMER_DEFERRABLE for not interfering with deep idle */
 		INIT_DEFERRABLE_WORK(&android_usb_state_monitor_work, do_android_usb_state_monitor_work);
@@ -2635,6 +2728,52 @@ static int android_create_device(struct android_dev *dev)
 #endif
 
 	return 0;
+}
+
+static const char TAG_NAME[] = "androidboot.usbconfig=";
+
+/*
+ * on property:ro.boot.usbconfig=1
+ *     write /sys/class/android_usb/android0/enable 0
+ *     write /sys/class/android_usb/android0/iSerial " "
+ *     write /sys/class/android_usb/android0/idVendor 0e8d
+ *     write /sys/class/android_usb/android0/idProduct 2007
+ *     write /sys/class/android_usb/android0/f_acm/instances 1
+ *     write /sys/class/android_usb/android0/functions acm
+ *     write /sys/class/android_usb/android0/bDeviceClass 02
+ *     write /sys/class/android_usb/android0/enable 1
+*/
+void enable_meta_vcom(void)
+{
+	char *ptr;
+	char mode = 0;
+
+	ptr = strstr(saved_command_line, TAG_NAME);
+	if (ptr) {
+		mode = *(ptr + strlen(TAG_NAME));
+		pr_notice("meta mode=%c\n", mode);
+
+		if (mode == '1') {
+			struct android_dev *dev = _android_dev;
+			struct device *pdev = dev->dev;
+
+			struct device_attribute **attrs = android_usb_attributes;
+
+			enable_store(pdev, attrs[10], "0", 1);
+
+			strncpy(serial_string, "", sizeof(serial_string) - 1);
+			device_desc.idVendor = 0x0e8d;
+			device_desc.idProduct = 0x2007;
+			device_desc.bDeviceClass = 0x02;
+
+			quick_vcom_num = 1;
+
+			functions_store(pdev, attrs[9], "acm", 3);
+
+			enable_store(pdev, attrs[10], "1", 1);
+		}
+	} else
+		pr_notice("cat not find \"androidboot.usbconfig=\" in cmdline\n");
 }
 
 #ifdef CONFIG_USBIF_COMPLIANCE
@@ -2834,6 +2973,9 @@ static int __init init(void)
 	/* HACK: exchange composite's setup with ours */
 	composite_setup_func = android_usb_driver.gadget_driver.setup;
 	android_usb_driver.gadget_driver.setup = android_setup;
+
+	if (get_boot_mode() == META_BOOT)
+		enable_meta_vcom();
 
 	return 0;
 

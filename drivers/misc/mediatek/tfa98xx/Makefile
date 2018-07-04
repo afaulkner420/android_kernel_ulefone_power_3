@@ -1,1 +1,0 @@
-obj-$(CONFIG_SMARTPA_TFA98XX) += tfa98xx.o

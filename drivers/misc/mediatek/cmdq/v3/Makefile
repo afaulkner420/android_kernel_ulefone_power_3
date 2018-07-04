@@ -45,26 +45,29 @@ ifeq ($(strip $(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)),y)
 
 ifeq ($(CONFIG_TRUSTONIC_TEE_SUPPORT),y)
 include $(srctree)/drivers/misc/mediatek/gud/Makefile.include
-endif	# end of CONFIG_TRUSTONIC_TEE_SUPPORT
+endif
 
 ifeq ($(CONFIG_MICROTRUST_TEE_SUPPORT),y)
 include $(srctree)/drivers/misc/mediatek/teei/Makefile.include
-endif	# end of CONFIG_MICROTRUST_TEE_SUPPORT
+endif
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/cmdq/v3/inc/cmdq_sec_dr \
              -I$(srctree)/drivers/misc/mediatek/cmdq/v3/inc/cmdq_sec_tl
 
 ccflags-y += -DCMDQ_SECURE_PATH_SUPPORT
+ccflags-y += -DCMDQ_SECURE_PATH_NORMAL_IRQ
 
 ifeq ($(strip $(CONFIG_MTK_TEE_GP_SUPPORT)),y)
 ccflags-y += -DCMDQ_GP_SUPPORT
 endif
 
 ccflags-y += -DCMDQ_EVENT_SVP_BACKUP
-endif	# end of CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
+endif
 
 # platform dependent definition
+ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6758"))
 ccflags-$(CONFIG_MTK_SMI_EXT) += -DCMDQ_CONFIG_SMI
+endif
 ccflags-y += -DCMDQ_SPECIAL_ESD_PRIORITY
 ccflags-y += -D_CMDQ_DISABLE_MARKER_
 ccflags-y += -DCMDQ_PROFILE_MMP
@@ -84,20 +87,7 @@ obj-y += cmdq_mdp_common.o
 obj-y += cmdq_prof.o
 obj-y += cmdq_test.o
 obj-y += cmdq_sec.o
-obj-y += cmdq_event_common.o
-obj-y += cmdq_subsys_common.o
 
 ifeq ($(platformdir_exists), y)
 obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
 endif
-
-ifeq ($(strip $(CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT)),y)
-
-ifeq ($(strip $(CONFIG_MTK_TEE_GP_SUPPORT)),y)
-obj-y += cmdq_sec_gp.o
-else ifeq ($(CONFIG_TRUSTONIC_TEE_SUPPORT),y)
-obj-y += cmdq_sec_trustonic.o
-endif
-
-endif	# end of CONFIG_MTK_SEC_VIDEO_PATH_SUPPORT
-

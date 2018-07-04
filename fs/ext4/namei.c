@@ -1243,9 +1243,9 @@ static inline int ext4_match(struct ext4_filename *fname,
 	if (unlikely(!name)) {
 		if (fname->usr_fname->name[0] == '_') {
 			int ret;
-			if (de->name_len <= 32)
+			if (de->name_len < 16)
 				return 0;
-			ret = memcmp(de->name + ((de->name_len - 17) & ~15),
+			ret = memcmp(de->name + de->name_len - 16,
 				     fname->crypto_buf.name + 8, 16);
 			return (ret == 0) ? 1 : 0;
 		}
@@ -1557,8 +1557,8 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 	struct ext4_dir_entry_2 *de;
 	struct buffer_head *bh;
 
-       if (ext4_encrypted_inode(dir)) {
-               int res = ext4_get_encryption_info(dir);
+	if (ext4_encrypted_inode(dir)) {
+		int res = ext4_get_encryption_info(dir);
 
 		/*
 		 * This should be a properly defined flag for
@@ -1567,13 +1567,13 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry, unsi
 		 * created while the directory was encrypted and we
 		 * don't have access to the key.
 		 */
-	       dentry->d_fsdata = NULL;
-	       if (ext4_encryption_info(dir))
-		       dentry->d_fsdata = (void *) 1;
-	       d_set_d_op(dentry, &ext4_encrypted_d_ops);
-	       if (res && res != -ENOKEY)
-		       return ERR_PTR(res);
-       }
+		dentry->d_fsdata = NULL;
+		if (ext4_encryption_info(dir))
+			dentry->d_fsdata = (void *) 1;
+		d_set_d_op(dentry, &ext4_encrypted_d_ops);
+		if (res && res != -ENOKEY)
+			return ERR_PTR(res);
+	}
 
 	if (dentry->d_name.len > EXT4_NAME_LEN)
 		return ERR_PTR(-ENAMETOOLONG);
@@ -2035,31 +2035,33 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
 	frame->entries = entries;
 	frame->at = entries;
 	frame->bh = bh;
+	bh = bh2;
 
 	retval = ext4_handle_dirty_dx_node(handle, dir, frame->bh);
 	if (retval)
 		goto out_frames;	
-	retval = ext4_handle_dirty_dirent_node(handle, dir, bh2);
+	retval = ext4_handle_dirty_dirent_node(handle, dir, bh);
 	if (retval)
 		goto out_frames;	
 
-	de = do_split(handle,dir, &bh2, frame, &fname->hinfo);
+	de = do_split(handle,dir, &bh, frame, &fname->hinfo);
 	if (IS_ERR(de)) {
 		retval = PTR_ERR(de);
 		goto out_frames;
 	}
+	dx_release(frames);
 
-	retval = add_dirent_to_buf(handle, fname, dir, inode, de, bh2);
+	retval = add_dirent_to_buf(handle, fname, dir, inode, de, bh);
+	brelse(bh);
+	return retval;
 out_frames:
 	/*
 	 * Even if the block split failed, we have to properly write
 	 * out all the changes we did so far. Otherwise we can end up
 	 * with corrupted filesystem.
 	 */
-	if (retval)
-		ext4_mark_inode_dirty(handle, dir);
+	ext4_mark_inode_dirty(handle, dir);
 	dx_release(frames);
-	brelse(bh2);
 	return retval;
 }
 
@@ -3147,7 +3149,6 @@ static int ext4_symlink(struct inode *dir,
 	if ((disk_link.len > EXT4_N_BLOCKS * 4)) {
 		if (!encryption_required)
 			inode->i_op = &ext4_symlink_inode_operations;
-		inode_nohighmem(inode);
 		ext4_set_aops(inode);
 		/*
 		 * We cannot call page_symlink() with transaction started
@@ -3507,12 +3508,6 @@ static int ext4_rename(struct inode *old_dir, struct dentry *old_dentry,
 	int credits;
 	u8 old_file_type;
 
-	if ((ext4_encrypted_inode(old_dir) &&
-	     !ext4_has_encryption_key(old_dir)) ||
-	    (ext4_encrypted_inode(new_dir) &&
-	     !ext4_has_encryption_key(new_dir)))
-		return -ENOKEY;
-
 	retval = dquot_initialize(old.dir);
 	if (retval)
 		return retval;
@@ -3712,12 +3707,6 @@ static int ext4_cross_rename(struct inode *old_dir, struct dentry *old_dentry,
 	};
 	u8 new_file_type;
 	int retval;
-
-	if ((ext4_encrypted_inode(old_dir) &&
-	     !ext4_has_encryption_key(old_dir)) ||
-	    (ext4_encrypted_inode(new_dir) &&
-	     !ext4_has_encryption_key(new_dir)))
-		return -ENOKEY;
 
 	if ((ext4_encrypted_inode(old_dir) ||
 	     ext4_encrypted_inode(new_dir)) &&

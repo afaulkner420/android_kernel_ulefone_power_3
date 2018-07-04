@@ -45,15 +45,15 @@
  * =============================================================================
  */
 
-struct queue_element_t {
-	struct ipi_msg_t *msg;
+typedef struct {
+	ipi_msg_t *msg;
 	wait_queue_head_t wq;
-};
+} queue_element_t;
 
 
-struct msg_queue_t {
+typedef struct {
 	uint8_t k_element_size;
-	struct queue_element_t element[MAX_IPI_MSG_QUEUE_SIZE];
+	queue_element_t element[MAX_IPI_MSG_QUEUE_SIZE];
 
 	uint8_t task_scene; /* task_scene_t */
 
@@ -62,10 +62,10 @@ struct msg_queue_t {
 
 	spinlock_t rw_lock;
 
-	struct ipi_msg_t ipi_msg_ack;
+	ipi_msg_t ipi_msg_ack;
 
 	bool enable;
-};
+} msg_queue_t;
 
 
 /*
@@ -74,7 +74,7 @@ struct msg_queue_t {
  * =============================================================================
  */
 
-static struct ipi_queue_handler_t g_ipi_queue_handler[TASK_SCENE_SIZE];
+static ipi_queue_handler_t g_ipi_queue_handler[TASK_SCENE_SIZE];
 
 
 /*
@@ -83,10 +83,10 @@ static struct ipi_queue_handler_t g_ipi_queue_handler[TASK_SCENE_SIZE];
  * =============================================================================
  */
 
-static struct msg_queue_t *create_msg_queue(const uint8_t task_scene);
-static void destroy_msg_queue(struct msg_queue_t *msg_queue);
+static msg_queue_t *create_msg_queue(const uint8_t task_scene);
+static void destroy_msg_queue(msg_queue_t *msg_queue);
 
-static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_msg_t *p_ipi_msg, int idx_msg);
+static int process_message_in_queue(msg_queue_t *msg_queue, ipi_msg_t *p_ipi_msg, int idx_msg);
 
 
 /*
@@ -95,16 +95,16 @@ static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_ms
  * =============================================================================
  */
 
-inline bool check_queue_empty(const struct msg_queue_t *msg_queue);
-inline bool check_queue_to_be_full(const struct msg_queue_t *msg_queue);
+inline bool check_queue_empty(const msg_queue_t *msg_queue);
+inline bool check_queue_to_be_full(const msg_queue_t *msg_queue);
 
-inline uint8_t get_num_messages_in_queue(const struct msg_queue_t *msg_queue);
+inline uint8_t get_num_messages_in_queue(const msg_queue_t *msg_queue);
 
-inline int push_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t *p_ipi_msg);
-inline int pop_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t **pp_ipi_msg);
+inline int push_msg(msg_queue_t *msg_queue, ipi_msg_t *p_ipi_msg);
+inline int pop_msg(msg_queue_t *msg_queue, ipi_msg_t **pp_ipi_msg);
 
-inline bool check_idx_msg_valid(struct msg_queue_t *msg_queue, int idx_msg);
-inline bool check_ack_msg_valid(const struct ipi_msg_t *p_ipi_msg, const struct ipi_msg_t *p_ipi_msg_ack);
+inline bool check_idx_msg_valid(msg_queue_t *msg_queue, int idx_msg);
+inline bool check_ack_msg_valid(const ipi_msg_t *p_ipi_msg, const ipi_msg_t *p_ipi_msg_ack);
 
 
 /*
@@ -113,9 +113,9 @@ inline bool check_ack_msg_valid(const struct ipi_msg_t *p_ipi_msg, const struct 
  * =============================================================================
  */
 
-struct ipi_queue_handler_t *create_ipi_queue_handler(const uint8_t task_scene)
+ipi_queue_handler_t *create_ipi_queue_handler(const uint8_t task_scene)
 {
-	struct ipi_queue_handler_t *handler = NULL;
+	ipi_queue_handler_t *handler = NULL;
 
 	/* error handling */
 	if (task_scene >= TASK_SCENE_SIZE) {
@@ -141,15 +141,15 @@ struct ipi_queue_handler_t *create_ipi_queue_handler(const uint8_t task_scene)
 }
 
 
-static struct msg_queue_t *create_msg_queue(const uint8_t task_scene)
+static msg_queue_t *create_msg_queue(const uint8_t task_scene)
 {
-	struct msg_queue_t *msg_queue = NULL;
+	msg_queue_t *msg_queue = NULL;
 	int i = 0;
 
 	AUD_LOG_D("%s(+)\n", __func__);
 
 	/* malloc */
-	msg_queue = kmalloc(sizeof(struct msg_queue_t), GFP_KERNEL);
+	msg_queue = kmalloc(sizeof(msg_queue_t), GFP_KERNEL);
 	if (msg_queue == NULL) {
 		AUD_LOG_W("msg_queue kmalloc fail\n");
 		return NULL;
@@ -169,7 +169,7 @@ static struct msg_queue_t *create_msg_queue(const uint8_t task_scene)
 
 	spin_lock_init(&msg_queue->rw_lock);
 
-	memset(&msg_queue->ipi_msg_ack, 0, sizeof(struct ipi_msg_t));
+	memset(&msg_queue->ipi_msg_ack, 0, sizeof(ipi_msg_t));
 
 	msg_queue->enable = true;
 
@@ -178,7 +178,7 @@ static struct msg_queue_t *create_msg_queue(const uint8_t task_scene)
 }
 
 
-void destroy_msg_queue(struct msg_queue_t *msg_queue)
+void destroy_msg_queue(msg_queue_t *msg_queue)
 {
 	AUD_LOG_D("%s(+)\n", __func__);
 
@@ -198,7 +198,7 @@ void destroy_msg_queue(struct msg_queue_t *msg_queue)
 }
 
 
-void destroy_ipi_queue_handler(struct ipi_queue_handler_t *handler)
+void destroy_ipi_queue_handler(ipi_queue_handler_t *handler)
 {
 	/* error handling */
 	if (handler == NULL) {
@@ -207,12 +207,12 @@ void destroy_ipi_queue_handler(struct ipi_queue_handler_t *handler)
 	}
 
 	/* destroy handler */
-	destroy_msg_queue((struct msg_queue_t *)handler->msg_queue);
+	destroy_msg_queue((msg_queue_t *)handler->msg_queue);
 	handler->msg_queue = NULL;
 }
 
 
-struct ipi_queue_handler_t *get_ipi_queue_handler(const uint8_t task_scene)
+ipi_queue_handler_t *get_ipi_queue_handler(const uint8_t task_scene)
 {
 	/* error handling */
 	if (task_scene >= TASK_SCENE_SIZE) {
@@ -224,9 +224,9 @@ struct ipi_queue_handler_t *get_ipi_queue_handler(const uint8_t task_scene)
 }
 
 
-void disable_ipi_queue_handler(struct ipi_queue_handler_t *handler)
+void disable_ipi_queue_handler(ipi_queue_handler_t *handler)
 {
-	struct msg_queue_t *msg_queue = NULL;
+	msg_queue_t *msg_queue = NULL;
 
 	/* error handling */
 	if (handler == NULL) {
@@ -234,15 +234,15 @@ void disable_ipi_queue_handler(struct ipi_queue_handler_t *handler)
 		return;
 	}
 
-	msg_queue = (struct msg_queue_t *)handler->msg_queue;
+	msg_queue = (msg_queue_t *)handler->msg_queue;
 	msg_queue->enable = false;
 }
 
 
-int flush_ipi_queue_handler(struct ipi_queue_handler_t *handler)
+int flush_ipi_queue_handler(ipi_queue_handler_t *handler)
 {
-	struct msg_queue_t *msg_queue = NULL;
-	struct ipi_msg_t *p_ipi_msg = NULL;
+	msg_queue_t *msg_queue = NULL;
+	ipi_msg_t *p_ipi_msg = NULL;
 
 	const uint16_t k_max_wait_times = 100;
 	uint16_t i = 0;
@@ -255,7 +255,7 @@ int flush_ipi_queue_handler(struct ipi_queue_handler_t *handler)
 		return -1;
 	}
 
-	msg_queue = (struct msg_queue_t *)handler->msg_queue;
+	msg_queue = (msg_queue_t *)handler->msg_queue;
 	AUD_ASSERT(msg_queue->enable == false);
 
 	spin_lock_irqsave(&msg_queue->rw_lock, flags);
@@ -285,9 +285,9 @@ int flush_ipi_queue_handler(struct ipi_queue_handler_t *handler)
  * =============================================================================
  */
 
-int send_message(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_msg)
+int send_message(ipi_queue_handler_t *handler, ipi_msg_t *p_ipi_msg)
 {
-	struct msg_queue_t *msg_queue = NULL;
+	msg_queue_t *msg_queue = NULL;
 	bool is_queue_empty = false;
 
 	unsigned long flags = 0;
@@ -314,7 +314,7 @@ int send_message(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_ms
 
 
 	/* send message in queue */
-	msg_queue = (struct msg_queue_t *)handler->msg_queue;
+	msg_queue = (msg_queue_t *)handler->msg_queue;
 
 	if (msg_queue->enable == false) {
 		AUD_LOG_W("%s(), queue disabled!! return\n", __func__);
@@ -338,7 +338,7 @@ int send_message(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_ms
 		if (msg_queue->ipi_msg_ack.magic != 0) {
 			print_msg_info(__func__, "ack not clean", &msg_queue->ipi_msg_ack);
 			/* AUD_ASSERT(msg_queue->ipi_msg_ack.magic == 0); */
-			memset(&msg_queue->ipi_msg_ack, 0, sizeof(struct ipi_msg_t));
+			memset(&msg_queue->ipi_msg_ack, 0, sizeof(ipi_msg_t));
 		}
 		retval = process_message_in_queue(msg_queue, p_ipi_msg, idx_msg);
 	} else { /* wait until processed, and then send message to scp */
@@ -363,7 +363,6 @@ int send_message(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_ms
 
 		if (retval == 0) { /* timeout */
 			print_msg_info(__func__, "timeout", p_ipi_msg);
-			AUD_ASSERT(retval > 0);
 			retval = -1;
 		} else if (retval > 0)
 			retval = process_message_in_queue(msg_queue, p_ipi_msg, idx_msg);
@@ -374,9 +373,9 @@ int send_message(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_ms
 }
 
 
-int send_message_ack(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ipi_msg_ack)
+int send_message_ack(ipi_queue_handler_t *handler, ipi_msg_t *p_ipi_msg_ack)
 {
-	struct msg_queue_t *msg_queue = NULL;
+	msg_queue_t *msg_queue = NULL;
 	uint8_t task_scene = 0xFF;
 
 	AUD_LOG_V("%s(+)\n", __func__);
@@ -400,7 +399,7 @@ int send_message_ack(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ip
 
 
 	/* get info */
-	msg_queue = (struct msg_queue_t *)handler->msg_queue;
+	msg_queue = (msg_queue_t *)handler->msg_queue;
 	task_scene = msg_queue->task_scene;
 
 	if (msg_queue->enable == false) {
@@ -411,7 +410,7 @@ int send_message_ack(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ip
 
 	/* get msg ack & wake up queue */
 	AUD_ASSERT(msg_queue->ipi_msg_ack.magic == 0); /* no other working msg ack */
-	memcpy(&msg_queue->ipi_msg_ack, p_ipi_msg_ack, sizeof(struct ipi_msg_t));
+	memcpy(&msg_queue->ipi_msg_ack, p_ipi_msg_ack, sizeof(ipi_msg_t));
 	wake_up_interruptible(&msg_queue->element[msg_queue->idx_r].wq);
 
 	AUD_LOG_V("%s(-)\n", __func__);
@@ -419,9 +418,9 @@ int send_message_ack(struct ipi_queue_handler_t *handler, struct ipi_msg_t *p_ip
 }
 
 
-static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_msg_t *p_ipi_msg, int idx_msg)
+static int process_message_in_queue(msg_queue_t *msg_queue, ipi_msg_t *p_ipi_msg, int idx_msg)
 {
-	struct ipi_msg_t *p_ipi_msg_pop = NULL;
+	ipi_msg_t *p_ipi_msg_pop = NULL;
 	bool is_queue_empty = false;
 
 	unsigned long flags = 0;
@@ -485,7 +484,6 @@ static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_ms
 
 			if (retval == 0) { /* timeout */
 				print_msg_info(__func__, "timeout", p_ipi_msg);
-				AUD_ASSERT(retval > 0);
 				retval = -1;
 			} else if (retval > 0) { /* get ack */
 				/* should be in pair */
@@ -493,12 +491,12 @@ static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_ms
 					print_msg_info(__func__, "p_ipi_msg", p_ipi_msg);
 					print_msg_info(__func__, "p_ipi_msg_ack", &msg_queue->ipi_msg_ack);
 					AUD_ASSERT(check_ack_msg_valid(p_ipi_msg, &msg_queue->ipi_msg_ack) == true);
-					memset(&msg_queue->ipi_msg_ack, 0, sizeof(struct ipi_msg_t));
+					memset(&msg_queue->ipi_msg_ack, 0, sizeof(ipi_msg_t));
 					retval = -1;
 				} else {
 					print_msg_info(__func__, "ack back", p_ipi_msg);
-					memcpy(p_ipi_msg, &msg_queue->ipi_msg_ack, sizeof(struct ipi_msg_t));
-					memset(&msg_queue->ipi_msg_ack, 0, sizeof(struct ipi_msg_t));
+					memcpy(p_ipi_msg, &msg_queue->ipi_msg_ack, sizeof(ipi_msg_t));
+					memset(&msg_queue->ipi_msg_ack, 0, sizeof(ipi_msg_t));
 					retval = 0;
 				}
 			}
@@ -544,7 +542,7 @@ static int process_message_in_queue(struct msg_queue_t *msg_queue, struct ipi_ms
  * =============================================================================
  */
 
-inline bool check_queue_empty(const struct msg_queue_t *msg_queue)
+inline bool check_queue_empty(const msg_queue_t *msg_queue)
 {
 	/* error handling */
 	if (msg_queue == NULL) {
@@ -556,7 +554,7 @@ inline bool check_queue_empty(const struct msg_queue_t *msg_queue)
 }
 
 
-inline bool check_queue_to_be_full(const struct msg_queue_t *msg_queue)
+inline bool check_queue_to_be_full(const msg_queue_t *msg_queue)
 {
 	uint8_t idx_w_to_be = 0;
 
@@ -575,7 +573,7 @@ inline bool check_queue_to_be_full(const struct msg_queue_t *msg_queue)
 }
 
 
-inline uint8_t get_num_messages_in_queue(const struct msg_queue_t *msg_queue)
+inline uint8_t get_num_messages_in_queue(const msg_queue_t *msg_queue)
 {
 	/* error handling */
 	if (msg_queue == NULL) {
@@ -589,7 +587,7 @@ inline uint8_t get_num_messages_in_queue(const struct msg_queue_t *msg_queue)
 }
 
 
-inline int push_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t *p_ipi_msg)
+inline int push_msg(msg_queue_t *msg_queue, ipi_msg_t *p_ipi_msg)
 {
 	int idx_msg = -1;
 
@@ -630,7 +628,7 @@ inline int push_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t *p_ipi_msg)
 }
 
 
-inline int pop_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t **pp_ipi_msg)
+inline int pop_msg(msg_queue_t *msg_queue, ipi_msg_t **pp_ipi_msg)
 {
 	/* error handling */
 	if (msg_queue == NULL) {
@@ -672,13 +670,13 @@ inline int pop_msg(struct msg_queue_t *msg_queue, struct ipi_msg_t **pp_ipi_msg)
 	return msg_queue->idx_r;
 }
 
-inline bool check_idx_msg_valid(struct msg_queue_t *msg_queue, int idx_msg)
+inline bool check_idx_msg_valid(msg_queue_t *msg_queue, int idx_msg)
 {
 	return (idx_msg >= 0 && idx_msg < msg_queue->k_element_size) ? true : false;
 }
 
 
-inline bool check_ack_msg_valid(const struct ipi_msg_t *p_ipi_msg, const struct ipi_msg_t *p_ipi_msg_ack)
+inline bool check_ack_msg_valid(const ipi_msg_t *p_ipi_msg, const ipi_msg_t *p_ipi_msg_ack)
 {
 	return (p_ipi_msg->task_scene == p_ipi_msg_ack->task_scene &&
 		p_ipi_msg->msg_id     == p_ipi_msg_ack->msg_id) ? true : false;

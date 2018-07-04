@@ -247,6 +247,8 @@ pipe_read(struct kiocb *iocb, struct iov_iter *to)
 	do_wakeup = 0;
 	ret = 0;
 	__pipe_lock(pipe);
+	if (strcmp(current->comm, "dnsmasq") == 0)
+		printk_ratelimited("pipe_read\n");
 	for (;;) {
 		int bufs = pipe->nrbufs;
 		if (bufs) {
@@ -313,6 +315,8 @@ pipe_read(struct kiocb *iocb, struct iov_iter *to)
 			}
 		}
 		if (signal_pending(current)) {
+			if (strcmp(current->comm, "dnsmasq") == 0)
+				printk_ratelimited("L324 pipe_read signal_pending\n");
 			if (!ret)
 				ret = -ERESTARTSYS;
 			break;
@@ -320,6 +324,8 @@ pipe_read(struct kiocb *iocb, struct iov_iter *to)
 		if (do_wakeup) {
 			wake_up_interruptible_sync_poll(&pipe->wait, POLLOUT | POLLWRNORM);
  			kill_fasync(&pipe->fasync_writers, SIGIO, POLL_OUT);
+			if (strcmp(current->comm, "dnsmasq") == 0)
+				printk_ratelimited("L336 pipe_read wake_up pipe->wait\n");
 		}
 		pipe_wait(pipe);
 	}
@@ -329,6 +335,8 @@ pipe_read(struct kiocb *iocb, struct iov_iter *to)
 	if (do_wakeup) {
 		wake_up_interruptible_sync_poll(&pipe->wait, POLLOUT | POLLWRNORM);
 		kill_fasync(&pipe->fasync_writers, SIGIO, POLL_OUT);
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("L350 pipe_read wake_up pipe->wait\n");
 	}
 	if (ret > 0)
 		file_accessed(filp);
@@ -361,6 +369,9 @@ pipe_write(struct kiocb *iocb, struct iov_iter *from)
 		ret = -EPIPE;
 		goto out;
 	}
+
+	if (strcmp(current->comm, "dnsmasq") == 0)
+		printk_ratelimited("pipe_write\n");
 
 	/* We try to merge small writes */
 	chars = total_len & (PAGE_SIZE-1); /* size of the last buffer */
@@ -450,6 +461,8 @@ pipe_write(struct kiocb *iocb, struct iov_iter *from)
 			break;
 		}
 		if (signal_pending(current)) {
+			if (strcmp(current->comm, "dnsmasq") == 0)
+				printk_ratelimited("L482 pipe_write signal_pending\n");
 			if (!ret)
 				ret = -ERESTARTSYS;
 			break;
@@ -458,6 +471,8 @@ pipe_write(struct kiocb *iocb, struct iov_iter *from)
 			wake_up_interruptible_sync_poll(&pipe->wait, POLLIN | POLLRDNORM);
 			kill_fasync(&pipe->fasync_readers, SIGIO, POLL_IN);
 			do_wakeup = 0;
+			if (strcmp(current->comm, "dnsmasq") == 0)
+				printk_ratelimited("L495 pipe_write wake_up pipe->wait\n");
 		}
 		pipe->waiting_writers++;
 		pipe_wait(pipe);
@@ -468,6 +483,8 @@ out:
 	if (do_wakeup) {
 		wake_up_interruptible_sync_poll(&pipe->wait, POLLIN | POLLRDNORM);
 		kill_fasync(&pipe->fasync_readers, SIGIO, POLL_IN);
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("L510 pipe_write wake_up pipe->wait\n");
 	}
 	if (ret > 0 && sb_start_write_trylock(file_inode(filp)->i_sb)) {
 		int err = file_update_time(filp);
@@ -518,6 +535,12 @@ pipe_poll(struct file *filp, poll_table *wait)
 		mask = (nrbufs > 0) ? POLLIN | POLLRDNORM : 0;
 		if (!pipe->writers && filp->f_version != pipe->w_counter)
 			mask |= POLLHUP;
+		if (strcmp(current->comm, "dnsmasq") == 0) {
+			if (mask)
+				printk_ratelimited("pipe_poll read mask: 0x%04x\n", mask);
+			else
+				printk_ratelimited(KERN_WARNING "pipe_poll read mask NULL\n");
+		}
 	}
 
 	if (filp->f_mode & FMODE_WRITE) {
@@ -528,6 +551,16 @@ pipe_poll(struct file *filp, poll_table *wait)
 		 */
 		if (!pipe->readers)
 			mask |= POLLERR;
+		if (strcmp(current->comm, "dnsmasq") == 0) {
+			if (mask)
+				printk_ratelimited("pipe_poll write mask: 0x%04x\n", mask);
+			else
+				printk_ratelimited("pipe_poll write mask NULL\n");
+		}
+	}
+	if (((filp->f_mode & FMODE_READ) == 0) && ((filp->f_mode & FMODE_WRITE) == 0)) {
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("pipe_poll mask NULL\n");
 	}
 
 	return mask;
@@ -563,6 +596,8 @@ pipe_release(struct inode *inode, struct file *file)
 		wake_up_interruptible_sync_poll(&pipe->wait, POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM | POLLERR | POLLHUP);
 		kill_fasync(&pipe->fasync_readers, SIGIO, POLL_IN);
 		kill_fasync(&pipe->fasync_writers, SIGIO, POLL_OUT);
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("pipe_release wake_up pipe->wait\n");
 	}
 	__pipe_unlock(pipe);
 
@@ -855,6 +890,8 @@ static int wait_for_partner(struct pipe_inode_info *pipe, unsigned int *cnt)
 static void wake_up_partner(struct pipe_inode_info *pipe)
 {
 	wake_up_interruptible(&pipe->wait);
+	if (strcmp(current->comm, "dnsmasq") == 0)
+		printk_ratelimited("L933 wake_up_partner wake_up pipe->wait\n");
 }
 
 static int fifo_open(struct inode *inode, struct file *filp)
@@ -964,14 +1001,20 @@ static int fifo_open(struct inode *inode, struct file *filp)
 	return 0;
 
 err_rd:
-	if (!--pipe->readers)
+	if (!--pipe->readers) {
 		wake_up_interruptible(&pipe->wait);
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("L1049 fifo_open wake_up pipe->wait\n");
+	}
 	ret = -ERESTARTSYS;
 	goto err;
 
 err_wr:
-	if (!--pipe->writers)
+	if (!--pipe->writers) {
 		wake_up_interruptible(&pipe->wait);
+		if (strcmp(current->comm, "dnsmasq") == 0)
+			printk_ratelimited("L1061 fifo_open wake_up pipe->wait\n");
+	}
 	ret = -ERESTARTSYS;
 	goto err;
 

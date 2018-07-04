@@ -67,11 +67,16 @@ static const u32 rt9465_safety_timer[] = {
 	4, 6, 8, 10, 12, 14, 16, 20,
 };
 
+enum rt9465_irq_stat {
+	RT9465_IRQSTAT_STATC = 0,
+	RT9465_IRQSTAT_FAULT,
+	RT9465_IRQSTAT_MAX,
+};
+
 enum rt9465_irq_idx {
 	RT9465_IRQIDX_STATC = 0,
 	RT9465_IRQIDX_FAULT,
-	RT9465_IRQSTAT_MAX,
-	RT9465_IRQIDX_IRQ1 = RT9465_IRQSTAT_MAX,
+	RT9465_IRQIDX_IRQ1,
 	RT9465_IRQIDX_IRQ2,
 	RT9465_IRQIDX_MAX,
 };
@@ -365,7 +370,7 @@ RT_REG_DECL(RT9465_REG_CHG_FAULT_MASK, 1, RT_VOLATILE, {});
 RT_REG_DECL(RT9465_REG_CHG_IRQ1_MASK, 1, RT_VOLATILE, {});
 RT_REG_DECL(RT9465_REG_CHG_IRQ2_MASK, 1, RT_VOLATILE, {});
 
-static const rt_register_map_t rt9465_regmap_map[] = {
+static rt_register_map_t rt9465_regmap_map[] = {
 	RT_REG(RT9465_REG_CHG_CTRL0),
 	RT_REG(RT9465_REG_CHG_CTRL1),
 	RT_REG(RT9465_REG_CHG_CTRL2),
@@ -1206,7 +1211,6 @@ static int rt9465_parse_dt(struct rt9465_info *info, struct device *dev)
 static int __rt9465_enable_chip(struct rt9465_info *info, bool en)
 {
 	bool is_chip_en = false;
-
 	dev_info(info->dev, "%s: en = %d\n", __func__, en);
 
 	mutex_lock(&info->gpio_access_lock);

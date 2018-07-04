@@ -125,7 +125,6 @@ struct ppm_cobra_lookup {
 /*==============================================================*/
 extern struct ppm_cobra_data cobra_tbl;
 extern struct ppm_cobra_lookup cobra_lookup_data;
-extern int cobra_init_done;
 
 /*==============================================================*/
 /* APIs								*/

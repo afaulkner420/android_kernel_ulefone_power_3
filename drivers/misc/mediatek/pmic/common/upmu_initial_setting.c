@@ -31,8 +31,12 @@ void PMIC_INIT_SETTING_V1(void)
 	if (!PMIC_check_pwrhold_status())
 		PMIC_POWER_HOLD(1);
 
-	PMICLOG("[PMIC] PMIC Chip = 0x%x,is_battery_remove =%d,is_wdt_reboot=%d\n",
-		chip_version, is_battery_remove, is_wdt_reboot_pmic);
+	PMICLOG("[PMIC] 2016-09-01...\n");
+	PMICLOG("[PMIC] PMIC Chip = 0x%x\n", chip_version);
+	PMICLOG("[PMIC] PowerHold = 0x%x\n", PMIC_check_pwrhold_status());
+	PMICLOG("[PMIC] is_battery_remove =%d is_wdt_reboot=%d\n",
+	       is_battery_remove, is_wdt_reboot_pmic);
+	PMICLOG("[PMIC] is_wdt_reboot_chk=%d\n", is_wdt_reboot_pmic_chk);
 
 	PMIC_LP_INIT_SETTING();
 /*****************************************************

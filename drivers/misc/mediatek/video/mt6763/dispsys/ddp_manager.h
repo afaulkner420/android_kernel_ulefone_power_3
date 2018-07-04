@@ -165,7 +165,6 @@ int dpmgr_path_set_video_mode(disp_path_handle dp_handle, int is_vdo_mode);
  * encmdq: 1 use command queue, 0 not.
 */
 int dpmgr_path_init(disp_path_handle dp_handle, int encmdq);
-int dpmgr_path_init_with_cmdq(disp_path_handle dp_handle, struct cmdqRecStruct *cmdq_handle);
 
 
 /*connect path , it will set mutex according to modules on this path and sof sorce.
@@ -199,7 +198,6 @@ int dpmgr_path_deinit(disp_path_handle dp_handle, int encmdq);
  * encmdq: 1 use command queue, 0 not.
 */
 int dpmgr_path_start(disp_path_handle dp_handle, int encmdq);
-int dpmgr_path_start_with_cmdq(disp_path_handle dp_handle, struct cmdqRecStruct *cmdqHandle);
 
 
 /* start path , it will stop this path by calling each drviers stop function.
@@ -413,7 +411,7 @@ int dpmgr_module_notify(enum DISP_MODULE_ENUM module, enum DISP_PATH_EVENT event
 
 
 int dpmgr_wait_ovl_available(int ovl_num);
-int switch_module_to_nonsec(disp_path_handle dp_handle, void *cmdqhandle, int module_name, const char *caller);
+int switch_module_to_nonsec(disp_path_handle dp_handle, void *cmdqhandle, const char *caller);
 
 /* dpmgr_get_input_address for extenal display
 *  get physical address from register
@@ -426,9 +424,5 @@ void dpmgr_get_input_address(disp_path_handle dp_handle, unsigned long *addr);
 */
 int dpmgr_factory_mode_test(int module_name, void *cmdqhandle, void *config);
 int dpmgr_factory_mode_reset(int module_name, void *cmdqhandle, void *config);
-
-int dpmgr_register_cmdq_dump_callback(CmdqDumpInfoCB cb);
-int dpmgr_unregister_cmdq_dump_callback(CmdqDumpInfoCB cb);
-void dpmgr_invoke_cmdq_dump_callbacks(uint64_t engineFlag, int level);
 
 #endif

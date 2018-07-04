@@ -26,39 +26,56 @@
 
 #include "mtk_dramc.h"
 #include "layering_rule.h"
-#include "mtk_disp_mgr.h"
 
 static struct layering_rule_ops l_rule_ops;
 static struct layering_rule_info_t l_rule_info;
 
+#ifndef CONFIG_MTK_ROUND_CORNER_SUPPORT
 int emi_bound_table[HRT_BOUND_NUM][HRT_LEVEL_NUM] = {
 	/* HRT_BOUND_TYPE_LP4 */
-	{400, 400, 400, 600},
+	{16, 16, 16, 24},
 	/* HRT_BOUND_TYPE_LP3 */
-	{350, 350, 350, 350},
+	{14, 14, 14, 14},
 	/* HRT_BOUND_TYPE_LP4_1CH */
-	{350, 350, 350, 350},
+	{14, 14, 14, 14},
 	/* HRT_BOUND_TYPE_LP4_HYBRID */
-	{400, 400, 400, 600},
+	{16, 16, 16, 24},
 	/* HRT_BOUND_TYPE_LP3_HD */
-	{750, 750, 750, 750},
+	{30, 30, 30, 30},
 	/* HRT_BOUND_TYPE_LP4_HD */
-	{900, 900, 900, 1350},
+	{36, 36, 36, 54},
 };
+#else
+int emi_bound_table[HRT_BOUND_NUM][HRT_LEVEL_NUM] = {
+	/* HRT_BOUND_TYPE_LP4 */
+	{14, 14, 14, 22},
+	/* HRT_BOUND_TYPE_LP3 */
+	{12, 12, 12, 12},
+	/* HRT_BOUND_TYPE_LP4_1CH */
+	{12, 12, 12, 12},
+	/* HRT_BOUND_TYPE_LP4_HYBRID */
+	{14, 14, 14, 22},
+	/* HRT_BOUND_TYPE_LP3_HD */
+	{28, 28, 28, 28},
+	/* HRT_BOUND_TYPE_LP4_HD */
+	{34, 34, 34, 52},
+};
+#endif
+
 
 int larb_bound_table[HRT_BOUND_NUM][HRT_LEVEL_NUM] = {
 	/* HRT_BOUND_TYPE_LP4 */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 	/* HRT_BOUND_TYPE_LP3 */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 	/* HRT_BOUND_TYPE_LP4_1CH */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 	/* HRT_BOUND_TYPE_LP4_HYBRID */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 	/* HRT_BOUND_TYPE_LP3_HD */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 	/* HRT_BOUND_TYPE_LP4_HD */
-	{1200, 1200, 1200, 1200},
+	{12, 12, 12, 12},
 };
 
 /**
@@ -187,7 +204,7 @@ static bool filter_by_hw_limitation(struct disp_layer_info *disp_info)
 			if (disp_info->gles_tail[disp_idx] == -1 || i > disp_info->gles_tail[disp_idx])
 				disp_info->gles_tail[disp_idx] = i;
 
-			flag = false;
+			flag = true;
 		}
 	}
 #endif
@@ -232,50 +249,11 @@ static int get_mapping_table(enum DISP_HW_MAPPING_TB_TYPE tb_type, int param)
 	}
 }
 
-int set_emi_bound_tb(int idx, int num, int *val)
-{
-	int i;
-
-	if (idx >= HRT_BOUND_NUM)
-		return -EINVAL;
-	if (num > HRT_LEVEL_NUM)
-		return -EINVAL;
-
-	for (i = 0; i < num; i++)
-		emi_bound_table[idx][i] = val[i];
-
-	return 0;
-}
-
 void layering_rule_init(void)
 {
 	l_rule_info.primary_fps = 60;
 	register_layering_rule_ops(&l_rule_ops, &l_rule_info);
 }
-
-static bool _adaptive_dc_enabled(void)
-{
-#ifdef CONFIG_MTK_LCM_PHYSICAL_ROTATION_HW
-	/* rdma don't support rotation */
-	return false;
-#endif
-
-	if (disp_mgr_has_mem_session() || !disp_helper_get_option(DISP_OPT_DC_BY_HRT) ||
-		is_DAL_Enabled())
-		return false;
-
-	return true;
-}
-
-static bool _has_hrt_limit(struct disp_layer_info *disp_info, int disp_idx)
-{
-	if (disp_idx == HRT_PRIMARY &&
-	    prim_disp_get_scenario() == DISP_SCENARIO_FORCE_DC)
-		return false;
-
-	return true;
-}
-
 
 static struct layering_rule_ops l_rule_ops = {
 	.scenario_decision = layering_rule_senario_decision,
@@ -283,7 +261,5 @@ static struct layering_rule_ops l_rule_ops = {
 	.get_hrt_bound = get_hrt_bound,
 	.get_mapping_table = get_mapping_table,
 	.rollback_to_gpu_by_hw_limitation = filter_by_hw_limitation,
-	.adaptive_dc_enabled = _adaptive_dc_enabled,
-	.has_hrt_limit = _has_hrt_limit,
 };
 

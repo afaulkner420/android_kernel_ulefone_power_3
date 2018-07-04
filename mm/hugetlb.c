@@ -1416,13 +1416,12 @@ static void dissolve_free_huge_page(struct page *page)
 {
 	spin_lock(&hugetlb_lock);
 	if (PageHuge(page) && !page_count(page)) {
-		struct page *head = compound_head(page);
-		struct hstate *h = page_hstate(head);
-		int nid = page_to_nid(head);
-		list_del(&head->lru);
+		struct hstate *h = page_hstate(page);
+		int nid = page_to_nid(page);
+		list_del(&page->lru);
 		h->free_huge_pages--;
 		h->free_huge_pages_node[nid]--;
-		update_and_free_page(h, head);
+		update_and_free_page(h, page);
 	}
 	spin_unlock(&hugetlb_lock);
 }
@@ -1430,8 +1429,7 @@ static void dissolve_free_huge_page(struct page *page)
 /*
  * Dissolve free hugepages in a given pfn range. Used by memory hotplug to
  * make specified memory blocks removable from the system.
- * Note that this will dissolve a free gigantic hugepage completely, if any
- * part of it lies within the given range.
+ * Note that start_pfn should aligned with (minimum) hugepage size.
  */
 void dissolve_free_huge_pages(unsigned long start_pfn, unsigned long end_pfn)
 {
@@ -1440,6 +1438,7 @@ void dissolve_free_huge_pages(unsigned long start_pfn, unsigned long end_pfn)
 	if (!hugepages_supported())
 		return;
 
+	VM_BUG_ON(!IS_ALIGNED(start_pfn, 1 << minimum_order));
 	for (pfn = start_pfn; pfn < end_pfn; pfn += 1 << minimum_order)
 		dissolve_free_huge_page(pfn_to_page(pfn));
 }
@@ -1723,32 +1722,23 @@ free:
 }
 
 /*
- * This routine has two main purposes:
- * 1) Decrement the reservation count (resv_huge_pages) by the value passed
- *    in unused_resv_pages.  This corresponds to the prior adjustments made
- *    to the associated reservation map.
- * 2) Free any unused surplus pages that may have been allocated to satisfy
- *    the reservation.  As many as unused_resv_pages may be freed.
- *
- * Called with hugetlb_lock held.  However, the lock could be dropped (and
- * reacquired) during calls to cond_resched_lock.  Whenever dropping the lock,
- * we must make sure nobody else can claim pages we are in the process of
- * freeing.  Do this by ensuring resv_huge_page always is greater than the
- * number of huge pages we plan to free when dropping the lock.
+ * When releasing a hugetlb pool reservation, any surplus pages that were
+ * allocated to satisfy the reservation must be explicitly freed if they were
+ * never used.
+ * Called with hugetlb_lock held.
  */
 static void return_unused_surplus_pages(struct hstate *h,
 					unsigned long unused_resv_pages)
 {
 	unsigned long nr_pages;
 
+	/* Uncommit the reservation */
+	h->resv_huge_pages -= unused_resv_pages;
+
 	/* Cannot return gigantic pages currently */
 	if (hstate_is_gigantic(h))
-		goto out;
+		return;
 
-	/*
-	 * Part (or even all) of the reservation could have been backed
-	 * by pre-allocated pages. Only free surplus pages.
-	 */
 	nr_pages = min(unused_resv_pages, h->surplus_huge_pages);
 
 	/*
@@ -1758,22 +1748,12 @@ static void return_unused_surplus_pages(struct hstate *h,
 	 * when the nodes with surplus pages have no free pages.
 	 * free_pool_huge_page() will balance the the freed pages across the
 	 * on-line nodes with memory and will handle the hstate accounting.
-	 *
-	 * Note that we decrement resv_huge_pages as we free the pages.  If
-	 * we drop the lock, resv_huge_pages will still be sufficiently large
-	 * to cover subsequent pages we may free.
 	 */
 	while (nr_pages--) {
-		h->resv_huge_pages--;
-		unused_resv_pages--;
 		if (!free_pool_huge_page(h, &node_states[N_MEMORY], 1))
-			goto out;
+			break;
 		cond_resched_lock(&hugetlb_lock);
 	}
-
-out:
-	/* Fully uncommit the reservation */
-	h->resv_huge_pages -= unused_resv_pages;
 }
 
 
@@ -4362,7 +4342,6 @@ follow_huge_pmd(struct mm_struct *mm, unsigned long address,
 {
 	struct page *page = NULL;
 	spinlock_t *ptl;
-	pte_t pte;
 retry:
 	ptl = pmd_lockptr(mm, pmd);
 	spin_lock(ptl);
@@ -4372,13 +4351,12 @@ retry:
 	 */
 	if (!pmd_huge(*pmd))
 		goto out;
-	pte = huge_ptep_get((pte_t *)pmd);
-	if (pte_present(pte)) {
+	if (pmd_present(*pmd)) {
 		page = pmd_page(*pmd) + ((address & ~PMD_MASK) >> PAGE_SHIFT);
 		if (flags & FOLL_GET)
 			get_page(page);
 	} else {
-		if (is_hugetlb_entry_migration(pte)) {
+		if (is_hugetlb_entry_migration(huge_ptep_get((pte_t *)pmd))) {
 			spin_unlock(ptl);
 			__migration_entry_wait(mm, (pte_t *)pmd, ptl);
 			goto retry;

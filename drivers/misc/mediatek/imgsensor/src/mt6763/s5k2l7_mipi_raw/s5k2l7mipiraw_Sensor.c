@@ -52,7 +52,7 @@
 #include "s5k2l7_setting.h"
 
 /* #include "s5k2l7_otp.h" */
-#undef CAPTURE_WDR
+
 
 /* #define TEST_PATTERN_EN */
 /*WDR auto ration mode*/
@@ -261,7 +261,6 @@ static SENSOR_VC_INFO_STRUCT SENSOR_VC_INFO[5] = {
 
 
 /* #define USE_OIS */
-#undef USE_OIS
 #ifdef USE_OIS
 #define OIS_I2C_WRITE_ID 0x48
 #define OIS_I2C_READ_ID 0x49
@@ -1427,11 +1426,11 @@ static kal_uint32 get_info(MSDK_SCENARIO_ID_ENUM scenario_id,
 	 * 4: PDAF DualPD Raw Data mode, 5: PDAF DualPD VC mode
 	 */
 	if (pdaf_sensor_mode == 1)
-		sensor_info->PDAF_Support = 4;
+		sensor_info->PDAF_Support = PDAF_SUPPORT_RAW_DUALPD;
 	else if (pdaf_sensor_mode == 3)
-		sensor_info->PDAF_Support = 5;
+		sensor_info->PDAF_Support = PDAF_SUPPORT_CAMSV_DUALPD;
 	else
-		sensor_info->PDAF_Support = 0;
+		sensor_info->PDAF_Support = PDAF_SUPPORT_NA;
 
 	sensor_info->HDR_Support = 3;	/*0: NO HDR, 1: iHDR, 2:mvHDR, 3:zHDR */
 
@@ -1699,11 +1698,10 @@ static kal_uint32 get_default_framerate_by_scenario(MSDK_SCENARIO_ID_ENUM scenar
 
 	return ERROR_NONE;
 }
-
 static kal_uint32 streaming_control(kal_bool enable)
 {
-	int timeout = (10000 / imgsensor.current_fps) + 1;
 	int i = 0;
+	int timeout = (10000 / imgsensor.current_fps) + 1;
 
 	LOG_INF("streaming_enable(0=Sw Standby,1=streaming): %d\n", enable);
 	if (enable) {
@@ -1815,7 +1813,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		break;
 	case SENSOR_FEATURE_SET_FRAMERATE:
 		spin_lock(&imgsensor_drv_lock);
-		imgsensor.current_fps = (UINT16)*feature_data_32;
+		imgsensor.current_fps = *feature_data_32;
 		spin_unlock(&imgsensor_drv_lock);
 		LOG_INF("current fps :%d\n", imgsensor.current_fps);
 		break;
@@ -2007,7 +2005,16 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 
 		LOG_INF("get PDAF type = %d\n", pdaf_sensor_mode);
 		break;
-
+	case SENSOR_FEATURE_SET_STREAMING_SUSPEND:
+		LOG_INF("SENSOR_FEATURE_SET_STREAMING_SUSPEND\n");
+		streaming_control(KAL_FALSE);
+		break;
+	case SENSOR_FEATURE_SET_STREAMING_RESUME:
+		LOG_INF("SENSOR_FEATURE_SET_STREAMING_RESUME, shutter:%llu\n", *feature_data);
+		if (*feature_data != 0)
+			set_shutter(*feature_data);
+		streaming_control(KAL_TRUE);
+		break;
 	case SENSOR_FEATURE_SET_PDAF_TYPE:
 		if (strstr(&(*feature_para), "mode1")) {
 			LOG_INF("configure PDAF as mode 1\n");
@@ -2023,16 +2030,8 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 			proc_pdaf_sensor_mode = 1;
 		}
 		break;
-	case SENSOR_FEATURE_SET_STREAMING_SUSPEND:
-		LOG_INF("SENSOR_FEATURE_SET_STREAMING_SUSPEND\n");
-		streaming_control(KAL_FALSE);
-		break;
-	case SENSOR_FEATURE_SET_STREAMING_RESUME:
-		LOG_INF("SENSOR_FEATURE_SET_STREAMING_RESUME, shutter:%llu\n", *feature_data);
-		if (*feature_data != 0)
-			set_shutter(*feature_data);
-		streaming_control(KAL_TRUE);
-		break;
+
+
 	default:
 		break;
 	}
@@ -2054,5 +2053,6 @@ UINT32 S5K2L7_MIPI_RAW_SensorInit(PSENSOR_FUNCTION_STRUCT *pfFunc)
 	/* To Do : Check Sensor status here */
 	if (pfFunc != NULL)
 		*pfFunc = &sensor_func;
+
 	return ERROR_NONE;
 }				/*    s5k2l7_MIPI_RAW_SensorInit        */

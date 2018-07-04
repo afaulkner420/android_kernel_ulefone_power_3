@@ -75,7 +75,7 @@ static DEVICE_ATTR_RO(name);
 
 static inline bool init_done(struct zram *zram)
 {
-	return ((zram != NULL) && zram->disksize);
+	return zram->disksize;
 }
 
 static inline struct zram *dev_to_zram(struct device *dev)
@@ -629,13 +629,13 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 
 	if (!handle || zram_test_flag(meta, index, ZRAM_ZERO)) {
 		bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
-		memset(mem, 0, PAGE_SIZE);
+		clear_page(mem);
 		return 0;
 	}
 
 	cmem = zs_map_object(meta->mem_pool, handle, ZS_MM_RO);
 	if (size == PAGE_SIZE)
-		memcpy(mem, cmem, PAGE_SIZE);
+		copy_page(mem, cmem);
 #ifndef CONFIG_MTK_ENG_BUILD
 	else
 		ret = zcomp_decompress(zram->comp, cmem, size, mem);
@@ -814,7 +814,7 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 
 	if ((clen == PAGE_SIZE) && !is_partial_io(bvec)) {
 		src = kmap_atomic(page);
-		memcpy(cmem, src, PAGE_SIZE);
+		copy_page(cmem, src);
 		kunmap_atomic(src);
 	} else {
 #ifdef CONFIG_MTK_ENG_BUILD
@@ -1481,8 +1481,7 @@ static ssize_t hot_remove_store(struct class *class,
 	zram = idr_find(&zram_index_idr, dev_id);
 	if (zram) {
 		ret = zram_remove(zram);
-		if (!ret)
-			idr_remove(&zram_index_idr, dev_id);
+		idr_remove(&zram_index_idr, dev_id);
 	} else {
 		ret = -ENODEV;
 	}
@@ -1491,14 +1490,8 @@ static ssize_t hot_remove_store(struct class *class,
 	return ret ? ret : count;
 }
 
-/*
- * NOTE: hot_add attribute is not the usual read-only sysfs attribute. In a
- * sense that reading from this file does alter the state of your system -- it
- * creates a new un-initialized zram device and returns back this device's
- * device_id (or an error code if it fails to create a new device).
- */
 static struct class_attribute zram_control_class_attrs[] = {
-	__ATTR(hot_add, 0400, hot_add_show, NULL),
+	__ATTR_RO(hot_add),
 	__ATTR_WO(hot_remove),
 	__ATTR_NULL,
 };

@@ -256,16 +256,16 @@ void spm_enable_mmu_smi_async(void)
 }
 
 #if defined(CONFIG_FPGA_EARLY_PORTING)
-void spm_sodi_pmic_before_wfi(void)
+static void spm_sodi_pmic_before_wfi(void)
 {
 }
 
-void spm_sodi_pmic_after_wfi(void)
+static void spm_sodi_pmic_after_wfi(void)
 {
 }
 
 #elif defined(CONFIG_MTK_PMIC_CHIP_MT6355)
-void spm_sodi_pmic_before_wfi(void)
+static void spm_sodi_pmic_before_wfi(void)
 {
 #if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)
 	u32 val;
@@ -277,21 +277,21 @@ void spm_sodi_pmic_before_wfi(void)
 	mt_spm_pmic_wrap_set_cmd_full(PMIC_WRAP_PHASE_DEEPIDLE,
 								IDX_DI_VSRAM_NORMAL,
 								PMIC_RG_LDO_VSRAM_PROC_EN_ADDR,
-								0x1);
+								val | (1 << PMIC_RG_LDO_VSRAM_PROC_EN_SHIFT));
 	mt_spm_pmic_wrap_set_cmd_full(PMIC_WRAP_PHASE_DEEPIDLE,
 								IDX_DI_VSRAM_SLEEP,
 								PMIC_RG_LDO_VSRAM_PROC_EN_ADDR,
-								0x3);
+								val & ~(1 << PMIC_RG_LDO_VSRAM_PROC_EN_SHIFT));
 
 	pmic_read_interface_nolock(PMIC_RG_BUCK_VPROC11_EN_ADDR, &val, PMIC_VAL_SIZE_MASK, 0);
 	mt_spm_pmic_wrap_set_cmd_full(PMIC_WRAP_PHASE_DEEPIDLE,
 								IDX_DI_VPROC_NORMAL,
 								PMIC_RG_BUCK_VPROC11_EN_ADDR,
-								0x1);
+								val | (1 << PMIC_RG_BUCK_VPROC11_EN_SHIFT));
 	mt_spm_pmic_wrap_set_cmd_full(PMIC_WRAP_PHASE_DEEPIDLE,
 								IDX_DI_VPROC_SLEEP,
 								PMIC_RG_BUCK_VPROC11_EN_ADDR,
-								0x3);
+								val & ~(1 << PMIC_RG_BUCK_VPROC11_EN_SHIFT));
 #else
 	pmic_read_interface_nolock(PMIC_RG_LDO_VSRAM_PROC_VOSEL_ADDR,
 								&val,
@@ -326,20 +326,20 @@ void spm_sodi_pmic_before_wfi(void)
 #endif
 }
 
-void spm_sodi_pmic_after_wfi(void)
+static void spm_sodi_pmic_after_wfi(void)
 {
 	__spm_pmic_pg_force_off();
 }
 
 #else
-void spm_sodi_pmic_before_wfi(void)
+static void spm_sodi_pmic_before_wfi(void)
 {
 	u32 val;
 
 	__spm_pmic_pg_force_on();
 #if defined(CONFIG_MACH_MT6757) || defined(CONFIG_MACH_KIBOPLUS)
 #ifdef SODI_VSRAM_VPROC_SHUTDOWN
-	pmic_read_interface_nolock(MT6351_PMIC_RG_VSRAM_PROC_EN_ADDR, &val, PMIC_VAL_SIZE_MASK, 0);
+	pmic_read_interface_nolock(MT6351_PMIC_RG_VSRAM_PROC_EN_ADDR, &val, 0xFFFF, 0);
 	mt_spm_pmic_wrap_set_cmd_full(PMIC_WRAP_PHASE_DEEPIDLE,
 								IDX_DI_VSRAM_NORMAL,
 								MT6351_PMIC_RG_VSRAM_PROC_EN_ADDR,
@@ -373,13 +373,13 @@ void spm_sodi_pmic_before_wfi(void)
 					val & ~(1 << MT6351_PMIC_RG_SRCLKEN_IN2_EN_SHIFT));
 }
 
-void spm_sodi_pmic_after_wfi(void)
+static void spm_sodi_pmic_after_wfi(void)
 {
 	__spm_pmic_pg_force_off();
 }
 #endif
 
-void spm_sodi_pre_process(void)
+static void spm_sodi_pre_process(void)
 {
 	spm_disable_mmu_smi_async();
 	spm_bypass_boost_gpio_set();
@@ -470,10 +470,10 @@ void spm_sodi_dvfs_status(u32 sodi_flags)
 #endif
 }
 
-unsigned int
+wake_reason_t
 __spm_sodi_output_log(struct wake_status *wakesta, struct pcm_desc *pcmdesc, int vcore_status, u32 flags, int logout)
 {
-	unsigned int wr = WR_NONE;
+	wake_reason_t wr = WR_NONE;
 
 	if ((wakesta->assert_pc != 0) || (wakesta->r12 == 0)) {
 		if (wakesta->assert_pc != 0) {
@@ -517,7 +517,7 @@ __spm_sodi_output_log(struct wake_status *wakesta, struct pcm_desc *pcmdesc, int
 		}
 
 		if (unlikely(strlen(buf) >= LOG_BUF_SIZE))
-			strncpy(buf, "None (LOG BUFFER OVERFLOW)", sizeof(buf));
+			strcpy(buf, "None (LOG BUFFER OVERFLOW)");
 
 		so_warn(flags, "wake up by %s, vcore_status = %d, self_refresh = 0x%x, sw_flag = 0x%x, 0x%x, %s, %d, 0x%x, timer_out = %u, r13 = 0x%x, debug_flag = 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, %d\n",
 					    buf, vcore_status, spm_read(SPM_PASR_DPD_0),
@@ -531,10 +531,10 @@ __spm_sodi_output_log(struct wake_status *wakesta, struct pcm_desc *pcmdesc, int
 	return wr;
 }
 
-unsigned int
+wake_reason_t
 spm_sodi_output_log(struct wake_status *wakesta, struct pcm_desc *pcmdesc, int vcore_status, u32 sodi_flags)
 {
-	unsigned int wr = WR_NONE;
+	wake_reason_t wr = WR_NONE;
 	long int sodi_logout_curr_time = 0;
 	int need_log_out = SODI_LOGOUT_NONE;
 
@@ -582,12 +582,12 @@ static void rekick_sodi_common_scenario(void)
 {
 }
 
-unsigned int spm_go_to_sodi(u32 spm_flags, u32 spm_data, u32 sodi_flags)
+wake_reason_t spm_go_to_sodi(u32 spm_flags, u32 spm_data, u32 sodi_flags)
 {
 	struct wake_status wakesta;
 	unsigned long flags;
 	struct mtk_irq_mask *mask;
-	unsigned int wr = WR_NONE;
+	wake_reason_t wr = WR_NONE;
 	struct pcm_desc *pcmdesc;
 	struct pwr_ctrl *pwrctrl = __spm_sodi.pwrctrl;
 	int vcore_status;
@@ -615,6 +615,7 @@ unsigned int spm_go_to_sodi(u32 spm_flags, u32 spm_data, u32 sodi_flags)
 	/* enable APxGPT timer */
 	soidle_before_wfi(cpu);
 
+	lockdep_off();
 	spin_lock_irqsave(&__spm_lock, flags);
 
 	mask = kmalloc(sizeof(struct mtk_irq_mask), GFP_ATOMIC);
@@ -700,6 +701,7 @@ RESTORE_IRQ:
 
 UNLOCK_SPM:
 	spin_unlock_irqrestore(&__spm_lock, flags);
+	lockdep_on();
 
 	/* stop APxGPT timer and enable caore0 local timer */
 	soidle_after_wfi(cpu);

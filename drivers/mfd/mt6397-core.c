@@ -50,14 +50,6 @@ static const struct resource mt6397_rtc_resources[] = {
 	},
 };
 
-static const struct resource mt6392_pmic_resources[] = {
-	{
-		.start = MT6392_IRQ_STATUS_THR_L,
-		.end   = MT6392_IRQ_STATUS_THR_H,
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
 static const struct resource mt6392_rtc_resources[] = {
 	{
 		.start = MT6392_RTC_BASE,
@@ -126,8 +118,6 @@ static const struct mfd_cell mt6397_devs[] = {
 static const struct mfd_cell mt6392_devs[] = {
 	{
 		.name = "mt6392-pmic",
-		.num_resources = ARRAY_SIZE(mt6392_pmic_resources),
-		.resources = mt6392_pmic_resources,
 		.of_compatible = "mediatek,mt6392-pmic",
 	}, {
 		.name = "mt6392-regulator",

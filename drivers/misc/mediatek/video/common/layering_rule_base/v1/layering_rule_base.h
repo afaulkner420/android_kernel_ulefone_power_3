@@ -20,6 +20,7 @@
 #include "primary_display.h"
 #include "disp_drv_platform.h"
 #include "display_recorder.h"
+#include "ddp_mmp.h"
 
 #define PRIMARY_OVL_LAYER_NUM PRIMARY_SESSION_INPUT_LAYER_COUNT
 #define SECONDARY_OVL_LAYER_NUM EXTERNAL_SESSION_INPUT_LAYER_COUNT
@@ -32,12 +33,6 @@
 #define PATH_FMT_PIPE_SHIFT 7
 #define PATH_FMT_DISP_SHIFT 5
 #define PATH_FMT_ID_SHIFT 0
-
-#define HRT_UINT_BOUND_BPP 4
-#define HRT_UINT_WEIGHT 100
-/* bpp x uint weight = 2 x 100 */
-#define HRT_AEE_WEIGHT 200
-#define HRT_ROUND_CORNER_WEIGHT 200
 
 #define MAKE_UNIFIED_HRT_PATH_FMT(rsz_type, pipe_type, disp_type, id) \
 	( \
@@ -138,8 +133,6 @@ struct layering_rule_ops {
 	int (*get_hrt_bound)(int is_larb, int hrt_level);
 	void (*rsz_by_gpu_info_change)(void);
 	bool (*rollback_to_gpu_by_hw_limitation)(struct disp_layer_info *disp_info);
-	bool (*adaptive_dc_enabled)(void);
-	bool (*has_hrt_limit)(struct disp_layer_info *disp_info, int disp_idx);
 };
 
 #define HRT_GET_DVFS_LEVEL(hrt_num) (hrt_num & 0xF)
@@ -148,11 +141,13 @@ struct layering_rule_ops {
 #define HRT_SET_SCALE_SCENARIO(hrt_num, value) (hrt_num = ((hrt_num & ~(0xF0)) | ((value & 0xF) << 4)))
 #define HRT_GET_AEE_FLAG(hrt_num) ((hrt_num & 0x100) >> 8)
 #define HRT_SET_AEE_FLAG(hrt_num, value) (hrt_num = ((hrt_num & ~(0x100)) | ((value & 0x1) << 8)))
-#define HRT_GET_DC_FLAG(hrt_num) ((hrt_num & 0x200) >> 9)
-#define HRT_SET_DC_FLAG(hrt_num, value) (hrt_num = ((hrt_num & ~(0x200)) | (((value) & 0x1) << 9)))
-
 #define HRT_GET_PATH_SCENARIO(hrt_num) ((hrt_num & 0xFFFF0000) >> 16)
 #define HRT_SET_PATH_SCENARIO(hrt_num, value) (hrt_num = ((hrt_num & ~(0xFFFF0000)) | ((value & 0xFFFF) << 16)))
+#ifndef CONFIG_MTK_ROUND_CORNER_SUPPORT
+#define HRT_AEE_LAYER_MASK 0xFFFFFFDF
+#else
+#define HRT_AEE_LAYER_MASK 0xFFFFFFEF
+#endif
 #define HRT_GET_PATH_RSZ_TYPE(hrt_path) ((hrt_path >> PATH_FMT_RSZ_SHIFT) & 0x3)
 #define HRT_GET_PATH_DISP_TYPE(hrt_path) ((hrt_path >> PATH_FMT_DISP_SHIFT) & 0x3)
 #define HRT_GET_PATH_PIPE_TYPE(hrt_path) ((hrt_path >> PATH_FMT_PIPE_SHIFT) & 0x3)
@@ -172,6 +167,5 @@ int rollback_all_resize_layer_to_GPU(struct disp_layer_info *disp_info, int disp
 bool is_yuv(enum DISP_FORMAT format);
 bool is_argb_fmt(enum DISP_FORMAT format);
 bool is_gles_layer(struct disp_layer_info *disp_info, int disp_idx, int layer_idx);
-bool has_layer_cap(struct layer_config *layer_info, enum LAYERING_CAPS l_caps);
 
 #endif

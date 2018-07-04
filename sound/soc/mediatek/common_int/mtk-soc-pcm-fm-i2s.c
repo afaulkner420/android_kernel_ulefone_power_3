@@ -70,7 +70,7 @@ static int mtk_fm_i2s_probe(struct platform_device *pdev);
 static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream);
 static int mtk_afe_fm_i2s_probe(struct snd_soc_platform *platform);
 
-static unsigned int mfm_i2s_Volume = 0x10000;
+static uint32 mfm_i2s_Volume = 0x10000;
 static bool mPrepareDone;
 
 static int Audio_fm_i2s_Volume_Get(struct snd_kcontrol *kcontrol,
@@ -220,7 +220,7 @@ static int mtk_pcm_fm_i2s_close(struct snd_pcm_substream *substream)
 
 static int mtk_pcm_fm_i2s_prepare(struct snd_pcm_substream *substream)
 {
-	struct audio_digital_i2s mI2SInAttribute;
+	AudioDigtalI2S mI2SInAttribute;
 
 	struct snd_pcm_runtime *runtime = substream->runtime;
 

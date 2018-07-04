@@ -19,7 +19,7 @@
 #include "ccci_config.h" /* for platform override */
 
 /* MD <-> AP Msg_id mapping enum */
-enum CCCI_IPC_MSG_ID_RANGE {
+typedef enum {
 	IPC_L4C_MSG_ID_BEGIN = 0x80000000,
 #if defined(IPC_L4C_MSG_ID_LEN)
 	IPC_L4C_MSG_ID_RANGE = IPC_L4C_MSG_ID_LEN,
@@ -36,32 +36,32 @@ enum CCCI_IPC_MSG_ID_RANGE {
 	IPC_MDT_MSG_ID_RANGE = 0x8,
 	IPC_UFPM_MSG_ID_BEGIN = IPC_MDT_MSG_ID_BEGIN + IPC_MDT_MSG_ID_RANGE,
 	IPC_UFPM_MSG_ID_RANGE = 0x18,
-};
+} CCCI_IPC_MSG_ID_RANGE;
 
-struct local_para {
+typedef struct local_para {
 	u8 ref_count;
 	u8 _stub; /* MD complier will align ref_count to 16bit */
 	u16 msg_len;
 	u8 data[0];
-} __packed;
+} __packed local_para_struct;
 
-struct peer_buff {
+typedef struct peer_buff {
 	u16 pdu_len;
 	u8 ref_count;
 	u8 pb_resvered;
 	u16 free_header_space;
 	u16 free_tail_space;
 	u8 data[0];
-} __packed;
+} __packed peer_buff_struct;
 
-struct ipc_ilm {
+typedef struct {
 	u32 src_mod_id;
 	u32 dest_mod_id;
 	u32 sap_id;
 	u32 msg_id;
 	struct local_para *local_para_ptr;
 	struct peer_buff *peer_buff_ptr;
-}; /* for conn_md */
+} ipc_ilm_t; /* for conn_md */
 
 struct ccci_emi_info {
 	u8 ap_domain_id;
@@ -74,15 +74,15 @@ struct ccci_emi_info {
 } __packed; /* for USB direct tethering */
 
 /* export API */
-int ccci_ipc_send_ilm(int md_id, struct ipc_ilm *in_ilm);
+int ccci_ipc_send_ilm(int md_id, ipc_ilm_t *in_ilm);
 int ccci_get_emi_info(int md_id, struct ccci_emi_info *emi_info);
 
 /* external API */
 #if defined(CONFIG_MTK_MD_DIRECT_TETHERING_SUPPORT) || defined(CONFIG_MTK_MD_DIRECT_LOGGING_SUPPORT)
-extern int rndis_md_msg_hdlr(struct ipc_ilm *ilm);
+extern int rndis_md_msg_hdlr(ipc_ilm_t *ilm);
 #endif
 #if defined(CONFIG_MTK_MD_DIRECT_TETHERING_SUPPORT)
-extern int pkt_track_md_msg_hdlr(struct ipc_ilm *ilm);
+extern int pkt_track_md_msg_hdlr(ipc_ilm_t *ilm);
 #endif
 
 #endif				/* __PORT_IPC_H__ */

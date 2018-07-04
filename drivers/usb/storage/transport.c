@@ -62,7 +62,6 @@
 
 #include <linux/blkdev.h>
 #include "../../scsi/sd.h"
-#include "usb_boost.h"
 
 
 /***********************************************************************
@@ -467,12 +466,9 @@ int usb_stor_bulk_srb(struct us_data* us, unsigned int pipe,
 		      struct scsi_cmnd* srb)
 {
 	unsigned int partial;
-	int result;
-
-	usb_boost();
-	result = usb_stor_bulk_transfer_sglist(us, pipe, scsi_sglist(srb),
-			scsi_sg_count(srb), scsi_bufflen(srb),
-			&partial);
+	int result = usb_stor_bulk_transfer_sglist(us, pipe, scsi_sglist(srb),
+				      scsi_sg_count(srb), scsi_bufflen(srb),
+				      &partial);
 
 	scsi_set_resid(srb, scsi_bufflen(srb) - partial);
 	return result;
@@ -923,15 +919,10 @@ int usb_stor_CB_transport(struct scsi_cmnd *srb, struct us_data *us)
 
 	/* COMMAND STAGE */
 	/* let's send the command via the control pipe */
-	/*
-	 * Command is sometime (f.e. after scsi_eh_prep_cmnd) on the stack.
-	 * Stack may be vmallocated.  So no DMA for us.  Make a copy.
-	 */
-	memcpy(us->iobuf, srb->cmnd, srb->cmd_len);
 	result = usb_stor_ctrl_transfer(us, us->send_ctrl_pipe,
 				      US_CBI_ADSC, 
 				      USB_TYPE_CLASS | USB_RECIP_INTERFACE, 0, 
-				      us->ifnum, us->iobuf, srb->cmd_len);
+				      us->ifnum, srb->cmnd, srb->cmd_len);
 
 	/* check the return code for the command */
 	usb_stor_dbg(us, "Call to usb_stor_ctrl_transfer() returned %d\n",

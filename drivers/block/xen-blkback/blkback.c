@@ -595,6 +595,8 @@ int xen_blkif_schedule(void *arg)
 	unsigned long timeout;
 	int ret;
 
+	xen_blkif_get(blkif);
+
 	while (!kthread_should_stop()) {
 		if (try_to_freeze())
 			continue;
@@ -648,6 +650,7 @@ purge_gnt_list:
 		print_stats(blkif);
 
 	blkif->xenblkd = NULL;
+	xen_blkif_put(blkif);
 
 	return 0;
 }

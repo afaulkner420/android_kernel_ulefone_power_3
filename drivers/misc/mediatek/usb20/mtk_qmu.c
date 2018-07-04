@@ -710,14 +710,14 @@ void mtk_qmu_stop(u8 ep_num, u8 isRx)
 			MGC_WriteQMU32(base, MGC_O_QMU_TQCSR(ep_num), DQMU_QUE_STOP);
 			QMU_WARN("Stop TQ %d\n", ep_num);
 		} else {
-			QMU_WARN("TQ %d already inactive\n", ep_num);
+			QMU_INFO("TQ %d already inactive\n", ep_num);
 		}
 	} else {
 		if (MGC_ReadQMU16(base, MGC_O_QMU_RQCSR(ep_num)) & DQMU_QUE_ACTIVE) {
 			MGC_WriteQMU32(base, MGC_O_QMU_RQCSR(ep_num), DQMU_QUE_STOP);
 			QMU_WARN("Stop RQ %d\n", ep_num);
 		} else {
-			QMU_WARN("RQ %d already inactive\n", ep_num);
+			QMU_INFO("RQ %d already inactive\n", ep_num);
 		}
 	}
 }
@@ -1732,29 +1732,6 @@ void mtk_qmu_irq_err(struct musb *musb, u32 qisar)
 				QMU_ERR("RQ %d receive length error!\n", i);
 				rx_err_ep_num = i;
 				is_len_err = true;
-				{
-					u16 rxcount;
-					struct TGPD *gpd_current;
-					void __iomem *mbase = musb->mregs;
-					void __iomem *epio = musb->endpoints[i].regs;
-
-					musb_writeb(mbase, MUSB_INDEX, i);
-					rxcount = musb_readw(epio, MUSB_RXCOUNT);
-
-					gpd_current = (struct TGPD *) (uintptr_t)
-						MGC_ReadQMU32(base, MGC_O_QMU_RQCPR(i));
-					/*Transfer PHY addr got from QMU register to VIR addr */
-					gpd_current = (struct TGPD *)
-						gpd_phys_to_virt((dma_addr_t)(uintptr_t)gpd_current, RXQ, i);
-					QMU_ERR("RXCOUNT=%d,HWO=%d,Next=%p,BufLen=%d,DataBuf=%p,RecvLen=%d,EP=%d\n",
-							rxcount,
-							(u32) TGPD_GET_FLAG(gpd_current),
-							TGPD_GET_NEXT_RX(gpd_current),
-							(u32) TGPD_GET_DataBUF_LEN(gpd_current),
-							TGPD_GET_DATA_RX(gpd_current),
-							(u32) TGPD_GET_BUF_LEN(gpd_current),
-							(u32) TGPD_GET_EPaddr(gpd_current));
-				}
 			}
 			if (wRetVal & DQMU_M_RX_ZLP_ERR(i))
 				QMU_ERR("RQ %d receive an zlp packet!\n", i);

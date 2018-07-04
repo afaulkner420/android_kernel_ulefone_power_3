@@ -449,30 +449,6 @@ int charger_dev_set_boost_current_limit(struct charger_device *charger_dev, u32 
 }
 EXPORT_SYMBOL(charger_dev_set_boost_current_limit);
 
-//add XLLSHLSS-5 by zhipeng.pan 20171122 start
-int charger_dev_set_boost_voltage(struct charger_device *charger_dev, u32 uV)
-{
-	if (charger_dev != NULL && charger_dev->ops != NULL && charger_dev->ops->set_boost_voltage)
-		return charger_dev->ops->set_boost_voltage(charger_dev, uV);
-
-	return -ENOTSUPP;
-}
-EXPORT_SYMBOL(charger_dev_set_boost_voltage);
-//add XLLSHLSS-5 by zhipeng.pan 20171122 end
-
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-int charger_dev_get_boost_status(struct charger_device *charger_dev)
-{
-	if (charger_dev != NULL && charger_dev->ops != NULL && charger_dev->ops->get_boost_status)
-		return charger_dev->ops->get_boost_status(charger_dev);
-
-	return -ENOTSUPP;
-}
-EXPORT_SYMBOL(charger_dev_get_boost_status);
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
-
 int charger_dev_get_zcv(struct charger_device *charger_dev, u32 *uV)
 {
 	if (charger_dev != NULL && charger_dev->ops != NULL && charger_dev->ops->get_zcv)

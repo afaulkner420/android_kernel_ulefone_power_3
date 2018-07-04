@@ -35,27 +35,27 @@
  * @param len Length of the data to process.
  * @param data Data to processed (cleartext or ciphertext).
  */
-struct dapc_cmd_t {
-	struct tciCommandHeader_t  header;     /**< Command header */
-	uint32_t                   len;        /**< Length of data to process or buffer */
-	uint32_t                   respLen;    /**< Length of response buffer */
-};
+typedef struct {
+	tciCommandHeader_t  header;     /**< Command header */
+	uint32_t            len;        /**< Length of data to process or buffer */
+	uint32_t            respLen;    /**< Length of response buffer */
+} dapc_cmd_t;
 
 /*
  * Response structure Trustlet -> Trustlet Connector.
  */
-struct dapc_rsp_t {
-	struct tciResponseHeader_t header;     /**< Response header */
-	uint32_t                   len;
-};
+typedef struct {
+	tciResponseHeader_t header;     /**< Response header */
+	uint32_t            len;
+} dapc_rsp_t;
 
 /*
  * TCI message data.
  */
-struct dapc_tciMessage_t {
+typedef struct {
 	union {
-		struct dapc_cmd_t cmd;
-		struct dapc_rsp_t rsp;
+		dapc_cmd_t     cmd;
+		dapc_rsp_t     rsp;
 	};
 	uint32_t    index;
 	uint32_t    result;
@@ -66,7 +66,7 @@ struct dapc_tciMessage_t {
 	uint32_t    hacc_user;
 	uint32_t    direction;
 	uint32_t    reserve[2];
-};
+} dapc_tciMessage_t;
 
 /*
  * Trustlet UUID.

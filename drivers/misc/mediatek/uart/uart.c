@@ -1141,7 +1141,7 @@ int mtk_uart_vfifo_prepare(struct mtk_uart *uart)
 }
 
 /*---------------------------------------------------------------------------*/
-static struct mtk_uart_vfifo *mtk_uart_vfifo_alloc(struct mtk_uart *uart, int type)
+static struct mtk_uart_vfifo *mtk_uart_vfifo_alloc(struct mtk_uart *uart, UART_VFF_TYPE type)
 {
 	struct mtk_uart_vfifo *vfifo = NULL;
 	unsigned long flags;
@@ -1200,7 +1200,6 @@ static inline unsigned short mtk_uart_vfifo_get_trig(struct mtk_uart *uart, stru
 /*---------------------------------------------------------------------------*/
 #define get_mtk_uart(ptr, type, member) (type *)((char *)ptr - offsetof(type, member))
 /*---------------------------------------------------------------------------*/
-#ifdef ENABE_HRTIMER_FLUSH
 static enum hrtimer_restart mtk_uart_tx_vfifo_timeout(struct hrtimer *hrt)
 {
 	struct mtk_uart_vfifo *vfifo = container_of(hrt, struct mtk_uart_vfifo, flush);
@@ -1215,7 +1214,6 @@ static enum hrtimer_restart mtk_uart_tx_vfifo_timeout(struct hrtimer *hrt)
 	mtk_uart_tx_vfifo_flush(uart, 1);
 	return HRTIMER_NORESTART;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 static void mtk_uart_dma_vfifo_callback(void *data)
@@ -1380,10 +1378,8 @@ static void mtk_uart_dma_free(struct mtk_uart *uart, struct mtk_uart_dma *dma)
 	if (dma->mode == UART_TX_VFIFO_DMA) {
 		if (dma->vfifo && timer_pending(&dma->vfifo->timer))
 			del_timer_sync(&dma->vfifo->timer);
-#ifdef ENABE_HRTIMER_FLUSH
 		if (dma->vfifo && hrtimer_active(&dma->vfifo->flush))
 			hrtimer_cancel(&dma->vfifo->flush);
-#endif
 	}
 	/* [ALPS00030487] tasklet_kill function may schedule, so release spin lock first,
 	 *                  after release, set spin lock again.
@@ -1664,7 +1660,7 @@ static irqreturn_t mtk_uart_irq(int irq, void *dev_id)
 
 #ifdef ENABLE_DEBUG
 	{
-		struct uart_iir_reg *iir = (struct uart_iir_reg *) &intrs;
+		UART_IIR_REG *iir = (UART_IIR_REG *) &intrs;
 
 		if (iir->NINT)
 			MSG(INT, "No interrupt (%s)\n", fifo[iir->FIFOE]);
@@ -1868,10 +1864,8 @@ static int mtk_uart_startup(struct uart_port *port)
 		if (mtk_uart_dma_start(uart, &uart->dma_tx))
 			MSG(ERR, "mtk_uart_dma_start fails\n");
 
-#ifdef ENABE_HRTIMER_FLUSH
 		hrtimer_init(&uart->tx_vfifo->flush, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
 		uart->tx_vfifo->flush.function = mtk_uart_tx_vfifo_timeout;
-#endif
 	} else if (uart->tx_mode == UART_NON_DMA) {
 		uart->write_allow = mtk_uart_write_allow;
 		uart->write_byte = mtk_uart_write_byte;
@@ -2552,10 +2546,12 @@ static int mtk_uart_pm_restore_noirq(struct device *device)
 	mtk_uart_fifo_set_trig(uart, uart->tx_trig, uart->rx_trig);
 	irq_set_irq_type(uart->setting->irq_num, uart->setting->irq_flags);
 
-	if (uart->tx_vfifo && uart->tx_mode == UART_TX_VFIFO_DMA)
+	if (uart->tx_vfifo && uart->tx_mode == UART_TX_VFIFO_DMA) {
 		irq_set_irq_type(uart->tx_vfifo->irq_id, IRQF_LEVEL_TRIGGER_POLARITY);
-	if (uart->rx_vfifo && uart->rx_mode == UART_RX_VFIFO_DMA)
+	}
+	if (uart->rx_vfifo && uart->rx_mode == UART_RX_VFIFO_DMA) {
 		irq_set_irq_type(uart->rx_vfifo->irq_id, IRQF_LEVEL_TRIGGER_POLARITY);
+	}
 	return 0;
 }
 

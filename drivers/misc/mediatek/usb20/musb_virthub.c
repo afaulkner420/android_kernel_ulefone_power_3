@@ -40,7 +40,7 @@
 #include "musb_core.h"
 
 static int h_pre_disable = 1;
-module_param(h_pre_disable, int, 0400);
+module_param(h_pre_disable, int, 0644);
 
 static void musb_port_suspend(struct musb *musb, bool do_suspend)
 {
@@ -61,8 +61,7 @@ static void musb_port_suspend(struct musb *musb, bool do_suspend)
 		int retries = 10000;
 
 		power &= ~MUSB_POWER_RESUME;
-		power |= (MUSB_POWER_SUSPENDM | MUSB_POWER_ENSUSPEND);
-
+		power |= MUSB_POWER_SUSPENDM;
 		musb_writeb(mbase, MUSB_POWER, power);
 
 		/* Needed for OPT A tests */
@@ -125,9 +124,6 @@ static void musb_port_reset(struct musb *musb, bool do_reset)
 	 */
 	power = musb_readb(mbase, MUSB_POWER);
 	if (do_reset) {
-		DBG(0, "force musb_platform_reset\n");
-		musb_platform_reset(musb);
-		mdelay(3);
 
 		/*
 		 * If RESUME is set, we must make sure it stays minimum 20 ms.
@@ -240,8 +236,15 @@ int musb_hub_control(struct usb_hcd *hcd,
 	u32 temp;
 	int retval = 0;
 	unsigned long flags;
+	#ifdef CONFIG_MTK_MUSB_PORT0_LOWPOWER_MODE
+	bool usb_active = true;
 
-	musb_platform_prepare_clk(musb);
+	if (!mtk_usb_power) {
+		musb_platform_enable(musb);
+		usb_active = false;
+		DBG(1, "musb was in-active!!!\n");
+	}
+	#endif
 
 	spin_lock_irqsave(&musb->lock, flags);
 
@@ -349,7 +352,8 @@ int musb_hub_control(struct usb_hcd *hcd,
 					  & ~MUSB_PORT_STAT_RESUME), (__le32 *) buf);
 
 		/* port change status is more interesting */
-		DBG(0, "port status %08x\n", musb->port1_status);
+		DBG(0, "port status %08x,devctl=0x%x\n", musb->port1_status,
+		    musb_readb(musb->mregs, MUSB_DEVCTL));
 		break;
 	case SetPortFeature:
 		if ((wIndex & 0xff) != 1)
@@ -429,8 +433,9 @@ error:
 		retval = -EPIPE;
 	}
 	spin_unlock_irqrestore(&musb->lock, flags);
-
-	musb_platform_unprepare_clk(musb);
-
+	#ifdef CONFIG_MTK_MUSB_PORT0_LOWPOWER_MODE
+	if (!usb_active)
+		musb_platform_disable(musb);
+	#endif
 	return retval;
 }

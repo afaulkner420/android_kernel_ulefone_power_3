@@ -15,14 +15,14 @@
 #define _MTK_BATTERY_PROPERTY_H
 
 /* customize */
-#define DIFFERENCE_FULLOCV_ITH	200	/* mA */
+#define DIFFERENCE_FULLOCV_ITH	150	/* mA */
 #define MTK_CHR_EXIST 1
 #define SHUTDOWN_1_TIME	60
 #define KEEP_100_PERCENT 2
 #define R_FG_VALUE	10				/* mOhm */
 #define EMBEDDED_SEL 0
 #define PMIC_SHUTDOWN_CURRENT 20	/* 0.01 mA */
-#define FG_METER_RESISTANCE	75
+#define FG_METER_RESISTANCE	200
 #define CAR_TUNE_VALUE	100 /*1.00 */
 #define NO_BAT_TEMP_COMPENSATE 0
 /* NO_BAT_TEMP_COMPENSATE 1 = don't need bat_temper compensate, */
@@ -55,7 +55,7 @@
 #define PSEUDO100_EN 1
 #define PSEUDO100_EN_DIS 1
 
-#define DIFF_SOC_SETTING 50	/* 0.01% */
+#define DIFF_SOC_SETTING 100	/* 0.01% */
 #define DIFF_BAT_TEMP_SETTING 1
 #define DIFF_BAT_TEMP_SETTING_C 10
 #define DISCHARGE_TRACKING_TIME 10
@@ -96,9 +96,7 @@
 #define HWOCV_SWOCV_DIFF_LT	1500
 #define HWOCV_SWOCV_DIFF_LT_TEMP	5
 #define HWOCV_OLDOCV_DIFF	300
-#define HWOCV_OLDOCV_DIFF_CHR	800
 #define SWOCV_OLDOCV_DIFF	300
-#define SWOCV_OLDOCV_DIFF_CHR	800
 #define VBAT_OLDOCV_DIFF	1000
 #define SWOCV_OLDOCV_DIFF_EMB	1000
 
@@ -111,9 +109,9 @@
 #define EXT_HWOCV_SWOCV_LT_TEMP		5
 
 /* fgc & fgv threshold */
-#define DIFFERENCE_FGC_FGV_TH1 300
-#define DIFFERENCE_FGC_FGV_TH2 500
-#define DIFFERENCE_FGC_FGV_TH3 300
+#define DIFFERENCE_FGC_FGV_TH1 500
+#define DIFFERENCE_FGC_FGV_TH2 1500
+#define DIFFERENCE_FGC_FGV_TH3 500
 #define DIFFERENCE_FGC_FGV_TH_SOC1 7000
 #define DIFFERENCE_FGC_FGV_TH_SOC2 3000
 #define NAFG_TIME_SETTING 10
@@ -134,7 +132,7 @@
 #define ZCV_CAR_GAP_PERCENTAGE 5
 
 /* Additional battery table */
-#define ADDITIONAL_BATTERY_TABLE_EN 1
+#define ADDITIONAL_BATTERY_TABLE_EN 0
 
 #define DC_RATIO_SEL	5
 #define DC_R_CNT	1000	/* if set 0, dcr_start will not be 1*/
@@ -165,11 +163,6 @@
 #define BATTERY_TMP_TO_ENABLE_NAFG -20
 /* #define GM30_DISABLE_NAFG */
 
-
-#define MULTI_TEMP_GAUGE0 0	/* different temp using different gauge 0% */
-
-#define OVER_DISCHARGE_LEVEL -1500
-
 #define UISOC_UPDATE_TYPE 2
 /*
 *	uisoc_update_type:
@@ -196,7 +189,7 @@
 
 #define UI_FULL_LIMIT_SOC4 10000
 #define UI_FULL_LIMIT_ITH4 2000
-#define UI_FULL_LIMIT_TIME 99999
+
 
 /* using voltage to limit uisoc in 1% case */
 /* UI_LOW_LIMIT_VTH0=36000 means 3.6v */
@@ -216,7 +209,6 @@
 
 #define UI_LOW_LIMIT_SOC4 100
 #define UI_LOW_LIMIT_VTH4 34000
-#define UI_LOW_LIMIT_TIME 99999
 
 /* extern function */
 extern int get_rac(void);

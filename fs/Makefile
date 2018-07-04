@@ -31,7 +31,6 @@ obj-$(CONFIG_EVENTFD)		+= eventfd.o
 obj-$(CONFIG_USERFAULTFD)	+= userfaultfd.o
 obj-$(CONFIG_AIO)               += aio.o
 obj-$(CONFIG_FS_DAX)		+= dax.o
-obj-$(CONFIG_FS_ENCRYPTION)	+= crypto/
 obj-$(CONFIG_FILE_LOCKING)      += locks.o
 obj-$(CONFIG_COMPAT)		+= compat.o compat_ioctl.o
 obj-$(CONFIG_BINFMT_AOUT)	+= binfmt_aout.o
@@ -43,7 +42,7 @@ obj-$(CONFIG_COMPAT_BINFMT_ELF)	+= compat_binfmt_elf.o
 obj-$(CONFIG_BINFMT_ELF_FDPIC)	+= binfmt_elf_fdpic.o
 obj-$(CONFIG_BINFMT_FLAT)	+= binfmt_flat.o
 
-obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o mbcache2.o
+obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o
 obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o
 obj-$(CONFIG_NFS_COMMON)	+= nfs_common/
 obj-$(CONFIG_COREDUMP)		+= coredump.o
@@ -129,18 +128,3 @@ obj-y				+= exofs/ # Multiple modules
 obj-$(CONFIG_CEPH_FS)		+= ceph/
 obj-$(CONFIG_PSTORE)		+= pstore/
 obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
-obj-$(CONFIG_RAWFS_FS)		+= rawfs/
-
-# Add project macro resolution by wgx 20171121 start
-ifneq ($(CONFIG_CUSTOM_TRAN_PROJECT),)
-TRAN_KERNEL_FLAGS := $(addprefix -D, $(shell echo \
-                $(CONFIG_CUSTOM_TRAN_PROJECT) |  tr a-z A-Z))
-subdir-ccflags-y += $(TRAN_KERNEL_FLAGS)
-endif
-
-ifneq ($(CONFIG_CUSTOM_TRAN_BOM),)
-TRAN_BOM_KERNEL_FLAGS := $(addprefix -D, $(shell echo \
-                $(CONFIG_CUSTOM_TRAN_BOM) |  tr a-z A-Z))
-subdir-ccflags-y += $(TRAN_BOM_KERNEL_FLAGS)
-endif
-# Add project macro resolution by wgx 20171121 end

@@ -53,11 +53,7 @@ struct mtk_desc_eint {
 
 struct mtk_desc_pin {
 	struct pinctrl_pin_desc	pin;
-#ifdef CONFIG_MTK_EINT_MULTI_TRIGGER_DESIGN
-	struct mtk_desc_eint eint;
-#else
 	const struct mtk_desc_eint eint;
-#endif
 	const struct mtk_desc_function	*functions;
 };
 
@@ -242,7 +238,6 @@ struct mtk_pinctrl {
 	struct device           *dev;
 	struct gpio_chip	*chip;
 	struct mtk_pinctrl_group *groups;
-	struct timer_list	*eint_timers;
 	unsigned int		ngroups;
 	const char              **grp_names;
 	struct pinctrl_dev      *pctl_dev;
@@ -250,8 +245,6 @@ struct mtk_pinctrl {
 	void __iomem		*eint_reg_base;
 	struct irq_domain	*domain;
 	int			*eint_dual_edges;
-	int			*eint_sw_debounce_en;
-	u32			*eint_sw_debounce;
 	u32                     *wake_mask;
 	u32                     *cur_mask;
 };
@@ -304,11 +297,7 @@ extern int mt_set_gpio_pull_resistor(unsigned long pin, unsigned long resistors)
 
 
 struct mtk_pinctrl_devdata {
-#ifdef CONFIG_MTK_EINT_MULTI_TRIGGER_DESIGN
-	struct mtk_desc_pin	*pins;
-#else
 	const struct mtk_desc_pin	*pins;
-#endif
 	unsigned int			npins;
 	const struct mtk_drv_group_desc	*grp_desc;
 	unsigned int	                n_grp_cls;
@@ -373,7 +362,6 @@ struct mtk_pinctrl_devdata {
 		int pin, bool enable, bool isup, unsigned int arg);
 	int (*mtk_pctl_get_pull_sel)(struct mtk_pinctrl *pctl, int pin);
 	int (*mtk_pctl_get_pull_en)(struct mtk_pinctrl *pctl, int pin);
-	unsigned int (*spec_debounce_select)(unsigned debounce);
 	unsigned int    dir_offset;
 	unsigned int    ies_offset;
 	unsigned int    smt_offset;
@@ -392,7 +380,6 @@ struct mtk_pinctrl_devdata {
 	struct mtk_eint_offsets eint_offsets;
 	unsigned int    ap_num;
 	unsigned int    db_cnt;
-	struct irq_domain_ops *mtk_irq_domain_ops;
 };
 
 int mtk_pctrl_init(struct platform_device *pdev,
@@ -429,12 +416,10 @@ int mtk_pinctrl_set_gpio_value(struct mtk_pinctrl *pctl, int pin,
 int mtk_pctrl_get_gpio_chip_base(void);
 
 extern const struct dev_pm_ops mtk_eint_pm_ops;
-unsigned int mtk_gpio_debounce_select(const unsigned int *dbnc_infos, int dbnc_infos_num,
-			unsigned int debounce);
 
-extern struct mtk_pinctrl *pctl;
 #ifdef CONFIG_MTK_EIC
 void mt_eint_set_hw_debounce(unsigned int eint_num, unsigned int ms);
 unsigned int mt_gpio_to_irq(unsigned gpio);
+extern struct mtk_pinctrl *pctl;
 #endif
 #endif /* __PINCTRL_MTK_COMMON_H */

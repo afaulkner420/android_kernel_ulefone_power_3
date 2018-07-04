@@ -4,7 +4,7 @@
 # 15 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
 #
-subdir-ccflags-y += -Werror
+#subdir-ccflags-y += -Werror
 
 obj-y				+= irqchip/
 obj-y				+= bus/
@@ -65,7 +65,6 @@ obj-$(CONFIG_FB_INTEL)          += video/fbdev/intelfb/
 
 obj-$(CONFIG_PARPORT)		+= parport/
 obj-$(CONFIG_NVM)		+= lightnvm/
-obj-$(CONFIG_TRUSTY)		+= trusty/
 obj-y				+= base/ block/ misc/ mfd/ nfc/
 obj-$(CONFIG_LIBNVDIMM)		+= nvdimm/
 obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
@@ -100,7 +99,6 @@ obj-$(CONFIG_USB_PHY)		+= usb/
 obj-$(CONFIG_USB)		+= usb/
 obj-$(CONFIG_PCI)		+= usb/
 obj-$(CONFIG_USB_GADGET)	+= usb/
-obj-$(CONFIG_OF)		+= usb/
 obj-$(CONFIG_SERIO)		+= input/serio/
 obj-$(CONFIG_GAMEPORT)		+= input/gameport/
 obj-$(CONFIG_INPUT)		+= input/
@@ -112,6 +110,7 @@ obj-$(CONFIG_W1)		+= w1/
 obj-$(CONFIG_POWER_SUPPLY)	+= power/
 obj-$(CONFIG_HWMON)		+= hwmon/
 obj-$(CONFIG_THERMAL)		+= thermal/
+obj-$(CONFIG_TRUSTY)		+= trusty/
 obj-$(CONFIG_WATCHDOG)		+= watchdog/
 obj-$(CONFIG_MD)		+= md/
 obj-$(CONFIG_BT)		+= bluetooth/
@@ -176,17 +175,3 @@ obj-$(CONFIG_STM)		+= hwtracing/stm/
 obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_NVMEM)		+= nvmem/
 obj-$(CONFIG_FPGA)		+= fpga/
-
-# Add project macro resolution by wgx 20171121 start
-ifneq ($(CONFIG_CUSTOM_TRAN_PROJECT),)
-TRAN_KERNEL_FLAGS := $(addprefix -D, $(shell echo \
-                $(CONFIG_CUSTOM_TRAN_PROJECT) |  tr a-z A-Z))
-subdir-ccflags-y += $(TRAN_KERNEL_FLAGS)
-endif
-
-ifneq ($(CONFIG_CUSTOM_TRAN_BOM),)
-TRAN_BOM_KERNEL_FLAGS := $(addprefix -D, $(shell echo \
-                $(CONFIG_CUSTOM_TRAN_BOM) |  tr a-z A-Z))
-subdir-ccflags-y += $(TRAN_BOM_KERNEL_FLAGS)
-endif
-# Add project macro resolution by wgx 20171121 end

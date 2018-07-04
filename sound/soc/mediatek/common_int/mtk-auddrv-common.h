@@ -97,7 +97,7 @@ typedef	int32_t kal_int32;
 typedef	uint64_t kal_uint64;
 typedef	int64_t kal_int64;
 
-struct afe_block_t {
+typedef struct {
 	kal_uint32 pucPhysBufAddr;
 	kal_uint8 *pucVirtBufAddr;
 	kal_int32 u4BufferSize;
@@ -109,32 +109,33 @@ struct afe_block_t {
 	kal_uint32 u4MaxCopySize;
 	kal_uint32 u4fsyncflag;
 	kal_uint32 uResetFlag;
-};
+} AFE_BLOCK_T;
 
-struct substream_list {
-	kal_uint32 u4MaxCopySize;
+typedef struct substreamList {
+	volatile kal_uint32 u4MaxCopySize;
 
 	struct snd_pcm_substream *substream;
-	struct substream_list *next;
-};
+	struct substreamList *next;
+} substreamList;
 
-struct afe_mem_control_t {
+
+typedef struct {
 	struct file *flip;
-	struct substream_list *substreamL;
-	struct afe_block_t rBlock;
+	substreamList *substreamL;
+	AFE_BLOCK_T rBlock;
 	kal_uint32 MemIfNum;
 	bool interruptTrigger;
 	spinlock_t substream_lock;
 	bool mWaitForIRQ;
-	bool mAssignDRAM;
-};
+} AFE_MEM_CONTROL_T;
 
 struct pcm_afe_info {
-	struct afe_block_t *mAfeBlock;
+	struct AFE_BLOCK_T *mAfeBlock;
 	struct snd_pcm_substream *substream;
 };
 
-struct afe_dl_abnormal_control_t {
+
+typedef struct {
 	kal_int32 u4BufferSize[DL_ABNORMAL_CONTROL_MAX];
 	kal_int32 u4DataRemained[DL_ABNORMAL_CONTROL_MAX];
 	kal_int32 u4WriteIdx[DL_ABNORMAL_CONTROL_MAX];          /* Previous Write Index. */
@@ -150,20 +151,20 @@ struct afe_dl_abnormal_control_t {
 	kal_uint32 IrqIntervalLimitMs[DL_ABNORMAL_CONTROL_MAX];
 	bool IrqDelayCnt;
 
-};
+} AFE_DL_ABNORMAL_CONTROL_T;
 
 struct mtk_dai {
 	bool enable;
 	uint32_t sample_rate;
 };
 
-struct afe_dl_isr_copy_t {
+typedef struct {
 	kal_int8 *pBufferBase;
 	kal_int8 *pBufferIndx;
 	kal_uint32 u4BufferSize;
 	kal_uint32 u4BufferSizeMax;
 
 	kal_int32 u4IsrConsumeSize;
-};
+} AFE_DL_ISR_COPY_T;
 
 #endif

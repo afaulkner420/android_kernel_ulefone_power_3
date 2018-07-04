@@ -41,18 +41,6 @@
 #define ADAPTIVE_FPS_COOLER              (1)
 
 #ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
-
-#ifdef CONFIG_MTK_FPSGO_FSTB
-	#define FPS_COOLER_USE_DFPS				(0)
-#else
-	#define FPS_COOLER_USE_DFPS				(1)
-#endif
-
-#else
-	#define FPS_COOLER_USE_DFPS				(0)
-#endif
-
-#if FPS_COOLER_USE_DFPS
 #include "dfrc.h"
 #include "dfrc_drv.h"
 #endif
@@ -140,25 +128,20 @@ static int fps_stable_period = 10;
 /* FPS is active when over stable tpcb or always */
 static int fps_limit_always_on;
 static int in_game_mode;
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 static unsigned int fps_target_adjust;
 #endif
 #endif
 
 #ifndef __GED_TYPE_H__
-enum GED_INFO_TAG {
+typedef enum GED_INFO_TA {
 GED_EVENT_GAS_MODE,
 GED_UNDEFINED
-};
-
-enum {
-	GAS_CATEGORY_GAME,
-	GAS_CATEGORY_OTHERS,
-};
+} GED_INFO;
 #endif
 
 unsigned long  __attribute__ ((weak))
-ged_query_info(enum GED_INFO_TAG eType)
+ged_query_info(GED_INFO eType)
 {
 	pr_err("E_WF: %s doesn't exist\n", __func__);
 	return 0;
@@ -171,7 +154,7 @@ mtk_get_gpu_loading(unsigned int *pLoading)
 	return 0;
 }
 
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 void dfrc_fps_limit_cb(int fps_limit)
 {
 	ktime_t cur_time;
@@ -254,7 +237,7 @@ static void mtk_cl_fps_set_fps_limit(void)
 	int i = 0;
 	int min_limit = 60;
 	unsigned int min_param = 60;
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 	int ret = -1;
 #endif
 
@@ -286,7 +269,7 @@ static void mtk_cl_fps_set_fps_limit(void)
 
 	if (min_param != cl_fps_cur_limit) {
 		cl_fps_cur_limit = min_param;
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 		ret = dfrc_set_kernel_policy(DFRC_DRV_API_THERMAL, ((cl_fps_cur_limit != 60) ? cl_fps_cur_limit : -1),
 			DFRC_DRV_MODE_INTERNAL_SW, 0, 0);
 		mtk_cooler_fps_dprintk_always("[DFPS] fps:%d, ret = %d\n", cl_fps_cur_limit, ret);
@@ -445,7 +428,7 @@ static int adp_calc_fps_limit(void)
 {
 	static int last_change_tpcb;
 	static int period;
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 	static int fixedT_period;
 #endif
 	int sma_tpcb, tpcb_change, sma_fps;
@@ -465,7 +448,7 @@ static int adp_calc_fps_limit(void)
 	mtk_cooler_fps_dprintk("[%s] sma_tpcb = %d, tpcb_change = %d, sma_fps = %d\n",
 		__func__, sma_tpcb,  tpcb_change, sma_fps);
 
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 	/* [Todo] adjust the fps target here */
 	/* fps_limit = fps_limit -(fps_target_adjust/(fps_stable_period*1000));*/
 	fps_target_adjust = 0;
@@ -481,7 +464,7 @@ static int adp_calc_fps_limit(void)
 		/* FPS variation is HIGH */
 		if (fps_limit - sma_fps > fps_limit * (fps_error_threshold + fps_target_bias) / 100) {
 			/* TODO: TBD: is "sma_fpa < 40" still necessary? */
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 			if (is_system_too_busy() && (!is_cpu_power_unlimit())) {
 				sma_fps = sma_fps + fps_limit * fps_target_bias / 100;
 #else
@@ -492,7 +475,7 @@ static int adp_calc_fps_limit(void)
 			}
 		} else {
 			/* For always-on and low tpcb */
-#if FPS_COOLER_USE_DFPS
+#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
 			if (fixedT_period >= fps_stable_period || tpcb_change < 0) {
 				fps_limit = increase_fps_limit();
 				fixedT_period = 0;
@@ -608,9 +591,6 @@ static ssize_t clfps_level_write(struct file *file, const char __user *buffer,
 	if (cl_adp_fps_limit != max_fps_limit)
 		return -EAGAIN;
 
-	if (count >= 128 || count < 1)
-		return -EINVAL;
-
 	buf = kmalloc(count + 1, GFP_KERNEL);
 	if (buf == NULL)
 		return -ENOMEM;
@@ -629,8 +609,7 @@ static ssize_t clfps_level_write(struct file *file, const char __user *buffer,
 	sepstr = buf;
 
 	substr = strsep(&sepstr, " ");
-	if (kstrtoint(substr, 10, &new_nr_fps_levels) != 0 ||
-		((new_nr_fps_levels > MAX_NR_FPS_LEVELS) || (new_nr_fps_levels <= 0)))  {
+	if (kstrtoint(substr, 10, &new_nr_fps_levels) != 0 || new_nr_fps_levels > MAX_NR_FPS_LEVELS) {
 		ret = -EINVAL;
 		goto err;
 	}

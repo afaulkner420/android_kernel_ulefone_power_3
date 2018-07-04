@@ -81,12 +81,3 @@ config PROC_CHILDREN
 
 	  Say Y if you are running any user-space software which takes benefit from
 	  this interface. For example, rkt is such a piece of software.
-
-#add XLLLGOBLES-6 by lei.ni 20171120 start
-config TRAN_SYSTEM_DEVINFO
-	bool "/proc/rlkdevinfo support"
-	default n
-
-#add XLLLGOBLES-6 by lei.ni 20171120 end
-
-

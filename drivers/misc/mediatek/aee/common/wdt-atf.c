@@ -41,7 +41,6 @@
 #include <ext_wd_drv.h>
 #endif
 #include "aee-common.h"
-#include "../ipanic/ipanic.h"
 #include <mt-plat/mtk_secure_api.h>
 #ifdef CONFIG_MTK_EIC_HISTORY_DUMP
 #include <linux/irqchip/mtk-eic.h>
@@ -61,16 +60,16 @@
 #define MAX_EXCEPTION_FRAME	16
 #define PRINTK_BUFFER_SIZE	512
 
-/* AEE_MTK_CPU_NUMS may not eaqual to real cpu numbers, alloc buffer at initialization */
-static char *wdt_percpu_log_buf[AEE_MTK_CPU_NUMS];
-static int wdt_percpu_log_length[AEE_MTK_CPU_NUMS];
+/* NR_CPUS may not eaqual to real cpu numbers, alloc buffer at initialization */
+static char *wdt_percpu_log_buf[NR_CPUS];
+static int wdt_percpu_log_length[NR_CPUS];
 static char wdt_log_buf[WDT_LOG_DEFAULT_SIZE];
-static int wdt_percpu_preempt_cnt[AEE_MTK_CPU_NUMS];
-static unsigned long wdt_percpu_stackframe[AEE_MTK_CPU_NUMS][MAX_EXCEPTION_FRAME];
+static int wdt_percpu_preempt_cnt[NR_CPUS];
+static unsigned long wdt_percpu_stackframe[NR_CPUS][MAX_EXCEPTION_FRAME];
 static int wdt_log_length;
 static atomic_t wdt_enter_fiq;
 static char printk_buf[PRINTK_BUFFER_SIZE];
-static char str_buf[AEE_MTK_CPU_NUMS][PRINTK_BUFFER_SIZE];
+static char str_buf[NR_CPUS][PRINTK_BUFFER_SIZE];
 
 #ifndef CONFIG_MTK_RAM_CONSOLE
 __weak void aee_sram_fiq_save_bin(const char *msg, size_t len)
@@ -100,14 +99,14 @@ struct stacks_buffer {
 	unsigned long top;
 	unsigned long bottom;
 };
-static struct stacks_buffer stacks_buffer_bin[AEE_MTK_CPU_NUMS];
+static struct stacks_buffer stacks_buffer_bin[NR_CPUS];
 
 struct regs_buffer {
 	struct pt_regs regs;
 	int real_len;
 	struct task_struct *tsk;
 };
-static struct regs_buffer regs_buffer_bin[AEE_MTK_CPU_NUMS];
+static struct regs_buffer regs_buffer_bin[NR_CPUS];
 
 
 int in_fiq_handler(void)
@@ -140,7 +139,7 @@ void aee_wdt_dump_info(void)
 	aee_rr_rec_fiq_step(AEE_FIQ_STEP_KE_WDT_PERCPU);
 #endif
 	pr_info("==========================================\n");
-	for (cpu = 0; cpu < AEE_MTK_CPU_NUMS; cpu++) {
+	for (cpu = 0; cpu < NR_CPUS; cpu++) {
 		if ((wdt_percpu_log_buf[cpu]) && (wdt_percpu_log_length[cpu])) {
 			log_buf_ptr = wdt_percpu_log_buf[cpu];
 			while (wdt_percpu_log_length[cpu] > 0) {
@@ -364,9 +363,7 @@ static void aee_wdt_dump_backtrace(unsigned int cpu, struct pt_regs *regs)
 #ifdef CONFIG_ARM64
 			/* work around for unknown reason do_mem_abort stack abnormal */
 			excp_regs = (void *)(cur_frame.fp + 0x10 + 0xa0);
-			if (unwind_frame(current, &cur_frame) < 0) {	/* skip do_mem_abort & el1_da */
-				aee_wdt_percpu_printf(cpu, "in_exception_text unwind_frame < 0\n");
-			}
+			unwind_frame(current, &cur_frame);	/* skip do_mem_abort & el1_da */
 #else
 			excp_regs = (void *)(cur_frame.fp + 4);
 #endif
@@ -529,18 +526,12 @@ void aee_wdt_atf_info(unsigned int cpu, struct pt_regs *regs)
 #ifdef CONFIG_MTK_RAM_CONSOLE
 		aee_rr_rec_fiq_step(AEE_FIQ_STEP_WDT_IRQ_STACK);
 #endif
-		for (cpu = 0; cpu < AEE_MTK_CPU_NUMS; cpu++)
+		for (cpu = 0; cpu < NR_CPUS; cpu++)
 			aee_save_reg_stack_sram(cpu);
 		aee_sram_fiq_log("\n\n");
 	} else {
 		aee_wdt_printf("Invalid atf_aee_debug_virt_addr, no register dump\n");
 	}
-
-	/* add __per_cpu_offset */
-	mrdump_mini_add_entry((unsigned long)__per_cpu_offset, MRDUMP_MINI_SECTION_SIZE);
-
-	/* add info for minidump */
-	mrdump_mini_ke_cpu_regs(regs);
 
 #ifdef CONFIG_MTK_SCHED_MONITOR
 #ifdef CONFIG_MTK_RAM_CONSOLE
@@ -561,14 +552,7 @@ void aee_wdt_atf_info(unsigned int cpu, struct pt_regs *regs)
 
 	dump_emi_outstanding();
 
-#ifdef CONFIG_MTK_WATCHDOG
-	if ((mtk_rgu_status_is_sysrst() || mtk_rgu_status_is_eintrst())) {
-		aee_sram_fiq_log("\nreboot by MRDUMP_KEY\n");
-		__mrdump_create_oops_dump(AEE_REBOOT_MODE_MRDUMP_KEY, regs, "MRDUMP_KEY");
-	} else
-#endif
-		__mrdump_create_oops_dump(AEE_REBOOT_MODE_WDT, regs, "WDT/HWT");
-
+	__mrdump_create_oops_dump(AEE_REBOOT_MODE_WDT, regs, "WDT/HWT");
 	aee_exception_reboot();
 }
 
@@ -582,7 +566,7 @@ void notrace aee_wdt_atf_entry(void)
 	int cpu = get_HW_cpuid();
 #ifdef CONFIG_MTK_RAM_CONSOLE
 #ifdef CONFIG_MTK_WATCHDOG
-	if (mtk_rgu_status_is_sysrst() || mtk_rgu_status_is_eintrst()) {
+	if (mtk_rgu_status_is_sysrst() || mtk_rgu_status_is_sysrst()) {
 #ifdef CONFIG_MTK_PMIC_COMMON
 		if (pmic_get_register_value(PMIC_JUST_SMART_RST) == 1) {
 			pr_notice("SMART RESET: TRUE\n");
@@ -657,7 +641,7 @@ static int __init aee_wdt_init(void)
 	atomic_set(&wdt_enter_fiq, 0);
 	atomic_set(&aee_wdt_zap_lock, 1);
 
-	for (i = 0; i < AEE_MTK_CPU_NUMS; i++) {
+	for (i = 0; i < NR_CPUS; i++) {
 		wdt_percpu_log_buf[i] = kzalloc(WDT_PERCPU_LOG_SIZE, GFP_KERNEL);
 		wdt_percpu_log_length[i] = 0;
 		wdt_percpu_preempt_cnt[i] = 0;

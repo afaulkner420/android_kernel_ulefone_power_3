@@ -5,14 +5,10 @@
  *  Copyright (C) 2015 Richtek Technology Corp.
  *  cy_huang <cy_huang@richtek.com>
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- *  See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  */
 
 #ifndef __RT5509_H
@@ -22,7 +18,7 @@
 #include <mt-plat/rt-regmap.h>
 
 #define RT5509_DEVICE_NAME		"rt5509"
-#define RT5509_DRV_VER			"1.0.12_M"
+#define RT5509_DRV_VER			"1.0.10_M"
 
 #ifdef CONFIG_RT_REGMAP
 #define RT5509_SIMULATE_DEVICE	0
@@ -102,7 +98,6 @@ struct rt5509_chip {
 	u8 pgain_gain_store;
 	u8 sig_gain_store;
 	u16 sig_max_store;
-	u16 pilot_freq;
 	u8 recv_spec_set:1;
 	u8 bypass_dsp:1;
 	u8 calibrated:1;
@@ -473,9 +468,5 @@ struct rt_regmap_device *rt5509_regmap_register(
 	struct device *parent, void *client, void *drvdata);
 int rt5509_calib_create(struct rt5509_chip *chip);
 void rt5509_calib_destroy(struct rt5509_chip *chip);
-int rt5509_i2c_probe(struct i2c_client *client,
-		     const struct i2c_device_id *id);
-int rt5509_i2c_remove(struct i2c_client *client);
-void rt5509_i2c_shutdown(struct i2c_client *client);
 
 #endif /* #ifndef __RT5509_H */

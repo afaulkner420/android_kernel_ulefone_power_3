@@ -18,7 +18,6 @@
 #include <mt-plat/mtk_meminfo.h>
 
 #include "mtk_vcorefs_manager.h"
-#include "mtk_vcorefs_governor.h"
 #include "mtk_spm_vcore_dvfs.h"
 #include "mmdvfs_mgr.h"
 
@@ -73,7 +72,7 @@ static struct vcorefs_profile vcorefs_ctrl = {
 	.dvfs_lock	= 0,
 	.dvfs_request   = 0,
 	.kr_req_mask	= 0,
-	.kr_log_mask	= (1U << KIR_GPU) | (1U << KIR_FBT) | (1U << KIR_PERF) | (1U << KIR_TLC),
+	.kr_log_mask	= (1U << KIR_GPU) | (1U << KIR_FBT) | (1U << KIR_PERF),
 };
 
 /*
@@ -133,10 +132,6 @@ int spm_msdc_dvfs_setting(int msdc, bool enable)
 		return 0;
 
 	pwrctrl->autok_finish = enable;
-
-#if defined(CONFIG_MACH_MT6739)
-	dvfsrc_msdc_autok_finish();
-#endif
 
 	vcorefs_crit("[%s] MSDC AUTOK FINISH\n", __func__);
 
@@ -308,13 +303,8 @@ int vcorefs_request_dvfs_opp(enum dvfs_kicker kicker, enum dvfs_opp opp)
 			vcorefs_autok_lock_dvfs(autok_lock);
 			vcorefs_autok_set_vcore(kicker, opp);
 		} else {
-#if defined(CONFIG_MACH_MT6771)
-			vcorefs_autok_set_vcore(kicker, opp);
-			vcorefs_autok_lock_dvfs(autok_lock);
-#else
 			vcorefs_autok_set_vcore(KIR_SYSFS, _get_dvfs_opp(pwrctrl, kicker, opp));
 			vcorefs_autok_lock_dvfs(autok_lock);
-#endif
 		}
 		return 0;
 	}
@@ -367,11 +357,6 @@ void vcorefs_drv_init(int plat_init_opp)
 	pwrctrl->plat_init_opp = plat_init_opp;
 	pwrctrl->init_done = true;
 	feature_en = true;
-
-#if defined(CONFIG_MTK_QOS_SUPPORT)
-		pwrctrl->kr_req_mask = (1 << NUM_KICKER) - 1;
-#endif
-
 	mutex_unlock(&vcorefs_mutex);
 
 	vcorefs_crit("[%s] done\n", __func__);
@@ -447,7 +432,7 @@ static ssize_t vcore_debug_store(struct kobject *kobj, struct kobj_attribute *at
 	if (sscanf(buf, "%31s %d", cmd, &val) != 2)
 		return -EPERM;
 
-	if ((pwrctrl->kr_log_mask & 0xFFFF) != 65535) /* no log when DRAM HQA stress (0xFFFF)*/
+	if (pwrctrl->kr_log_mask != 65535) /* no log when DRAM HQA stress (0xFFFF)*/
 		vcorefs_crit("vcore_debug: cmd: %s, val: %d\n", cmd, val);
 
 	if (!strcmp(cmd, "feature_en")) {
@@ -471,12 +456,6 @@ static ssize_t vcore_debug_store(struct kobject *kobj, struct kobj_attribute *at
 		mutex_lock(&vcorefs_mutex);
 		pwrctrl->kr_log_mask = val;
 		mutex_unlock(&vcorefs_mutex);
-#if defined(CONFIG_MACH_MT6775)
-	} else if (!strcmp(cmd, "force")) {
-		mutex_lock(&vcorefs_mutex);
-		dvfsrc_force_opp(val);
-		mutex_unlock(&vcorefs_mutex);
-#endif
 	}  else {
 		/* set kicker opp and do DVFS */
 		kicker = vcorefs_output_kicker_id(cmd);

@@ -1,9 +1,8 @@
-/*
- * Copyright (c) 2017 MediaTek Inc.
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,8 +14,8 @@
 	mt6370_pmu: mt6370_pmu_dts {
 		interrupt-controller;
 		#interrupt-cells = <1>;
-		mt6370,intr_gpio_num = <10>; /* direct defined GPIO num */
-		mt6370,intr_gpio = <&pio 10 0x0>; /* GPIO */
+		mt6370,intr_gpio_num = <3>; /* direct defined GPIO num */
+		mt6370,intr_gpio = <&pio 3 0x0>; /* GPIO */
 		core {
 			compatible = "mediatek,mt6370_pmu_core";
 			interrupt-names = "otp", "vdda_ovp", "vdda_uv";
@@ -38,7 +37,7 @@
 			ichg = <2000000>;	/* uA */
 			aicr = <500000>;	/* uA */
 			mivr = <4400000>;	/* uV */
-			cv = <4400000>;		/* uA */
+			cv = <4350000>;		/* uA */
 			ieoc = <150000>;	/* uA */
 			safety_timer = <12>;	/* hour */
 			dc_wdt = <4000000>;	/* us */
@@ -89,8 +88,8 @@
 					  "isink4_open", "isink3_open",
 					  "isink2_open", "isink1_open";
 			/* name cnt must be 4 */
-			mt,led_name = "mt6370_pmu_led1", "mt6370_pmu_led2",
-				      "mt6370_pmu_led3", "blue";
+			mt,led_name = "mt6370_pmu_led1", "mt6370_pmu_led3",
+				      "mt6370_pmu_led2", "mt6370_pmu_led4";
 			/* trigger cnt must be 4, mode can be selected as */
 			/* cc_mode -> const current mode */
 			/* pwm_mode -> pwm dimming mode */

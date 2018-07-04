@@ -22,7 +22,6 @@
 #include "ccci_core.h"
 #include "ccci_bm.h"
 #include "port_sysmsg.h"
-#include "ccci_swtp.h"
 #define MAX_QUEUE_LENGTH 16
 
 #ifndef TEST_MESSAGE_FOR_BRINGUP
@@ -50,12 +49,12 @@ static inline int port_sys_echo_test_l1core(struct port_t *port, int data)
 }
 #endif
 /* for backward compatibility */
-struct ccci_sys_cb_func_info ccci_sys_cb_table_100[MAX_MD_NUM][MAX_KERN_API];
-struct ccci_sys_cb_func_info ccci_sys_cb_table_1000[MAX_MD_NUM][MAX_KERN_API];
+ccci_sys_cb_func_info_t ccci_sys_cb_table_100[MAX_MD_NUM][MAX_KERN_API];
+ccci_sys_cb_func_info_t ccci_sys_cb_table_1000[MAX_MD_NUM][MAX_KERN_API];
 int register_ccci_sys_call_back(int md_id, unsigned int id, ccci_sys_cb_func_t func)
 {
 	int ret = 0;
-	struct ccci_sys_cb_func_info *info_ptr;
+	ccci_sys_cb_func_info_t *info_ptr;
 
 	if (md_id >= MAX_MD_NUM) {
 		CCCI_ERROR_LOG(md_id, SYS, "register_sys_call_back fail: invalid md id\n");
@@ -86,7 +85,7 @@ void exec_ccci_sys_call_back(int md_id, int cb_id, int data)
 {
 	ccci_sys_cb_func_t func;
 	int id;
-	struct ccci_sys_cb_func_info *curr_table;
+	ccci_sys_cb_func_info_t *curr_table;
 
 	if (md_id >= MAX_MD_NUM) {
 		CCCI_ERROR_LOG(md_id, SYS, "exec_sys_cb fail: invalid md id\n");
@@ -113,6 +112,12 @@ void exec_ccci_sys_call_back(int md_id, int cb_id, int data)
 		func(md_id, data);
 	else
 		CCCI_ERROR_LOG(md_id, SYS, "exec_sys_cb fail: func id(0x%x) not register!\n", cb_id);
+}
+
+unsigned long __weak BAT_Get_Battery_Voltage(int polling_mode)
+{
+	pr_debug("[ccci/dummy] %s is not supported!\n", __func__);
+	return 0;
 }
 
 static int sys_msg_send_battery(struct port_t *port)
@@ -160,10 +165,10 @@ static void sys_msg_handler(struct port_t *port, struct sk_buff *skb)
 		/* Fall through */
 	case MD_RF_TEMPERATURE_3G:
 		/* Fall through */
+#ifdef FEATURE_MTK_SWITCH_TX_POWER
 	case MD_SW_MD1_TX_POWER_REQ:
 		/* Fall through */
-	case MD_DISPLAY_DYNAMIC_MIPI:
-		/* Fall through */
+#endif
 	case LWA_CONTROL_MSG:
 		exec_ccci_sys_call_back(md_id, ccci_h->data[1], ccci_h->reserved);
 		break;
@@ -177,8 +182,6 @@ static void sys_msg_handler(struct port_t *port, struct sk_buff *skb)
 static int port_sys_init(struct port_t *port)
 {
 	CCCI_DEBUG_LOG(port->md_id, SYS, "kernel port %s is initializing\n", port->name);
-	if (port->md_id == MD_SYS1)
-		swtp_init(port->md_id);
 	port->skb_handler = &sys_msg_handler;
 	port->private_data = kthread_run(port_kthread_handler, port, "%s", port->name);
 	port->rx_length_th = MAX_QUEUE_LENGTH;

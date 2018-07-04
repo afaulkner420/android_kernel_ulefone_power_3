@@ -93,6 +93,7 @@ static int max_devices;
 
 /* TODO: Replace these with struct ida */
 static DECLARE_BITMAP(dev_use, MAX_DEVICES);
+static DECLARE_BITMAP(name_use, MAX_DEVICES);
 
 /*
  * There is one mmc_blk_data per slot.
@@ -111,6 +112,7 @@ struct mmc_blk_data {
 	unsigned int	usage;
 	unsigned int	read_only;
 	unsigned int	part_type;
+	unsigned int	name_idx;
 	unsigned int	reset_done;
 #define MMC_BLK_READ		BIT(0)
 #define MMC_BLK_WRITE		BIT(1)
@@ -996,13 +998,11 @@ cmd_err:
 #ifdef CONFIG_MTK_EMMC_SUPPORT_OTP
 #define MMC_SEND_WRITE_PROT_TYPE        31
 #define EXT_CSD_USR_WP                  171     /* R/W */
-#define US_PERM_WP_EN			4
 
 int mmc_otp_ops_check_bdev(struct block_device *bdev)
 {
-	if (bdev && bdev->bd_part && bdev->bd_part->info)
-		if (strcmp(bdev->bd_part->info->volname, "otp"))
-			return 0;
+	if (strcmp(bdev->bd_part->info->volname, "otp"))
+		return 0;
 	return 1;
 }
 
@@ -1015,21 +1015,14 @@ int mmc_otp_ops_check(struct block_device *bdev,
 	 || (idata->ic.opcode == MMC_SEND_WRITE_PROT_TYPE)) {
 		if (idata->ic.arg >= bdev->bd_part->nr_sects)
 			return -EFAULT;
-		idata->ic.arg += bdev->bd_part->start_sect;
 	} else if (idata->ic.opcode == MMC_SWITCH) {
 		if (((idata->ic.arg >> 16) & 0xFF) != EXT_CSD_USR_WP)
 			return -EPERM;
-#ifndef CONFIG_MTK_EMMC_SUPPORT_OTP_FOR_CUSTOMER
-		/* prevent users' permanent writ protect in sqc */
-		if (((idata->ic.arg >> 8) & US_PERM_WP_EN)
-			&& ((((idata->ic.arg >> 24) & 0x3) == MMC_SWITCH_MODE_SET_BITS)
-				|| (((idata->ic.arg >> 24) & 0x3) == MMC_SWITCH_MODE_WRITE_BYTE))) {
-			return -EPERM;
-		}
-#endif
 	} else {
 		return -EPERM;
 	}
+
+	idata->ic.arg += bdev->bd_part->start_sect;
 
 	return 0;
 
@@ -1131,11 +1124,6 @@ static int mmc_blk_ioctl_multi_cmd(struct block_device *bdev,
 	struct mmc_blk_data *md;
 	int i, err = 0, ioc_err = 0;
 	__u64 num_of_cmds;
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	struct mmc_blk_data *main_md;
-	unsigned char cmdq_en;
-#endif
-
 
 	/*
 	 * The caller must have CAP_SYS_RAWIO, and must be calling this on the
@@ -1175,21 +1163,6 @@ static int mmc_blk_ioctl_multi_cmd(struct block_device *bdev,
 		goto cmd_done;
 	}
 
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	cmdq_en = card->ext_csd.cmdq_mode_en;
-	if (cmdq_en) {
-		mmc_wait_cmdq_empty(card->host);
-		mmc_claim_host(card->host);
-		err = mmc_blk_cmdq_switch(card, 0);
-		if (err) {
-			pr_notice("MMC ioctl: %s disable CQ err %d\n",
-				mmc_hostname(card->host), err);
-			mmc_release_host(card->host);
-			goto cmd_done;
-		}
-	}
-#endif
-
 	mmc_get_card(card);
 
 	for (i = 0; i < num_of_cmds && !ioc_err; i++)
@@ -1200,17 +1173,6 @@ static int mmc_blk_ioctl_multi_cmd(struct block_device *bdev,
 	/* copy to user if data and response */
 	for (i = 0; i < num_of_cmds && !err; i++)
 		err = mmc_blk_ioctl_copy_to_user(&cmds[i], idata[i]);
-
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	if (cmdq_en) {
-		main_md = dev_get_drvdata(&card->dev);
-		if  (main_md->part_curr <= 2)
-			if (mmc_blk_cmdq_switch(card, 1))
-				pr_notice("MMC ioctl: %s re-enable CQ err %d\n",
-					mmc_hostname(card->host), err);
-		mmc_release_host(card->host);
-	}
-#endif
 
 cmd_done:
 	mmc_blk_put(md);
@@ -1268,9 +1230,6 @@ static inline int mmc_blk_part_switch(struct mmc_card *card,
 	struct mmc_blk_data *main_md = dev_get_drvdata(&card->dev);
 
 #ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-	/* add for reset emmc when error happen */
-	current_mmc_part_type = md->part_type;
-
 	if (card->host->cmdq_support_changed == 1)
 		card->host->cmdq_support_changed = 0;
 	else
@@ -1303,9 +1262,8 @@ static inline int mmc_blk_part_switch(struct mmc_card *card,
 			return ret;
 
 #ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-		/* enable cmdq at boot1/boot2/user partition */
-		if ((!card->ext_csd.cmdq_mode_en)
-		 && (md->part_type <= 2)) {
+		/* enable cmdq at all partition */
+		if (!card->ext_csd.cmdq_mode_en) {
 			mmc_claim_host(card->host);
 			mmc_blk_cmdq_switch(card, 1);
 			/* do not return error,
@@ -2282,14 +2240,11 @@ static void mmc_blk_rw_rq_prep(struct mmc_queue_req *mqrq,
 	}
 #endif
 
-#if defined(CONFIG_MTK_HW_FDE) || defined(CONFIG_HIE)
+#ifdef CONFIG_MTK_HW_FDE
 	if (mqrq->req->bio) {
 		brq->mrq.bi_hw_fde = mqrq->req->bio->bi_hw_fde;
 		brq->mrq.bi_key_idx = mqrq->req->bio->bi_key_idx;
 	}
-
-	/* request is from mmc layer */
-	brq->mrq.is_mmc_req = true;
 #endif
 
 	mmc_queue_bounce_pre(mqrq);
@@ -2429,7 +2384,7 @@ static void mmc_blk_packed_hdr_wrq_prep(struct mmc_queue_req *mqrq,
 	struct mmc_blk_data *md = mq->data;
 	struct mmc_packed *packed = mqrq->packed;
 	bool do_rel_wr, do_data_tag;
-	__le32 *packed_cmd_hdr;
+	u32 *packed_cmd_hdr;
 	u8 hdr_blocks;
 	u8 i = 1;
 
@@ -2852,7 +2807,7 @@ int mmc_blk_end_queued_req(struct mmc_host *host,
 	struct mmc_card *card = host->card;
 	struct mmc_blk_request *brq;
 	struct mmc_host *mmc;
-	int ret = 1, type, areq_cnt;
+	int ret = 1, type;
 	struct mmc_queue_req *mq_rq;
 	struct request *req;
 	unsigned long flags;
@@ -2946,15 +2901,8 @@ int mmc_blk_end_queued_req(struct mmc_host *host,
 	/*
 	 * one request is removed from queue,
 	 * we wakeup mmcqd to insert new request to queue
-	 * wakeup only when queue full or queue empty
 	 */
-	areq_cnt = atomic_read(&host->areq_cnt);
-	if (areq_cnt >= host->card->ext_csd.cmdq_depth -
-			EMMC_MIN_RT_CLASS_TAG_COUNT - 1)
-		wake_up_process(mq->thread);
-	else if (areq_cnt == 0)
-		wake_up_interruptible(&host->cmp_que);
-
+	wake_up_process(mq->thread);
 	return 1;
 
 cmd_abort:
@@ -2977,14 +2925,8 @@ start_new_req:
 	/*
 	 * one request is removed from queue,
 	 * we wakeup mmcqd to insert new request to queue
-	 * wakeup only when queue full or queue empty
 	 */
-	areq_cnt = atomic_read(&host->areq_cnt);
-	if (areq_cnt >= host->card->ext_csd.cmdq_depth -
-			EMMC_MIN_RT_CLASS_TAG_COUNT - 1)
-		wake_up_process(mq->thread);
-	else if (areq_cnt == 0)
-		wake_up_interruptible(&host->cmp_que);
+	wake_up_process(mq->thread);
 
 	return 0;
 }
@@ -3180,6 +3122,19 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 		goto out;
 	}
 
+	/*
+	 * !subname implies we are creating main mmc_blk_data that will be
+	 * associated with mmc_card with dev_set_drvdata. Due to device
+	 * partitions, devidx will not coincide with a per-physical card
+	 * index anymore so we keep track of a name index.
+	 */
+	if (!subname) {
+		md->name_idx = find_first_zero_bit(name_use, max_devices);
+		__set_bit(md->name_idx, name_use);
+	} else
+		md->name_idx = ((struct mmc_blk_data *)
+				dev_to_disk(parent)->private_data)->name_idx;
+
 	md->area_type = area_type;
 
 	/*
@@ -3229,7 +3184,7 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	 */
 
 	snprintf(md->disk->disk_name, sizeof(md->disk->disk_name),
-		 "mmcblk%u%s", card->host->index, subname ? subname : "");
+		 "mmcblk%u%s", md->name_idx, subname ? subname : "");
 
 	if (mmc_card_mmc(card))
 		blk_queue_logical_block_size(md->queue.queue,
@@ -3240,8 +3195,7 @@ static struct mmc_blk_data *mmc_blk_alloc_req(struct mmc_card *card,
 	set_capacity(md->disk, size);
 
 	if (mmc_host_cmd23(card->host)) {
-		if ((mmc_card_mmc(card) &&
-		    card->csd.mmca_vsn >= CSD_SPEC_VER_3) ||
+		if (mmc_card_mmc(card) ||
 		    (mmc_card_sd(card) &&
 		     card->scr.cmds & SD_SCR_CMD23_SUPPORT))
 			md->flags |= MMC_BLK_CMD23;
@@ -3391,6 +3345,7 @@ static void mmc_blk_remove_parts(struct mmc_card *card,
 	struct list_head *pos, *q;
 	struct mmc_blk_data *part_md;
 
+	__clear_bit(md->name_idx, name_use);
 	list_for_each_safe(pos, q, &md->part) {
 		part_md = list_entry(pos, struct mmc_blk_data, part);
 		list_del(pos);
@@ -3553,6 +3508,12 @@ static const struct mmc_fixup blk_fixups[] =
 		  MMC_QUIRK_DISABLE_SNO),
 	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_SANDISK_EMMC, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_DISABLE_SNO),
+
+	/*
+	 *  On Some Hynix eMMCs, disable CMDQ.
+	 */
+	MMC_FIXUP("HBG4a2", CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
+		  MMC_QUIRK_DISABLE_CMDQ),
 
 	END_FIXUP
 };

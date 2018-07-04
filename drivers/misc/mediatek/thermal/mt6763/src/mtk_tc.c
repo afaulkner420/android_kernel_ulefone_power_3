@@ -86,14 +86,6 @@ int tscpu_ts_temp_r[TS_ENUM_MAX];
 * TO-DO: I assume AHB bus frequecy is 78MHz.
 * Please confirm it.
 */
-/*
- * The tscpu_g_tc structure controls the polling rates and sensor mapping tables
- * of all thermal controllers.
- * If HW thermal controllers are more than you actually needed, you should pay
- * attention to default setting of unneeded thermal controllers.
- * Otherwise, these unneeded thermal controllers will be initialized and work
- * unexpectedly.
-*/
 struct thermal_controller tscpu_g_tc[THERMAL_CONTROLLER_NUM] = {
 	[0] = {
 		.ts = {TS_MCU2, TS_MCU1, TS_MCU3},
@@ -429,7 +421,12 @@ void tscpu_thermal_cal_prepare(void)
 	__u32 lvtsdevinfo1, lvtsdevinfo2, lvtsdevinfo3;
 #endif
 
-
+	/*
+	*ADDRESS_INDEX_0
+	*ADDRESS_INDEX_1
+	*ADDRESS_INDEX_2
+	* defined in tscpu_settings.h
+	*/
 
 	temp0 = get_devinfo_with_index(ADDRESS_INDEX_0);
 	temp1 = get_devinfo_with_index(ADDRESS_INDEX_1);
@@ -461,23 +458,23 @@ void tscpu_thermal_cal_prepare(void)
 	g_o_vtsabb = ((temp2 & _BITMASK_(22:14)) >> 14);
 
 	/*
-	*   DEGC_cali    (6b)
-	*   ADC_CALI_EN_T(1b)
+	*   DEGC_cali
+	*   ADC_CALI_EN_T
 	*/
 	g_degc_cali = ((temp1 & _BITMASK_(6:1)) >> 1);
 	g_adc_cali_en_t = (temp1 & _BIT_(0));
 
 	/*
-	*   O_SLOPE_SIGN (1b)
-	*   O_SLOPE      (6b)
+	*   O_SLOPE_SIGN
+	*   O_SLOPE
 	*/
 	g_o_slope_sign = ((temp1 & _BIT_(7)) >> 7);
 	g_o_slope = ((temp1 & _BITMASK_(31:26)) >> 26);
 
-	/*ID*/
+	/*ID */
 	g_id = ((temp0 & _BIT_(9)) >> 9);
 
-	/*TS_OFFSET*/
+	/*TS_OFFSET */
 	g_ts_offset = ((temp2 & _BIT_(4)) >> 4);
 
 	/*
@@ -507,7 +504,9 @@ void tscpu_thermal_cal_prepare(void)
 	}
 
 #if CFG_THERM_LVTS
-
+	/*
+	 * LVTS devinfo:
+	 */
 	lvtsdevinfo1 = get_devinfo_with_index(118);
 	lvtsdevinfo2 = get_devinfo_with_index(119);
 	lvtsdevinfo3 = get_devinfo_with_index(139);
@@ -831,9 +830,6 @@ irqreturn_t tscpu_thermal_all_tc_interrupt_handler(int irq, void *dev_id)
 	tscpu_dprintk("thermal_interrupt_handler : THERMINTST = 0x%x\n", ret);
 
 	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
 		mask = 1 << i;
 		if ((ret & mask) == 0)
 			thermal_interrupt_handler(i);
@@ -938,14 +934,14 @@ static void set_tc_trigger_hw_protect(int temperature, int temperature2, int tc_
 	mt_reg_sync_writel(temp | 0x80000000, offset + TEMPMONINT);	/* enable trigger Hot SPM interrupt */
 }
 
-static int read_tc_raw_and_temp(u32 *tempmsr_name, enum thermal_sensor ts_name)
+static int read_tc_raw_and_temp(volatile u32 *tempmsr_name, enum thermal_sensor ts_name)
 {
 	int temp = 0, raw = 0;
 
 	if (tempmsr_name == 0)
 		return 0;
 
-	raw = readl(tempmsr_name) & 0x0fff;
+	raw = readl((tempmsr_name)) & 0x0fff;
 	temp = raw_to_temperature_roomt(raw, ts_name);
 
 	tscpu_dprintk("read_tc_raw_temp,ts_raw=%d,temp=%d\n", raw, temp * 100);
@@ -964,31 +960,31 @@ void tscpu_thermal_read_tc_temp(int tc_num, enum thermal_sensor type, int order)
 	switch (order) {
 	case 0:
 		tscpu_ts_temp[type] =
-		    read_tc_raw_and_temp((offset + TEMPMSR0), type);
+		    read_tc_raw_and_temp((volatile u32 *)(offset + TEMPMSR0), type);
 		tscpu_dprintk("%s order %d tc_num %d type %d temp %d\n",
 			      __func__, order, tc_num, type, tscpu_ts_temp[type]);
 		break;
 	case 1:
 		tscpu_ts_temp[type] =
-		    read_tc_raw_and_temp((offset + TEMPMSR1), type);
+		    read_tc_raw_and_temp((volatile u32 *)(offset + TEMPMSR1), type);
 		tscpu_dprintk("%s order %d tc_num %d type %d temp %d\n",
 			      __func__, order, tc_num, type, tscpu_ts_temp[type]);
 		break;
 	case 2:
 		tscpu_ts_temp[type] =
-		    read_tc_raw_and_temp((offset + TEMPMSR2), type);
+		    read_tc_raw_and_temp((volatile u32 *)(offset + TEMPMSR2), type);
 		tscpu_dprintk("%s order %d tc_num %d type %d temp %d\n",
 			      __func__, order, tc_num, type, tscpu_ts_temp[type]);
 		break;
 	case 3:
 		tscpu_ts_temp[type] =
-		    read_tc_raw_and_temp((offset + TEMPMSR3), type);
+		    read_tc_raw_and_temp((volatile u32 *)(offset + TEMPMSR3), type);
 		tscpu_dprintk("%s order %d tc_num %d type %d temp %d\n",
 			      __func__, order, tc_num, type, tscpu_ts_temp[type]);
 		break;
 	default:
 		tscpu_ts_temp[type] =
-		    read_tc_raw_and_temp((offset + TEMPMSR0), type);
+		    read_tc_raw_and_temp((volatile u32 *)(offset + TEMPMSR0), type);
 		tscpu_dprintk("%s order %d tc_num %d type %d temp %d\n",
 			      __func__, order, tc_num, type, tscpu_ts_temp[type]);
 		break;
@@ -1103,9 +1099,6 @@ void thermal_pause_all_periodoc_temp_sensing(void)
 
 	/*config bank0,1,2 */
 	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
 		offset = tscpu_g_tc[i].tc_offset;
 		temp = readl(offset + TEMPMSRCTL1);
 		/* set bit8=bit1=bit2=bit3=1 to pause sensing point 0,1,2,3 */
@@ -1123,9 +1116,6 @@ void thermal_release_all_periodoc_temp_sensing(void)
 
 	/*config bank0,1,2 */
 	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
 		offset = tscpu_g_tc[i].tc_offset;
 
 		temp = readl(offset + TEMPMSRCTL1);
@@ -1170,9 +1160,6 @@ void thermal_disable_all_periodoc_temp_sensing(void)
 
 	/* tscpu_printk("thermal_disable_all_periodoc_temp_sensing\n"); */
 	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
 		offset = tscpu_g_tc[i].tc_offset;
 		/* tscpu_printk("thermal_disable_all_periodoc_temp_sensing:Bank_%d\n",i); */
 		mt_reg_sync_writel(0x00000000, offset + TEMPMONCTL0);
@@ -1218,9 +1205,6 @@ void tscpu_thermal_initial_all_tc(void)
 	mt_reg_sync_writel(0x800, AUXADC_CON1_CLR_V);	/* disable auxadc channel 11 immediate mode */
 
 	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
 		offset = tscpu_g_tc[i].tc_offset;
 		thermal_reset_and_initial(i);
 
@@ -1234,12 +1218,8 @@ void tscpu_thermal_initial_all_tc(void)
 
 	mt_reg_sync_writel(0x800, AUXADC_CON1_SET_V);
 
-	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
-
+	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++)
 		tscpu_thermal_enable_all_periodoc_sensing_point(i);
-	}
 }
 
 void tscpu_config_all_tc_hw_protect(int temperature, int temperature2)
@@ -1278,11 +1258,8 @@ void tscpu_config_all_tc_hw_protect(int temperature, int temperature2)
 	       (end.tv_usec - begin.tv_usec));
 #endif
 
-	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++) {
-		if (tscpu_g_tc[i].ts_number == 0)
-			continue;
+	for (i = 0; i < ARRAY_SIZE(tscpu_g_tc); i++)
 		set_tc_trigger_hw_protect(temperature, temperature2, i); /* Move thermal HW protection ahead... */
-	}
 
 	/*Thermal need to config to direct reset mode
 	*  this API provide by Weiqi Fu(RGU SW owner).
@@ -1399,10 +1376,8 @@ int get_io_reg_base(void)
 		return 0;
 	}
 
-	if (of_property_read_u32_index(node, "reg", 1, &thermal_phy_base)) {
-		tscpu_printk("[THERM_CTRL] config error thermal_phy_base\n");
-		return 0;
-	}
+	of_property_read_u32_index(node, "reg", 1, &thermal_phy_base);
+	/*tscpu_printk("[THERM_CTRL] thermal_base thermal_phy_base=0x%x\n",thermal_phy_base); */
 
 	node = of_find_compatible_node(NULL, NULL, "mediatek,auxadc");
 	WARN_ON_ONCE(node == 0);
@@ -1411,10 +1386,8 @@ int get_io_reg_base(void)
 		auxadc_ts_base = of_iomap(node, 0);
 		/*tscpu_printk("[THERM_CTRL] auxadc_ts_base=0x%p\n",auxadc_ts_base); */
 	}
-	if (of_property_read_u32_index(node, "reg", 1, &auxadc_ts_phy_base)) {
-		tscpu_printk("[THERM_CTRL] config error auxadc_ts_phy_base\n");
-		return 0;
-	}
+	of_property_read_u32_index(node, "reg", 1, &auxadc_ts_phy_base);
+	/*tscpu_printk("[THERM_CTRL] auxadc_ts_phy_base=0x%x\n",auxadc_ts_phy_base); */
 
 	node = of_find_compatible_node(NULL, NULL, "mediatek,infracfg_ao");
 	WARN_ON_ONCE(node == 0);
@@ -1431,10 +1404,8 @@ int get_io_reg_base(void)
 		th_apmixed_base = of_iomap(node, 0);
 		/*tscpu_printk("[THERM_CTRL] apmixed_base=0x%p\n", th_apmixed_base); */
 	}
-	if (of_property_read_u32_index(node, "reg", 1, &apmixed_phy_base)) {
-		tscpu_printk("[THERM_CTRL] config error apmixed_phy_base=\n");
-		return 0;
-	}
+	of_property_read_u32_index(node, "reg", 1, &apmixed_phy_base);
+	/*tscpu_printk("[THERM_CTRL] apmixed_phy_base=0x%x\n",apmixed_phy_base); */
 
 #if THERMAL_GET_AHB_BUS_CLOCK
 	/* TODO: If this is required, it needs to confirm which node to read. */

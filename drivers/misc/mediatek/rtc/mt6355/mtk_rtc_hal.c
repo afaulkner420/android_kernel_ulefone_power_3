@@ -33,7 +33,9 @@
 #include <mtk_rtc_hal_common.h>
 #include "mtk_rtc_hw.h"
 #include <mtk_pmic_wrap.h>
+#if defined CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #include <mtk_boot.h>
+#endif
 
 #include <mtk_gpio.h>
 #ifdef CONFIG_MTK_SMART_BATTERY
@@ -105,7 +107,7 @@
  *     bit 7 - 15: reserved bits
  */
 
-u16 rtc_spare_reg[RTC_SPAR_NUM][3] = {
+u16 rtc_spare_reg[][3] = {
 	{RTC_AL_MTH, 0xff, 8},
 	{RTC_PDN1, 0xf, 0},
 	{RTC_PDN1, 0x3, 4},
@@ -216,13 +218,9 @@ void rtc_enable_k_eosc(void)
 
 	rtc_write(RTC_BBPU, rtc_read(RTC_BBPU) | RTC_BBPU_KEY | RTC_BBPU_RELOAD);
 	rtc_write_trigger();
-	/* Enable K EOSC mode for normal power off and then plug out battery */
-	rtc_write(RTC_AL_YEA, ((rtc_read(RTC_AL_YEA) | RTC_K_EOSC_RSV_0) & (~RTC_K_EOSC_RSV_1)) | RTC_K_EOSC_RSV_2);
-	rtc_write_trigger();
 
 	osc32 = rtc_read(RTC_OSC32CON);
-	/* Set RTC_EMBCK_SEL_EOSC setting but RTC_EMBCK_SEL_K_EOSC is for HW hard code bug*/
-	rtc_xosc_write((osc32 & ~RTC_EMBCK_SEL_MODE) | RTC_EMBCK_SEL_EOSC | RTC_EMBCK_SRC_SEL, true);
+	rtc_xosc_write((osc32 & ~RTC_EMBCK_SEL_EOSC) | RTC_EMBCK_SEL_K_EOSC | RTC_EMBCK_SRC_SEL, true);
 	hal_rtc_xinfo("RTC_enable_k_eosc\n");
 }
 

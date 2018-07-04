@@ -20,13 +20,9 @@
 #else
 #define MAX_PHY_OVL_CNT (12)
 #endif
-
+#define HRT_UNIT_BPP	4
+#define HRT_UNIT_FPS	60
 /* #define HAS_LARB_HRT */
-#ifndef CONFIG_MTK_ROUND_CORNER_SUPPORT
-#define HRT_AEE_LAYER_MASK 0xFFFFFFDF
-#else
-#define HRT_AEE_LAYER_MASK 0xFFFFFFEF
-#endif
 
 enum DISP_DEBUG_LEVEL {
 	DISP_DEBUG_LEVEL_CRITICAL = 0,
@@ -71,6 +67,5 @@ enum HRT_PATH_SCENARIO {
 };
 
 void layering_rule_init(void);
-int set_emi_bound_tb(int idx, int num, int *val);
 
 #endif

@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -16,13 +16,12 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
-#include <linux/delay.h>
 #include "../../flashlight/richtek/rtfled.h"
 
 #include "inc/mt6370_pmu.h"
 #include "inc/mt6370_pmu_fled.h"
 
-#define MT6370_PMU_FLED_DRV_VERSION	"1.0.2_MTK"
+#define MT6370_PMU_FLED_DRV_VERSION	"1.0.0_MTK"
 
 static u8 mt6370_fled_inited;
 static u8 mt6370_global_mode = FLASHLIGHT_MODE_OFF;
@@ -35,7 +34,7 @@ enum {
 };
 
 struct mt6370_pmu_fled_data {
-	struct rt_fled_dev base;
+	rt_fled_dev_t base;
 	struct mt6370_pmu_chip *chip;
 	struct device *dev;
 	struct platform_device *mt_flash_dev;
@@ -278,7 +277,7 @@ static int mt6370_fled_resume(struct rt_fled_dev *info)
 }
 
 static int mt6370_fled_set_mode(struct rt_fled_dev *info,
-					enum flashlight_mode mode)
+					flashlight_mode_t mode)
 {
 	struct mt6370_pmu_fled_data *fi = (struct mt6370_pmu_fled_data *)info;
 	int ret = 0;
@@ -303,12 +302,10 @@ static int mt6370_fled_set_mode(struct rt_fled_dev *info,
 	case FLASHLIGHT_MODE_FLASH:
 		ret = mt6370_pmu_reg_clr_bit(fi->chip,
 			MT6370_PMU_REG_FLEDEN, MT6370_STROBE_EN_MASK);
-		udelay(400);
 		ret |= mt6370_pmu_reg_set_bit(fi->chip,
 			MT6370_PMU_REG_FLEDEN, fi->id == MT6370_FLED1 ? 0x02 : 0x01);
 		ret |= mt6370_pmu_reg_set_bit(fi->chip,
 			MT6370_PMU_REG_FLEDEN, MT6370_STROBE_EN_MASK);
-		udelay(400);
 		dev_info(fi->dev, "set to flash mode\n");
 		mt6370_global_mode = mode;
 		if (fi->id == MT6370_FLED1)
@@ -560,40 +557,32 @@ static int mt6370_fled_is_ready(struct rt_fled_dev *info)
 }
 
 static struct rt_fled_hal mt6370_fled_hal = {
-	.rt_hal_fled_init = mt6370_fled_init,
-	.rt_hal_fled_suspend = mt6370_fled_suspend,
-	.rt_hal_fled_resume = mt6370_fled_resume,
-	.rt_hal_fled_set_mode = mt6370_fled_set_mode,
-	.rt_hal_fled_get_mode = mt6370_fled_get_mode,
-	.rt_hal_fled_strobe = mt6370_fled_strobe,
-	.rt_hal_fled_get_is_ready = mt6370_fled_is_ready,
-	.rt_hal_fled_torch_current_list = mt6370_fled_torch_current_list,
-	.rt_hal_fled_strobe_current_list = mt6370_fled_strobe_current_list,
-	.rt_hal_fled_timeout_level_list = mt6370_fled_timeout_level_list,
-	/* .rt_hal_fled_lv_protection_list = mt6370_fled_lv_protection_list, */
-	.rt_hal_fled_strobe_timeout_list =
-					mt6370_fled_strobe_timeout_list,
+	.fled_init = mt6370_fled_init,
+	.fled_suspend = mt6370_fled_suspend,
+	.fled_resume = mt6370_fled_resume,
+	.fled_set_mode = mt6370_fled_set_mode,
+	.fled_get_mode = mt6370_fled_get_mode,
+	.fled_strobe = mt6370_fled_strobe,
+	.fled_get_is_ready = mt6370_fled_is_ready,
+	.fled_troch_current_list = mt6370_fled_torch_current_list,
+	.fled_strobe_current_list = mt6370_fled_strobe_current_list,
+	.fled_timeout_level_list = mt6370_fled_timeout_level_list,
+	/* .fled_lv_protection_list = mt6370_fled_lv_protection_list, */
+	.fled_strobe_timeout_list = mt6370_fled_strobe_timeout_list,
 	/* method to set */
-	.rt_hal_fled_set_torch_current_sel =
-					mt6370_fled_set_torch_current_sel,
-	.rt_hal_fled_set_strobe_current_sel =
-					mt6370_fled_set_strobe_current_sel,
-	.rt_hal_fled_set_timeout_level_sel =
-					mt6370_fled_set_timeout_level_sel,
-	.rt_hal_fled_set_strobe_timeout_sel =
-					mt6370_fled_set_strobe_timeout_sel,
+	.fled_set_torch_current_sel = mt6370_fled_set_torch_current_sel,
+	.fled_set_strobe_current_sel = mt6370_fled_set_strobe_current_sel,
+	.fled_set_timeout_level_sel = mt6370_fled_set_timeout_level_sel,
+
+	.fled_set_strobe_timeout_sel = mt6370_fled_set_strobe_timeout_sel,
 
 	/* method to get */
-	.rt_hal_fled_get_torch_current_sel =
-					mt6370_fled_get_torch_current_sel,
-	.rt_hal_fled_get_strobe_current_sel =
-					mt6370_fled_get_strobe_current_sel,
-	.rt_hal_fled_get_timeout_level_sel =
-					mt6370_fled_get_timeout_level_sel,
-	.rt_hal_fled_get_strobe_timeout_sel =
-					mt6370_fled_get_strobe_timeout_sel,
+	.fled_get_torch_current_sel = mt6370_fled_get_torch_current_sel,
+	.fled_get_strobe_current_sel = mt6370_fled_get_strobe_current_sel,
+	.fled_get_timeout_level_sel = mt6370_fled_get_timeout_level_sel,
+	.fled_get_strobe_timeout_sel = mt6370_fled_get_strobe_timeout_sel,
 	/* PM shutdown, optional */
-	.rt_hal_fled_shutdown = mt6370_fled_shutdown,
+	.fled_shutdown = mt6370_fled_shutdown,
 };
 
 #define MT6370_FLED_TOR_CUR0	MT6370_PMU_REG_FLED1TORCTRL
@@ -721,15 +710,3 @@ module_platform_driver(mt6370_pmu_fled);
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("MediaTek MT6370 PMU Fled");
 MODULE_VERSION(MT6370_PMU_FLED_DRV_VERSION);
-
-/*
- * Version Note
- * 1.0.2_MTK
- * (1) Add delay for strobe on/off
- *
- * 1.0.1_MTK
- * (1) Remove typedef
- *
- * 1.0.0_MTK
- * (1) Initial Release
- */

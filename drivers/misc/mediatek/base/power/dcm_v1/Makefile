@@ -19,10 +19,6 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/dramc/$(MTK_PLATFORM)/
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(CONFIG_MTK_PLATFORM)/include/mach
 
 obj-y += $(subst ",,$(CONFIG_MTK_PLATFORM))/
-obj-$(CONFIG_MACH_MT6739) += mtk_dcm.o
-obj-$(CONFIG_MACH_MT6758) += mtk_dcm.o
 obj-$(CONFIG_MACH_MT6759) += mtk_dcm.o
 obj-$(CONFIG_MACH_MT6763) += mtk_dcm.o
-obj-$(CONFIG_MACH_MT6771) += mtk_dcm.o
-obj-$(CONFIG_MACH_MT6775) += mtk_dcm.o
 obj-$(CONFIG_MACH_MT6799) += mtk_dcm.o

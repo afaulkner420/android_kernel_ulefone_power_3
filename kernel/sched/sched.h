@@ -332,7 +332,6 @@ extern void sched_destroy_group(struct task_group *tg);
 extern void sched_offline_group(struct task_group *tg);
 
 extern void sched_move_task(struct task_struct *tsk);
-extern int find_best_idle_cpu(struct task_struct *p, bool prefer_idle);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 extern int sched_group_set_shares(struct task_group *tg, unsigned long shares);
@@ -1030,11 +1029,7 @@ static inline void __set_task_cpu(struct task_struct *p, unsigned int cpu)
 	 * per-task data have been completed by this moment.
 	 */
 	smp_wmb();
-#ifdef CONFIG_THREAD_INFO_IN_TASK
-	p->cpu = cpu;
-#else
 	task_thread_info(p)->cpu = cpu;
-#endif
 	p->wake_cpu = cpu;
 #endif
 }
@@ -1323,7 +1318,6 @@ extern const struct sched_class idle_sched_class;
 extern void update_group_capacity(struct sched_domain *sd, int cpu);
 
 extern void trigger_load_balance(struct rq *rq);
-extern void nohz_balance_clear_nohz_mask(int cpu);
 
 extern void idle_enter_fair(struct rq *this_rq);
 extern void idle_exit_fair(struct rq *this_rq);
@@ -1409,16 +1403,7 @@ extern void sched_max_util_task(int *cpu, int *pid, int *util, int *boost);
 #endif
 
 #ifdef CONFIG_MTK_SCHED_RQAVG_US
-extern int inc_nr_heavy_running(int invoker, struct task_struct *p, int inc, bool ack_cap);
-
-#ifdef CONFIG_MTK_SCHED_CPULOAD
-extern void cal_cpu_load(int cpu);
-#endif
-
-#ifdef CONFIG_MTK_SCHED_RQAVG_KS
-extern void sched_max_util_task_tracking(void);
-#endif
-
+extern int inc_nr_heavy_running(const char *invoker, struct task_struct *p, int inc, bool ack_cap);
 #endif
 
 #ifdef CONFIG_MTK_SCHED_VIP_TASKS
@@ -1574,19 +1559,9 @@ static inline unsigned long __cpu_util(int cpu, int delta)
 	unsigned long capacity = capacity_orig_of(cpu);
 
 #ifdef CONFIG_SCHED_WALT
-	/*
-	 * [FIXME] mark ee4cebd75ed7: power is out of control
-	 * while cumulative_runnable_avg for task placement.
-	 */
-#if 0
 	if (!walt_disabled && sysctl_sched_use_walt_cpu_util)
-		util = div64_u64(cpu_rq(cpu)->cumulative_runnable_avg,
-				walt_ravg_window >> SCHED_LOAD_SHIFT);
-#else
-	if (!walt_disabled && sysctl_sched_use_walt_cpu_util)
-		util = div64_u64(cpu_rq(cpu)->prev_runnable_sum,
-				walt_ravg_window >> SCHED_LOAD_SHIFT);
-#endif
+		util = (cpu_rq(cpu)->prev_runnable_sum << SCHED_LOAD_SHIFT) /
+			walt_ravg_window;
 #endif
 	delta += util;
 	if (delta < 0)
@@ -1598,19 +1573,6 @@ static inline unsigned long __cpu_util(int cpu, int delta)
 static inline unsigned long cpu_util(int cpu)
 {
 	return __cpu_util(cpu, 0);
-}
-
-static inline unsigned long cpu_util_freq(int cpu)
-{
-	unsigned long util = cpu_rq(cpu)->cfs.avg.util_avg;
-	unsigned long capacity = capacity_orig_of(cpu);
-
-#ifdef CONFIG_SCHED_WALT
-	if (!walt_disabled && sysctl_sched_use_walt_cpu_util)
-		util = div64_u64(cpu_rq(cpu)->prev_runnable_sum,
-				walt_ravg_window >> SCHED_LOAD_SHIFT);
-#endif
-	return (util >= capacity) ? capacity : util;
 }
 
 unsigned long boosted_cpu_util(int cpu);
@@ -1637,20 +1599,16 @@ enum cpu_dvfs_sched_type {
 	SCHE_IOWAIT,
 	SCHE_RT,
 	SCHE_DL,
-	SCHE_TICK,
+
 	NUM_SCHE_TYPE
 };
 
-#define DEFAULT_CAP_MARGIN_DVFS 1280 /* ~20% margin */
+#define DEFAULT_CAP_MARGIN_DVFS 1024 /* ~0% margin */
 
 extern unsigned int capacity_margin;
 extern unsigned int capacity_margin_dvfs;
 
-extern void update_sched_hint(int sys_util, int sys_cap);
-extern void sched_hint_check(u64 wallclock);
-extern u64 sched_ktime_clock(void);
-
-#if defined(CONFIG_CPU_FREQ_GOV_SCHED) || defined(CONFIG_CPU_FREQ_GOV_SCHEDPLUS)
+#ifdef CONFIG_CPU_FREQ_GOV_SCHED
 #define capacity_max SCHED_CAPACITY_SCALE
 extern struct static_key __sched_freq;
 
@@ -1816,9 +1774,6 @@ task_rq_unlock(struct rq *rq, struct task_struct *p, unsigned long *flags)
 	raw_spin_unlock(&rq->lock);
 	raw_spin_unlock_irqrestore(&p->pi_lock, *flags);
 }
-
-extern struct rq *lock_rq_of(struct task_struct *p, unsigned long *flags);
-extern void unlock_rq_of(struct rq *rq, struct task_struct *p, unsigned long *flags);
 
 #ifdef CONFIG_SMP
 #ifdef CONFIG_PREEMPT
@@ -2118,5 +2073,3 @@ static inline void account_reset_rq(struct rq *rq)
 #ifdef CONFIG_MTK_SCHED_INTEROP
 extern bool is_rt_throttle(int cpu);
 #endif
-
-extern inline bool energy_aware(void);

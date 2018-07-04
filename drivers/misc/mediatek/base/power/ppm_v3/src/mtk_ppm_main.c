@@ -35,7 +35,7 @@
 /*==============================================================*/
 #define LOG_BUF_SIZE		(128)
 #define LOG_CHECK_INTERVAL	(500)	/* ms */
-#define LOG_MAX_CNT		(5)	/* max log cnt within a check interval */
+#define LOG_MAX_CNT		(15)	/* max log cnt within a check interval */
 #define LOG_MAX_DIFF_INTERVAL	(100)	/* ms */
 
 /*==============================================================*/
@@ -107,13 +107,8 @@ int ppm_main_freq_to_idx(unsigned int cluster_id,
 
 	FUNC_ENTER(FUNC_LV_MAIN);
 
-	if (cluster_id >= NR_PPM_CLUSTERS) {
-		ppm_err("@%s: Invalid cluster id %d\n", __func__, cluster_id);
-		return 0;
-	}
-
 	if (!ppm_main_info.cluster_info[cluster_id].dvfs_tbl) {
-		ppm_ver("@%s: DVFS table of cluster %d is not exist!\n", __func__, cluster_id);
+		ppm_err("@%s: DVFS table of cluster %d is not exist!\n", __func__, cluster_id);
 		idx = (relation == CPUFREQ_RELATION_L)
 			? get_cluster_min_cpufreq_idx(cluster_id) : get_cluster_max_cpufreq_idx(cluster_id);
 		return idx;
@@ -271,7 +266,6 @@ static void ppm_main_update_limit(struct ppm_policy_data *p,
 	case PPM_POLICY_PTPOD:
 		c_limit->has_advise_freq = true;
 		c_limit->advise_cpufreq_idx = p_limit->max_cpufreq_idx;
-		c_limit->min_cpufreq_idx = c_limit->max_cpufreq_idx = p_limit->max_cpufreq_idx;
 		break;
 	/* fix freq and core */
 	case PPM_POLICY_UT:
@@ -522,7 +516,7 @@ end:
 
 void ppm_game_mode_change_cb(int is_game_mode)
 {
-	is_in_game = 0;
+	is_in_game = is_game_mode;
 }
 
 static void ppm_main_log_print(unsigned int policy_mask, unsigned int min_power_budget,
@@ -871,12 +865,13 @@ static int ppm_main_data_init(void)
 		goto allocate_last_req_mem_fail;
 	}
 
-	ppm_main_info.client_req.cluster_num = ppm_main_info.cluster_num;
-	ppm_main_info.client_req.root_cluster = 0;
-	ppm_main_info.last_req.cluster_num = ppm_main_info.cluster_num;
 	for_each_ppm_clusters(i) {
+		ppm_main_info.client_req.cluster_num = ppm_main_info.cluster_num;
+		ppm_main_info.client_req.root_cluster = 0;
 		ppm_main_info.client_req.cpu_limit[i].cluster_id = i;
 		ppm_main_info.client_req.cpu_limit[i].cpu_id = ppm_main_info.cluster_info[i].cpu_id;
+
+		ppm_main_info.last_req.cluster_num = ppm_main_info.cluster_num;
 	}
 
 #ifdef CONFIG_MTK_RAM_CONSOLE

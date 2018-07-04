@@ -95,9 +95,7 @@ static ssize_t mt_perf_ddr3_write(struct file *filp, const char *ubuf,
 	if (val < -1 || val > 4)
 		return -1;
 
-	if (vcorefs_request_dvfs_opp(KIR_PERF, val) < 0)
-		return cnt;
-
+	vcorefs_request_dvfs_opp(KIR_PERF, val);
 	perf_ddr3_now = val;
 
 	return cnt;
@@ -150,9 +148,7 @@ static ssize_t mt_perf_write(struct file *filp, const char *ubuf,
 	if (val < -1 || val > 4)
 		return -1;
 
-	if (vcorefs_request_dvfs_opp(KIR_PERF, val) < 0)
-		return cnt;
-
+	vcorefs_request_dvfs_opp(KIR_PERF, val);
 	perf_now = val;
 
 	return cnt;

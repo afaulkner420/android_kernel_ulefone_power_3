@@ -30,7 +30,7 @@
 struct pmic_interrupt_bit {
 	const char *name;
 	void (*callback)(void);
-	void (*oc_callback)(enum PMIC_IRQ_ENUM intNo, const char *);
+	void (*oc_callback)(PMIC_IRQ_ENUM intNo, const char *);
 	unsigned int times;
 };
 
@@ -45,11 +45,5 @@ struct pmic_interrupts {
 	unsigned int mask_clear;
 	struct pmic_interrupt_bit *interrupts;
 };
-
-#if defined(MTK_EVB_PLATFORM) || defined(CONFIG_FPGA_EARLY_PORTING)
-#define ENABLE_ALL_OC_IRQ 0
-#else
-#define ENABLE_ALL_OC_IRQ 1
-#endif
 
 #endif /*--PMIC_IRQ_H--*/

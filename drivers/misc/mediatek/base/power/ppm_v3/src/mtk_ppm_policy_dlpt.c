@@ -21,9 +21,8 @@
 
 #include "mtk_ppm_internal.h"
 #include "mtk_ppm_platform.h"
-#ifndef CONFIG_FPGA_EARLY_PORTING
 #include "mach/mtk_pbm.h"
-#endif
+
 
 static unsigned int ppm_dlpt_pwr_budget_preprocess(unsigned int budget);
 static unsigned int ppm_dlpt_pwr_budget_postprocess(unsigned int budget, unsigned int pwr_idx);
@@ -217,9 +216,7 @@ PROC_FOPS_RW(dlpt_budget_trans_percentage);
 
 static int __init ppm_dlpt_policy_init(void)
 {
-	int ret = 0;
-#ifndef DISABLE_DLPT_FEATURE
-	int i;
+	int i, ret = 0;
 
 	struct pentry {
 		const char *name;
@@ -232,6 +229,11 @@ static int __init ppm_dlpt_policy_init(void)
 	};
 
 	FUNC_ENTER(FUNC_LV_POLICY);
+
+#ifdef DISABLE_DLPT_FEATURE
+	goto out;
+#endif
+
 	/* create procfs */
 	for (i = 0; i < ARRAY_SIZE(entries); i++) {
 		if (!proc_create(entries[i].name, S_IRUGO | S_IWUSR | S_IWGRP, policy_dir, entries[i].fops)) {
@@ -248,9 +250,9 @@ static int __init ppm_dlpt_policy_init(void)
 	}
 
 	ppm_info("@%s: register %s done!\n", __func__, dlpt_policy.name);
+
 out:
 	FUNC_EXIT(FUNC_LV_POLICY);
-#endif
 
 	return ret;
 }

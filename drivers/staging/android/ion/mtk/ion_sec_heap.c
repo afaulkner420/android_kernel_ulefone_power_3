@@ -1,15 +1,3 @@
-/*
- * Copyright (C) 2016 MediaTek Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See http://www.gnu.org/licenses/gpl-2.0.html for more details.
- */
 #include <asm/page.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
@@ -54,8 +42,6 @@ struct ion_sec_heap {
 };
 
 static size_t sec_heap_total_memory;
-static unsigned int caller_pid;
-static unsigned int caller_tid;
 
 #ifdef CONFIG_MTK_IN_HOUSE_TEE_SUPPORT
 static KREE_SESSION_HANDLE ion_session;
@@ -88,14 +74,9 @@ static int ion_sec_heap_allocate(struct ion_heap *heap,
 	if (sec_heap_total_memory <= 0)
 		shrink_ion_by_scenario(0);
 #endif
-	caller_pid = (unsigned int)current->pid;
-	caller_tid = (unsigned int)current->tgid;
-
 	pbufferinfo = kzalloc(sizeof(*pbufferinfo), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(pbufferinfo)) {
 		IONMSG("%s Error. Allocate pbufferinfo failed.\n", __func__);
-		caller_pid = 0;
-		caller_tid = 0;
 		return -EFAULT;
 	}
 
@@ -116,8 +97,6 @@ static int ion_sec_heap_allocate(struct ion_heap *heap,
 							      &sec_handle, align, size, heap->name);
 		if (ret != TZ_RESULT_SUCCESS) {
 			IONMSG("KREE_AllocSecurechunkmemWithTag failed, ret is 0x%x\n", ret);
-			caller_pid = 0;
-			caller_tid = 0;
 			return -ENOMEM;
 		}
 	}
@@ -129,8 +108,6 @@ static int ion_sec_heap_allocate(struct ion_heap *heap,
 	if (sec_handle <= 0) {
 		IONMSG("%s alloc security memory failed, total size %zu\n", __func__, sec_heap_total_memory);
 		kfree(pbufferinfo);
-		caller_pid = 0;
-		caller_tid = 0;
 		return -ENOMEM;
 	}
 
@@ -151,8 +128,7 @@ static int ion_sec_heap_allocate(struct ion_heap *heap,
 	buffer->flags &= ~ION_FLAG_CACHED;
 	buffer->size = size;
 	sec_heap_total_memory += size;
-	caller_pid = 0;
-	caller_tid = 0;
+
 	IONDBG("%s exit priv_virt %p pa 0x%lx(%zu)\n", __func__, buffer->priv_virt,
 	       pbufferinfo->priv_phys, buffer->size);
 	return 0;
@@ -302,101 +278,6 @@ static struct ion_heap_ops mm_sec_heap_ops = {
 		/*.add_freelist = ion_sec_heap_add_freelist,*/
 		.page_pool_total = ion_sec_heap_pool_total,
 };
-
-/*For sec memory heap user dump*/
-static size_t ion_debug_sec_heap_total(struct ion_client *client)
-{
-	size_t size = 0;
-	struct rb_node *n;
-
-	if (mutex_trylock(&client->lock)) {
-		for (n = rb_first(&client->handles); n; n = rb_next(n)) {
-			struct ion_handle *handle = rb_entry(n, struct ion_handle, node);
-
-			if (handle->buffer->heap->id == ION_HEAP_TYPE_MULTIMEDIA_SEC)
-				size += handle->buffer->size;
-		}
-		mutex_unlock(&client->lock);
-	}
-	return size;
-}
-
-void ion_sec_heap_dump_info(void)
-{
-	struct ion_device *dev = g_ion_device;
-	size_t total_size = 0;
-	size_t total_orphaned_size = 0;
-	struct rb_node *n;
-	bool need_dev_lock = true;
-
-	ION_PRINT_LOG_OR_SEQ(NULL, "%16.s(%16.s) %16.s %16.s %s\n",
-			     "client", "dbg_name", "pid", "size", "address");
-	ION_PRINT_LOG_OR_SEQ(NULL, "----------------------------------------------------\n");
-
-	if (!down_read_trylock(&dev->lock)) {
-		ION_PRINT_LOG_OR_SEQ(NULL, "detail trylock fail, alloc pid(%d-%d)\n", caller_pid, caller_tid);
-		ION_PRINT_LOG_OR_SEQ(NULL, "current(%d-%d)\n", (unsigned int)current->pid, (unsigned int)current->tgid);
-		if ((caller_pid != (unsigned int)current->pid) || (caller_tid != (unsigned int)current->tgid))
-			goto skip_client_entry;
-		else
-			need_dev_lock = false;
-	}
-
-	for (n = rb_first(&dev->clients); n; n = rb_next(n)) {
-		struct ion_client
-		*client = rb_entry(n, struct ion_client, node);
-		size_t size = ion_debug_sec_heap_total(client);
-
-		if (!size)
-			continue;
-		if (client->task) {
-			char task_comm[TASK_COMM_LEN];
-
-			get_task_comm(task_comm, client->task);
-			ION_PRINT_LOG_OR_SEQ(NULL, "%16.s(%16.s) %16u %16zu 0x%p\n",
-					     task_comm, client->dbg_name, client->pid, size, client);
-		} else {
-			ION_PRINT_LOG_OR_SEQ(NULL, "%16.s(%16.s) %16u %16zu 0x%p\n",
-					     client->name, "from_kernel", client->pid, size, client);
-		}
-	}
-
-	if (need_dev_lock)
-		up_read(&dev->lock);
-
-	ION_PRINT_LOG_OR_SEQ(NULL, "----------------------------------------------------\n");
-	ION_PRINT_LOG_OR_SEQ(NULL, "orphaned allocations (info is from last known client):\n");
-
-skip_client_entry:
-
-	if (mutex_trylock(&dev->buffer_lock)) {
-		for (n = rb_first(&dev->buffers); n; n = rb_next(n)) {
-			struct ion_buffer
-			*buffer = rb_entry(n, struct ion_buffer, node);
-
-			if ((1 << buffer->heap->id) & ION_HEAP_MULTIMEDIA_SEC_MASK) {
-				/* heap = buffer->heap; */
-				total_size += buffer->size;
-				if (!buffer->handle_count) {
-					ION_PRINT_LOG_OR_SEQ(NULL, "%16.s %16u %16zu %d %d\n",
-							     buffer->task_comm, buffer->pid,
-							     buffer->size, buffer->kmap_cnt,
-							     atomic_read(&buffer->ref.refcount));
-					total_orphaned_size += buffer->size;
-				}
-			}
-		}
-		mutex_unlock(&dev->buffer_lock);
-
-		ION_PRINT_LOG_OR_SEQ(NULL, "----------------------------------------------------\n");
-		ION_PRINT_LOG_OR_SEQ(NULL, "%16.s %16zu\n", "total orphaned", total_orphaned_size);
-		ION_PRINT_LOG_OR_SEQ(NULL, "%16.s %16zu\n", "total ", total_size);
-		ION_PRINT_LOG_OR_SEQ(NULL, "ion sec heap total: %16zu\n", sec_heap_total_memory);
-		ION_PRINT_LOG_OR_SEQ(NULL, "----------------------------------------------------\n");
-	} else {
-		ION_PRINT_LOG_OR_SEQ(NULL, "ion sec heap total memory: %16zu\n", sec_heap_total_memory);
-	}
-}
 
 static int ion_sec_heap_debug_show(struct ion_heap *heap, struct seq_file *s, void *unused)
 {

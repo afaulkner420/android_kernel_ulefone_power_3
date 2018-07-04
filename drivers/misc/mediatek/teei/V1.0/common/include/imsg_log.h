@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -11,7 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 #ifndef _ISEE_IMSG_LOG_H_
 #define _ISEE_IMSG_LOG_H_
 
@@ -53,8 +52,8 @@ static inline unsigned long now_ms(void)
 #define IMSG_PRINTK(fmt, ...)           pr_info(fmt, ##__VA_ARGS__)
 #define IMSG_PRINTK_DEBUG(fmt, ...)     pr_debug(fmt, ##__VA_ARGS__)
 
-#define IMSG_PRINT_ERROR(fmt, ...)      pr_info(fmt, ##__VA_ARGS__)
-#define IMSG_PRINT_WARN(fmt, ...)       pr_info(fmt, ##__VA_ARGS__)
+#define IMSG_PRINT_ERROR(fmt, ...)      pr_err(fmt, ##__VA_ARGS__)
+#define IMSG_PRINT_WARN(fmt, ...)       pr_warn(fmt, ##__VA_ARGS__)
 #define IMSG_PRINT_INFO(fmt, ...)       pr_info(fmt, ##__VA_ARGS__)
 #define IMSG_PRINT_DEBUG(fmt, ...)      pr_debug(fmt, ##__VA_ARGS__)
 #define IMSG_PRINT_TRACE(fmt, ...)      pr_debug(fmt, ##__VA_ARGS__)

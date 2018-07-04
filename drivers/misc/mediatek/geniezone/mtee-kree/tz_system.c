@@ -56,42 +56,26 @@ static int32_t _kree_session_handle_idx;
 int32_t _setSessionHandle(tipc_k_handle h)
 {
 	int32_t session;
-	int32_t i;
 
 	mutex_lock(&fd_mutex);
-	for (i = 0; i < KREE_SESSION_HANDLE_MAX_SIZE; i++) {
-		if (_kree_session_handle_pool[_kree_session_handle_idx] == 0)
-			break;
-		_kree_session_handle_idx = (_kree_session_handle_idx + 1) % KREE_SESSION_HANDLE_MAX_SIZE;
-	}
-	if (i == KREE_SESSION_HANDLE_MAX_SIZE) {
-		KREE_ERR(" %s: can not get empty slot for session!\n", __func__);
-		return -1;
-	}
 	_kree_session_handle_pool[_kree_session_handle_idx] = h;
 	session = _kree_session_handle_idx;
-	_kree_session_handle_idx = (_kree_session_handle_idx + 1) % KREE_SESSION_HANDLE_MAX_SIZE;
+	_kree_session_handle_idx = (_kree_session_handle_idx + 1) % KREE_SESSION_HANDLE_SIZE_MASK;
 	mutex_unlock(&fd_mutex);
 
 	return session;
 }
 
-void _clearSessionHandle(int32_t session)
-{
-	mutex_lock(&fd_mutex);
-	_kree_session_handle_pool[session] = 0;
-	mutex_unlock(&fd_mutex);
-}
-
-
 int _getSessionHandle(int32_t session, tipc_k_handle *h)
 {
 	if (session < 0 || session > KREE_SESSION_HANDLE_MAX_SIZE)
 		return -1;
+
 	if (session == KREE_SESSION_HANDLE_MAX_SIZE)
 		*h = _sys_service_h;
 	else
 		*h = _kree_session_handle_pool[session];
+
 	return 0;
 }
 
@@ -121,7 +105,7 @@ static TZ_RESULT KREE_OpenSysFd(void)
 
 	ret = tipc_k_connect(&_sys_service_h, GZ_SYS_SERVICE_NAME);
 	if (ret < 0) {
-		KREE_DEBUG("%s: Failed to connect to service, ret = %d\n", __func__, ret);
+		KREE_DEBUG("%s: Failed to connect to service\n", __func__);
 		return TZ_RESULT_ERROR_COMMUNICATION;
 	}
 	_sys_service_Fd = KREE_SESSION_HANDLE_MAX_SIZE;
@@ -136,7 +120,6 @@ static TZ_RESULT KREE_OpenFd(const char *port, int32_t *Fd)
 
 	tipc_k_handle h = 0;
 	TZ_RESULT ret = TZ_RESULT_SUCCESS;
-	int32_t tmp;
 
 	*Fd = -1; /* invalid fd */
 
@@ -146,16 +129,10 @@ static TZ_RESULT KREE_OpenFd(const char *port, int32_t *Fd)
 	KREE_DEBUG(" ===> %s: %s.\n", __func__, port);
 	ret = tipc_k_connect(&h, port);
 	if (ret < 0) {
-		KREE_DEBUG("%s: Failed to connect to service, ret = %d\n", __func__, ret);
+		KREE_DEBUG("%s: Failed to connect to service\n", __func__);
 		return TZ_RESULT_ERROR_COMMUNICATION;
 	}
-	tmp = _HandleToFd(h);
-	if (tmp < 0) {
-		KREE_DEBUG("%s: Failed to get session\n", __func__);
-		return TZ_RESULT_ERROR_OUT_OF_MEMORY;
-	}
-
-	*Fd = tmp;
+	*Fd = _HandleToFd(h);
 
 	KREE_DEBUG("===> KREE_OpenFd: session = %d\n", *Fd);
 	KREE_DEBUG("===> KREE_OpenFd: chan_p = 0x%llx\n", (uint64_t)h);
@@ -181,8 +158,6 @@ static TZ_RESULT KREE_CloseFd(int32_t Fd)
 		KREE_ERR("%s: tipc_k_disconnect failed\n", __func__);
 		ret = TZ_RESULT_ERROR_COMMUNICATION;
 	}
-
-	_clearSessionHandle(Fd);
 
 	return ret;
 }

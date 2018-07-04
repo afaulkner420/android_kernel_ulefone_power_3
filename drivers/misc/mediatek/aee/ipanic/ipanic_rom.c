@@ -252,22 +252,12 @@ inline int ipanic_func_write(fn_next next, void *data, int off, int total, int e
 	size_t size;
 	int start = off;
 	struct ipanic_header *iheader = ipanic_header();
-	unsigned char *ipanic_buffer = NULL;
-	size_t sz_ipanic_buffer = (size_t)0;
-	size_t blksize = (size_t)0;
-	int many = 0;
+	unsigned char *ipanic_buffer = (unsigned char *)(unsigned long)iheader->buf;
+	size_t sz_ipanic_buffer = iheader->bufsize;
+	size_t blksize = iheader->blksize;
+	int many = total > iheader->bufsize;
 
 	LOGV("off[%x], encrypt[%d]\n", off, encrypt);
-
-	if (iheader == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return -5;
-	}
-
-	ipanic_buffer = (unsigned char *)(unsigned long)iheader->buf;
-	sz_ipanic_buffer = iheader->bufsize;
-	blksize = iheader->blksize;
-	many = total > iheader->bufsize;
 
 	if (off & (blksize - 1))
 		return -2;	/*invalid offset, not block aligned */
@@ -324,11 +314,6 @@ static int ipanic_header_to_sd(struct ipanic_data_header *header)
 	int first_write = 0;
 	struct ipanic_header *ipanic_hdr = ipanic_header();
 
-	if (ipanic_hdr == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return -5;
-	}
-
 	if (!ipanic_hdr->datas)
 		first_write = 1;
 	if (header) {
@@ -350,14 +335,8 @@ static int ipanic_header_to_sd(struct ipanic_data_header *header)
 static int ipanic_data_is_valid(int dt)
 {
 	struct ipanic_header *ipanic_hdr = ipanic_header();
-	struct ipanic_data_header *dheader = NULL;
+	struct ipanic_data_header *dheader = &ipanic_hdr->data_hdr[dt];
 
-	if (ipanic_hdr == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return 0;
-	}
-
-	dheader = &ipanic_hdr->data_hdr[dt];
 	return (dheader->valid == 1);
 }
 
@@ -366,14 +345,7 @@ int ipanic_data_to_sd(int dt, void *data)
 	int errno = 0;
 	int (*next)(void *data, unsigned char *buffer, size_t sz_buf);
 	struct ipanic_header *ipanic_hdr = ipanic_header();
-	struct ipanic_data_header *dheader = NULL;
-
-	if (ipanic_hdr == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return -5;
-	}
-
-	dheader = &ipanic_hdr->data_hdr[dt];
+	struct ipanic_data_header *dheader = &ipanic_hdr->data_hdr[dt];
 
 	if (!ipanic_dt_active(dt) || dheader->valid == 1)
 		return -4;
@@ -399,7 +371,7 @@ int ipanic_data_to_sd(int dt, void *data)
 	return errno;
 }
 
-void ipanic_mrdump_mini(enum AEE_REBOOT_MODE reboot_mode, const char *msg, ...)
+void ipanic_mrdump_mini(AEE_REBOOT_MODE reboot_mode, const char *msg, ...)
 {
 	int ret;
 	struct ipanic_header *ipanic_hdr;
@@ -410,12 +382,8 @@ void ipanic_mrdump_mini(enum AEE_REBOOT_MODE reboot_mode, const char *msg, ...)
 	if (ipanic_data_is_valid(IPANIC_DT_MINI_RDUMP))
 		return;
 
-	ipanic_hdr = ipanic_header();
-	if (ipanic_hdr == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return;
-	}
 	va_start(ap, msg);
+	ipanic_hdr = ipanic_header();
 	sd_offset = ipanic_hdr->data_hdr[IPANIC_DT_MINI_RDUMP].offset;
 	dheader = &ipanic_hdr->data_hdr[IPANIC_DT_MINI_RDUMP];
 	ret = mrdump_mini_create_oops_dump(reboot_mode, ipanic_mem_write, sd_offset, msg, ap);
@@ -600,10 +568,6 @@ int ipanic(struct notifier_block *this, unsigned long event, void *ptr)
 	ipanic_data_to_sd(IPANIC_DT_LAST_LOG, &dumper);
 	LOGD("ipanic done^_^");
 	ipanic_hdr = ipanic_header();
-	if (ipanic_hdr == NULL) {
-		LOGW("%s: unexpected ipanic header null\n", __func__);
-		return NOTIFY_DONE;
-	}
 	for (dt = IPANIC_DT_HEADER + 1; dt < IPANIC_DT_RESERVED31; dt++) {
 		dheader = &ipanic_hdr->data_hdr[dt];
 		if (dheader->valid)
@@ -732,32 +696,13 @@ void ipanic_zap_console_sem(void)
 	console_unlock();
 }
 
-#if defined(CONFIG_RANDOMIZE_BASE) && defined(CONFIG_ARM64)
-static u64 show_kaslr(void)
-{
-	u64 const kaslr_offset = kimage_vaddr - KIMAGE_VADDR;
-
-	pr_notice("Kernel Offset: 0x%llx from 0x%lx\n", kaslr_offset, KIMAGE_VADDR);
-	return kaslr_offset;
-}
-#else
-static u64 show_kaslr(void)
-{
-	pr_notice("Kernel Offset: disabled\n");
-	return 0;
-}
-#endif
-
 static int ipanic_die(struct notifier_block *self, unsigned long cmd, void *ptr)
 {
 	struct kmsg_dumper dumper;
 	struct die_args *dargs = (struct die_args *)ptr;
-	u64 kaslr_offset;
 
-	kaslr_offset = show_kaslr();
 	print_modules();
 #ifdef CONFIG_MTK_RAM_CONSOLE
-	aee_rr_rec_kaslr_offset(kaslr_offset);
 	aee_rr_rec_exp_type(2);
 	aee_rr_rec_fiq_step(AEE_FIQ_STEP_KE_IPANIC_DIE);
 #endif

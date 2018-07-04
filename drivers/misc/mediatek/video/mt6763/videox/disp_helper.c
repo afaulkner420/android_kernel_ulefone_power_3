@@ -117,7 +117,6 @@ static struct {
 	{DISP_OPT_DUAL_PIPE, 0, "DISP_OPT_DUAL_PIPE"},
 	{DISP_OPT_SHARE_WDMA0, 0, "DISP_OPT_SHARE_WDMA0"},
 	{DISP_OPT_ROUND_CORNER, 0, "DISP_OPT_ROUND_CORNER"},
-	{DISP_OPT_DC_BY_HRT, 0, "DISP_OPT_DC_BY_HRT"},
 
 };
 
@@ -363,7 +362,9 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_HRT, 1);
 
 	/* display partial update */
+#ifdef CONFIG_MTK_CONSUMER_PARTIAL_UPDATE_SUPPORT
 	disp_helper_set_option(DISP_OPT_PARTIAL_UPDATE, 1);
+#endif
 	disp_helper_set_option(DISP_OPT_CV_BYSUSPEND, 1);
 	disp_helper_set_option(DISP_OPT_DELAYED_TRIGGER, 1);
 	disp_helper_set_option(DISP_OPT_SHADOW_REGISTER, 0);
@@ -384,7 +385,6 @@ void disp_helper_option_init(void)
 	disp_helper_set_option(DISP_OPT_SHARE_WDMA0, 1);
 	disp_helper_set_option(DISP_OPT_ROUND_CORNER, 1);
 	disp_helper_set_option(DISP_OPT_FENCE_TIMEOUT_AEE, 1);
-	disp_helper_set_option(DISP_OPT_DC_BY_HRT, 1);
 }
 
 int disp_helper_get_option_list(char *stringbuf, int buf_len)
@@ -404,25 +404,3 @@ int disp_helper_get_option_list(char *stringbuf, int buf_len)
 
 	return len;
 }
-
-int disp_helper_backup_reset(struct DISP_OPT_INFO *info, int n)
-{
-	int i;
-
-	for (i = 0; i < n; i++) {
-		info[i].backup = disp_helper_get_option(info[i].option);
-		disp_helper_set_option(info[i].option, info[i].value);
-	}
-	return 0;
-}
-
-int disp_helper_restore(struct DISP_OPT_INFO *info, int n)
-{
-	int i;
-
-	for (i = 0; i < n; i++)
-		disp_helper_set_option(info[i].option, info[i].backup);
-
-	return 0;
-}
-

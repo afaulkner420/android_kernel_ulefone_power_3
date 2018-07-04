@@ -32,12 +32,6 @@
 #include "tcpm.h"
 #include <linux/workqueue.h>
 #include <linux/mutex.h>
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-#include <mt-plat/mtk_boot_common.h>
-#include <mt-plat/mtk_battery.h>
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
 static struct notifier_block otg_nb;
 static bool usbc_otg_attached;
 static struct tcpc_device *otg_tcpc_dev;
@@ -69,8 +63,7 @@ void do_register_otg_work(struct work_struct *data)
 	}
 
 	otg_nb.notifier_call = otg_tcp_notifier_call;
-	ret = register_tcp_dev_notifier(otg_tcpc_dev, &otg_nb,
-		TCP_NOTIFY_TYPE_VBUS|TCP_NOTIFY_TYPE_USB);
+	ret = register_tcp_dev_notifier(otg_tcpc_dev, &otg_nb);
 	if (ret < 0) {
 		DBG(0, "register OTG <%p> fail\n", otg_tcpc_dev);
 		queue_delayed_work(mtk_musb->st_wq, &register_otg_work,
@@ -112,12 +105,12 @@ static struct musb_fifo_cfg fifo_cfg_host[] = {
 { .hw_ep_num =	8, .style = MUSB_FIFO_RX,   .maxpacket = 64,  .mode = MUSB_BUF_SINGLE},
 };
 
-int delay_time = 15;
-module_param(delay_time, int, 0400);
-int delay_time1 = 55;
-module_param(delay_time1, int, 0400);
-int iddig_cnt;
-module_param(iddig_cnt, int, 0400);
+u32 delay_time = 15;
+module_param(delay_time, int, 0644);
+u32 delay_time1 = 55;
+module_param(delay_time1, int, 0644);
+u32 iddig_cnt;
+module_param(iddig_cnt, int, 0644);
 
 void vbus_init(void)
 {
@@ -134,9 +127,9 @@ void vbus_init(void)
 }
 
 static bool vbus_on;
-module_param(vbus_on, bool, 0400);
+module_param(vbus_on, bool, 0644);
 static int vbus_control;
-module_param(vbus_control, int, 0400);
+module_param(vbus_control, int, 0644);
 bool usb20_check_vbus_on(void)
 {
 	DBG(0, "vbus_on<%d>\n", vbus_on);
@@ -153,38 +146,16 @@ void _set_vbus(struct musb *musb, int is_on)
 
 	DBG(0, "op<%d>, status<%d>\n", is_on, vbus_on);
 	if (is_on && !vbus_on) {
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-		if((get_ui_soc()<=5)&&(get_ui_soc()!=0)&&(get_boot_mode()== NORMAL_BOOT)){
-			/* update flag 1st then enable VBUS to make host mode correct used by PMIC */
-			vbus_on = true;
-			#if CONFIG_MTK_GAUGE_VERSION == 30
-			charger_dev_enable_otg(primary_charger, false);
-			#else
-			set_chr_enable_otg(0x0);
-			#endif
-			pr_info("_set_vbus ui_soc=%d\n",get_ui_soc());
-		}else{
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
 		/* update flag 1st then enable VBUS to make host mode correct used by PMIC */
 		vbus_on = true;
 
 #if CONFIG_MTK_GAUGE_VERSION == 30
 		charger_dev_enable_otg(primary_charger, true);
-		//add XLLSHLSS-5 by zhipeng.pan 20171122 start
-		charger_dev_set_boost_voltage(primary_charger, 5200000);
-		//add XLLSHLSS-5 by zhipeng.pan 20171122 end
 		charger_dev_set_boost_current_limit(primary_charger, 1500000);
 #else
 		set_chr_enable_otg(0x1);
 		set_chr_boost_current_limit(1500);
 #endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 start
-#if defined(CONFIG_TRAN_CHARGER_OTG_LPO_SUPPORT)
-		}
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171211 end
 	} else if (!is_on && vbus_on) {
 #if CONFIG_MTK_GAUGE_VERSION == 30
 		charger_dev_enable_otg(primary_charger, false);
@@ -230,15 +201,15 @@ int mt_usb_get_vbus_status(struct musb *musb)
 }
 
 #if defined(CONFIG_USBIF_COMPLIANCE)
-int sw_deboun_time = 1;
+u32 sw_deboun_time = 1;
 #else
-int sw_deboun_time = 400;
+u32 sw_deboun_time = 400;
 #endif
-module_param(sw_deboun_time, int, 0400);
+module_param(sw_deboun_time, int, 0644);
 struct switch_dev otg_state;
 
-int typec_control;
-module_param(typec_control, int, 0400);
+u32 typec_control;
+module_param(typec_control, int, 0644);
 static bool typec_req_host;
 static bool iddig_req_host;
 
@@ -401,23 +372,20 @@ void musb_session_restart(struct musb *musb)
 
 static struct delayed_work host_plug_test_work;
 int host_plug_test_enable; /* default disable */
-module_param(host_plug_test_enable, int, 0400);
+module_param(host_plug_test_enable, int, 0644);
 int host_plug_in_test_period_ms = 5000;
-module_param(host_plug_in_test_period_ms, int, 0400);
+module_param(host_plug_in_test_period_ms, int, 0644);
 int host_plug_out_test_period_ms = 5000;
-module_param(host_plug_out_test_period_ms, int, 0400);
+module_param(host_plug_out_test_period_ms, int, 0644);
 int host_test_vbus_off_time_us = 3000;
-module_param(host_test_vbus_off_time_us, int, 0400);
+module_param(host_test_vbus_off_time_us, int, 0644);
 int host_test_vbus_only = 1;
-module_param(host_test_vbus_only, int, 0400);
+module_param(host_test_vbus_only, int, 0644);
 static int host_plug_test_triggered;
 void switch_int_to_device(struct musb *musb)
 {
 	irq_set_irq_type(iddig_eint_num, IRQF_TRIGGER_HIGH);
 	enable_irq(iddig_eint_num);
-	//Add XLLWHLSE-13 by kaili.lu 20180124 start
-	enable_irq_wake(iddig_eint_num);
-	//Add XLLWHLSE-13 by kaili.lu 20180124 end
 	DBG(0, "switch_int_to_device is done\n");
 }
 
@@ -425,9 +393,6 @@ void switch_int_to_host(struct musb *musb)
 {
 	irq_set_irq_type(iddig_eint_num, IRQF_TRIGGER_LOW);
 	enable_irq(iddig_eint_num);
-	//Add XLLWHLSE-13 by kaili.lu 20180124 start
-	enable_irq_wake(iddig_eint_num);
-	//Add XLLWHLSE-13 by kaili.lu 20180124 end
 	DBG(0, "switch_int_to_host is done\n");
 }
 
@@ -629,6 +594,7 @@ static void musb_host_work(struct work_struct *data)
 		/* setup fifo for host mode */
 		ep_config_from_table_for_host(mtk_musb);
 		wake_lock(&mtk_musb->usb_lock);
+		mt_usb_set_vbus(mtk_musb, 1);
 
 		/* this make PHY operation workable */
 		musb_platform_enable(mtk_musb);
@@ -652,8 +618,6 @@ static void musb_host_work(struct work_struct *data)
 		musb_start(mtk_musb);
 		if (!typec_control && !host_plug_test_triggered)
 			switch_int_to_device(mtk_musb);
-
-		mt_usb_set_vbus(mtk_musb, 1);
 
 		if (host_plug_test_enable && !host_plug_test_triggered)
 			queue_delayed_work(mtk_musb->st_wq, &host_plug_test_work, 0);
@@ -735,10 +699,7 @@ static int otg_iddig_probe(struct platform_device *pdev)
 		DBG(0, "request EINT <%d> fail, ret<%d>\n", iddig_eint_num, ret);
 		return ret;
 	}
-	//Add XLLWHLSE-13 by kaili.lu 20180124 start
-	enable_irq(iddig_eint_num);
-	enable_irq_wake(iddig_eint_num);
-	//Add XLLWHLSE-13 by kaili.lu 20180124 end
+
 	return 0;
 }
 
@@ -769,8 +730,10 @@ void mt_usb_otg_init(struct musb *musb)
 {
 	/* BYPASS OTG function in special mode */
 	if (get_boot_mode() == META_BOOT
+#ifdef CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 			|| get_boot_mode() == KERNEL_POWER_OFF_CHARGING_BOOT
 			|| get_boot_mode() == LOW_POWER_OFF_CHARGING_BOOT
+#endif
 	   ) {
 		DBG(0, "in special mode %d\n", get_boot_mode());
 		return;
@@ -948,7 +911,7 @@ static struct kernel_param_ops option_param_ops = {
 	.set = set_option,
 	.get = param_get_int,
 };
-module_param_cb(option, &option_param_ops, &option, 0400);
+module_param_cb(option, &option_param_ops, &option, 0644);
 #else
 #include "musb_core.h"
 /* for not define CONFIG_USB_MTK_OTG */

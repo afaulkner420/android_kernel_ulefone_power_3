@@ -74,7 +74,6 @@ enum DISP_HELPER_OPT {
 	/* DISP_WDMA0 sharing internally for primary and external display */
 	DISP_OPT_SHARE_WDMA0,
 	DISP_OPT_ROUND_CORNER,
-	DISP_OPT_DC_BY_HRT,
 
 	DISP_OPT_NUM
 };
@@ -85,12 +84,6 @@ enum DISP_HELPER_STAGE {
 	DISP_HELPER_STAGE_NORMAL
 };
 
-struct DISP_OPT_INFO {
-	enum DISP_HELPER_OPT option;
-	int value;
-	int backup;
-};
-
 void disp_helper_option_init(void);
 int disp_helper_get_option(enum DISP_HELPER_OPT option);
 int disp_helper_set_option(enum DISP_HELPER_OPT option, int value);
@@ -99,8 +92,6 @@ int disp_helper_get_option_list(char *stringbuf, int buf_len);
 
 enum DISP_HELPER_STAGE disp_helper_get_stage(void);
 const char *disp_helper_stage_spy(void);
-int disp_helper_backup_reset(struct DISP_OPT_INFO info[], int n);
-int disp_helper_restore(struct DISP_OPT_INFO info[], int n);
 
 
 #endif

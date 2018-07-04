@@ -23,15 +23,6 @@
 
 #include "tick-internal.h"
 
-#define CONFIG_MTK_TICK_BROADCAST_AEE_DUMP
-
-#if defined(CONFIG_MTK_RAM_CONSOLE) && defined(CONFIG_MTK_TICK_BROADCAST_AEE_DUMP)
-#include <linux/cpumask.h>
-#include <mt-plat/mtk_ram_console.h>
-
-#define _MTK_TICK_BROADCAST_AEE_DUMP
-#endif
-
 /*
  * Broadcast support for broken x86 hardware, where the local apic
  * timer stops in C3 state.
@@ -531,74 +522,6 @@ static cpumask_var_t tick_broadcast_oneshot_mask;
 static cpumask_var_t tick_broadcast_pending_mask;
 static cpumask_var_t tick_broadcast_force_mask;
 
-#ifdef _MTK_TICK_BROADCAST_AEE_DUMP
-
-struct tick_broadcast_history_struct {
-	unsigned long long time_enter;
-	unsigned long long time_exit;
-	int ret_enter;
-};
-
-static struct tick_broadcast_history_struct tick_broadcast_history[NR_CPUS];
-static char tick_broadcast_mtk_aee_dump_buf[128];
-
-void tick_broadcast_mtk_aee_dump(void)
-{
-	int i;
-
-	/*
-	 * Notice: printk cannot be used during AEE flow to avoid lock issues.
-	 */
-
-	/* tick_broadcast_oneshot_mask */
-
-	memset(tick_broadcast_mtk_aee_dump_buf, 0,
-		sizeof(tick_broadcast_mtk_aee_dump_buf));
-	snprintf(tick_broadcast_mtk_aee_dump_buf,
-		sizeof(tick_broadcast_mtk_aee_dump_buf),
-		"[TICK] oneshot_mask: %*pbl\n",
-		cpumask_pr_args(tick_broadcast_oneshot_mask));
-	aee_sram_fiq_log(tick_broadcast_mtk_aee_dump_buf);
-
-	/* tick_broadcast_pending_mask */
-
-	memset(tick_broadcast_mtk_aee_dump_buf, 0,
-		sizeof(tick_broadcast_mtk_aee_dump_buf));
-	snprintf(tick_broadcast_mtk_aee_dump_buf,
-		sizeof(tick_broadcast_mtk_aee_dump_buf),
-		"[TICK] pending_mask: %*pbl\n",
-		cpumask_pr_args(tick_broadcast_pending_mask));
-	aee_sram_fiq_log(tick_broadcast_mtk_aee_dump_buf);
-
-	/* tick_broadcast_force_mask */
-
-	memset(tick_broadcast_mtk_aee_dump_buf, 0,
-		sizeof(tick_broadcast_mtk_aee_dump_buf));
-	snprintf(tick_broadcast_mtk_aee_dump_buf,
-		sizeof(tick_broadcast_mtk_aee_dump_buf),
-		"[TICK] force_mask: %*pbl\n",
-		cpumask_pr_args(tick_broadcast_force_mask));
-	aee_sram_fiq_log(tick_broadcast_mtk_aee_dump_buf);
-
-	for_each_possible_cpu(i) {
-
-		/* to avoid unexpected overrun */
-		if (i >= ARRAY_SIZE(tick_broadcast_history))
-			break;
-
-		memset(tick_broadcast_mtk_aee_dump_buf, 0,
-			sizeof(tick_broadcast_mtk_aee_dump_buf));
-		snprintf(tick_broadcast_mtk_aee_dump_buf,
-			sizeof(tick_broadcast_mtk_aee_dump_buf),
-			"[TICK] cpu %d, %llu, %d, %llu\n",
-			i, tick_broadcast_history[i].time_enter,
-			tick_broadcast_history[i].ret_enter,
-			tick_broadcast_history[i].time_exit);
-		aee_sram_fiq_log(tick_broadcast_mtk_aee_dump_buf);
-	}
-}
-#endif
-
 /*
  * Exposed for debugging: see timer_list.c
  */
@@ -807,9 +730,6 @@ int __tick_broadcast_oneshot_control(enum tick_broadcast_state state)
 	struct clock_event_device *bc, *dev;
 	int cpu, ret = 0;
 	ktime_t now;
-#ifdef _MTK_TICK_BROADCAST_AEE_DUMP
-	unsigned long long now_sched_clock = sched_clock();
-#endif
 
 	/*
 	 * If there is no broadcast device, tell the caller not to go
@@ -947,18 +867,6 @@ int __tick_broadcast_oneshot_control(enum tick_broadcast_state state)
 		}
 	}
 out:
-
-#ifdef _MTK_TICK_BROADCAST_AEE_DUMP
-
-	if (cpu < ARRAY_SIZE(tick_broadcast_history)) {
-		if (state == TICK_BROADCAST_ENTER) {
-			tick_broadcast_history[cpu].time_enter = now_sched_clock;
-			tick_broadcast_history[cpu].ret_enter = ret;
-		} else
-			tick_broadcast_history[cpu].time_exit = now_sched_clock;
-	}
-#endif
-
 	raw_spin_unlock(&tick_broadcast_lock);
 	return ret;
 }
@@ -993,9 +901,6 @@ static void tick_broadcast_init_next_event(struct cpumask *mask,
 void tick_broadcast_setup_oneshot(struct clock_event_device *bc)
 {
 	int cpu = smp_processor_id();
-
-	if (!bc)
-		return;
 
 	/* Set it up only once ! */
 	if (bc->event_handler != tick_handle_oneshot_broadcast) {
@@ -1080,19 +985,10 @@ void hotplug_cpu__broadcast_tick_pull(int deadcpu)
 		next_cpu = smp_processor_id();
 		irq_force_affinity(bc->irq, cpumask_of(next_cpu));
 		bc->irq_affinity_on = next_cpu;
+		pr_debug("tb: irq %d->%d\n", deadcpu, next_cpu);
 
-		/*
-		 * Re-arm soc timer in next_cpu if there was any existed
-		 * bctimer armed in dead_cpu to ensure tick-broadcasting
-		 * work continuously.
-		 *
-		 * Do nothing else if bc->next_event is KTIME_MAX here,
-		 * for example, in tick_handle_oneshot_broadcast(), if all
-		 * cpus' next events are expired, bc->next_event will be set as
-		 * KTIME_MAX, and meanwhile cpu hot plug-off event happens.
-		 */
-		if (bc->next_event.tv64 != KTIME_MAX)
-			clockevents_program_event(bc, bc->next_event, 1);
+		/* re-arm soc timer to ensure irq will be serviced */
+		clockevents_program_event(bc, bc->next_event, 1);
 	}
 
 	raw_spin_unlock_irqrestore(&tick_broadcast_lock, flags);

@@ -13,14 +13,6 @@
 
 #include <dt-bindings/pinctrl/mt6392-pinfunc.h>
 
-/ {
-	mt6392_audio_codec: mt6392_audio_codec {
-		compatible = "mediatek,mt6392-codec";
-		mediatek,pwrap-regmap = <&pwrap>;
-		status = "disabled";
-	};
-};
-
 &pwrap {
 	status = "okay";
 
@@ -196,6 +188,8 @@
 				regulator-min-microvolt = <1240000>;
 				regulator-max-microvolt = <1390000>;
 				regulator-enable-ramp-delay = <264>;
+				regulator-always-on;
+				regulator-boot-on;
 			};
 
 			mt6392_vio18_reg: ldo_vio18 {

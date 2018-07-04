@@ -38,13 +38,10 @@
 
 static int __init ccci_util_init(void)
 {
-#ifndef CCCI_LOG_DISABLE
 	ccci_log_init();
-#endif
 	ccci_util_fo_init();
 	ccci_common_sysfs_init();
 	ccci_timer_for_md_init();
-	ccci_util_broadcast_init();
 
 	return 0;
 }

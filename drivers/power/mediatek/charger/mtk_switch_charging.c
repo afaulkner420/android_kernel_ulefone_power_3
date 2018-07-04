@@ -66,29 +66,6 @@
 #include "mtk_charger_intf.h"
 #include "mtk_switch_charging.h"
 
-//add XLLSHLSS-5 by zhipeng.pan 20180104 start
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-#include <mtk_gauge_class.h>
-int kick_to_80=0;
-extern int monkey_flag;
-extern struct gauge_hw_status FG_status;
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20180104 end
-
-//add XLLSHLSS-5 by zhipeng.pan 20180110 start
-#if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
-extern void set_jeita_charging_current(struct charger_manager *info,struct charger_data *pdata);
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20180110 end
-
-static int _uA_to_mA(int uA)
-{
-	if (uA == -1)
-		return -1;
-	else
-		return uA / 1000;
-}
-
 static void _disable_all_charging(struct charger_manager *info)
 {
 	charger_dev_enable(info->chg1_dev, false);
@@ -109,12 +86,6 @@ static void _disable_all_charging(struct charger_manager *info)
 		if (mtk_pe_get_is_connect(info))
 			mtk_pe_reset_ta_vchr(info);
 	}
-
-	if (mtk_pe40_get_is_enable(info)) {
-		if (mtk_pe40_get_is_connect(info))
-			mtk_pe40_end(info, 3, true);
-	}
-
 }
 
 static void swchg_select_charging_current_limit(struct charger_manager *info)
@@ -122,18 +93,16 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 	struct charger_data *pdata;
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 	u32 ichg1_min = 0, aicr1_min = 0;
-	int ret;
+	int ret = 0;
 
 	pdata = &info->chg1_data;
 	mutex_lock(&swchgalg->ichg_aicr_access_mutex);
-//add XLLSHLSS-5 by zhipeng.pan 20171129 start
-#if 0
+
 	/* AICL */
 	if (!mtk_is_pe30_running(info) && !mtk_pe20_get_is_connect(info) &&
-		!mtk_pe_get_is_connect(info) && !mtk_is_TA_support_pd_pps(info))
+		!mtk_pe_get_is_connect(info))
 		charger_dev_run_aicl(info->chg1_dev, &pdata->input_current_limit_by_aicl);
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171129 end
+
 	if (pdata->force_charging_current > 0) {
 
 		pdata->charging_current_limit = pdata->force_charging_current;
@@ -146,7 +115,7 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 		goto done;
 	}
 
-	if (info->usb_unlimited) {
+	if (info->usb_unlimited && (info->chr_type == STANDARD_HOST || info->chr_type == CHARGING_HOST)) {
 		pdata->input_current_limit = info->data.ac_charger_input_current;
 		pdata->charging_current_limit = info->data.ac_charger_current;
 		goto done;
@@ -157,26 +126,7 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 		goto done;
 	}
 
-	if (mtk_is_TA_support_pd_pps(info)) {
-		pdata->input_current_limit = info->data.pe40_single_charger_input_current;
-		pdata->charging_current_limit = info->data.pe40_single_charger_current;
-	} else if (is_typec_adapter(info)) {
-
-		if (tcpm_inquire_typec_remote_rp_curr(info->tcpc) == 3000) {
-			pdata->input_current_limit = 3000000;
-			pdata->charging_current_limit = 3000000;
-		} else if (tcpm_inquire_typec_remote_rp_curr(info->tcpc) == 1500) {
-			pdata->input_current_limit = 1500000;
-			pdata->charging_current_limit = 2000000;
-		} else {
-			/* for TYPEC_CC_VOLT_SNK_DFT */
-			pdata->input_current_limit = 500000;
-			pdata->charging_current_limit = 500000;
-		}
-
-		chr_err("type-C:%d current:%d\n",
-			info->pd_type, tcpm_inquire_typec_remote_rp_curr(info->tcpc));
-	} else if (mtk_pdc_check_charger(info) == true) {
+	if (mtk_pdc_check_charger(info) == true) {
 		int vbus = 0, cur = 0, idx = 0;
 
 		mtk_pdc_get_setting(info, &vbus, &cur, &idx);
@@ -202,7 +152,7 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 			else
 				pdata->input_current_limit = info->data.usb_charger_current_unconfigured;
 
-			pdata->charging_current_limit = pdata->input_current_limit;
+				pdata->charging_current_limit = pdata->input_current_limit;
 		} else {
 			pdata->input_current_limit = info->data.usb_charger_current;
 			pdata->charging_current_limit = info->data.usb_charger_current;	/* it can be larger */
@@ -236,8 +186,7 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 			}
 		}
 	}
-//add XLLSHLSS-5 by zhipeng.pan 20171129 start
-#if 0
+
 	if (pdata->thermal_charging_current_limit != -1)
 		if (pdata->thermal_charging_current_limit < pdata->charging_current_limit)
 			pdata->charging_current_limit = pdata->thermal_charging_current_limit;
@@ -246,25 +195,10 @@ static void swchg_select_charging_current_limit(struct charger_manager *info)
 		if (pdata->thermal_input_current_limit < pdata->input_current_limit)
 			pdata->input_current_limit = pdata->thermal_input_current_limit;
 
-	if (mtk_pe40_get_is_connect(info)) {
-		if (info->pe4.pe4_input_current_limit != -1 &&
-			info->pe4.pe4_input_current_limit < pdata->input_current_limit)
-			pdata->input_current_limit = info->pe4.pe4_input_current_limit;
-
-		info->pe4.input_current_limit = pdata->input_current_limit;
-
-		if (info->pe4.pe4_input_current_limit_setting != -1 &&
-			info->pe4.pe4_input_current_limit_setting < pdata->input_current_limit)
-			pdata->input_current_limit = info->pe4.pe4_input_current_limit_setting;
-	}
-
 	if (pdata->input_current_limit_by_aicl != -1 && !mtk_is_pe30_running(info) &&
-		!mtk_pe20_get_is_connect(info) && !mtk_pe_get_is_connect(info) &&
-		!mtk_is_TA_support_pd_pps(info))
+		!mtk_pe20_get_is_connect(info) && !mtk_pe_get_is_connect(info))
 		if (pdata->input_current_limit_by_aicl < pdata->input_current_limit)
 			pdata->input_current_limit = pdata->input_current_limit_by_aicl;
-#endif
-//add XLLSHLSS-5 by zhipeng.pan 20171129 end
 done:
 	ret = charger_dev_get_min_charging_current(info->chg1_dev, &ichg1_min);
 	if (ret != -ENOTSUPP && pdata->charging_current_limit < ichg1_min)
@@ -273,20 +207,11 @@ done:
 	ret = charger_dev_get_min_input_current(info->chg1_dev, &aicr1_min);
 	if (ret != -ENOTSUPP && pdata->input_current_limit < aicr1_min)
 		pdata->input_current_limit = 0;
-	//add XLLSHLSS-5 by zhipeng.pan 20180110 start
-#if defined(CONFIG_MTK_JEITA_STANDARD_SUPPORT)
-	set_jeita_charging_current(info,pdata);
-#endif
-	//add XLLSHLSS-5 by zhipeng.pan 20180110 end
-	chr_err("force:%d thermal:%d,%d pe4:%d,%d,%d setting:%d %d type:%d usb_unlimited:%d usbif:%d usbsm:%d aicl:%d\n",
-		_uA_to_mA(pdata->force_charging_current),
-		_uA_to_mA(pdata->thermal_input_current_limit),
-		_uA_to_mA(pdata->thermal_charging_current_limit),
-		_uA_to_mA(info->pe4.pe4_input_current_limit),
-		_uA_to_mA(info->pe4.pe4_input_current_limit_setting),
-		_uA_to_mA(info->pe4.input_current_limit),
-		_uA_to_mA(pdata->input_current_limit),
-		_uA_to_mA(pdata->charging_current_limit),
+
+	chr_err("force:%d thermal:%d %d setting:%d %d type:%d usb_unlimited:%d usbif:%d usbsm:%d aicl:%d\n",
+		pdata->force_charging_current,
+		pdata->thermal_input_current_limit, pdata->thermal_charging_current_limit,
+		pdata->input_current_limit, pdata->charging_current_limit,
 		info->chr_type, info->usb_unlimited,
 		IS_ENABLED(CONFIG_USBIF_COMPLIANCE), info->usb_state,
 		pdata->input_current_limit_by_aicl);
@@ -340,11 +265,7 @@ static void swchg_turn_on_charging(struct charger_manager *info)
 {
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 	bool charging_enable = true;
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 start
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-	bool power_path_enable = true;
-#endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 end
+
 	if (swchgalg->state == CHR_ERROR) {
 		charging_enable = false;
 		chr_err("[charger]Charger Error, turn OFF charging !\n");
@@ -365,33 +286,8 @@ static void swchg_turn_on_charging(struct charger_manager *info)
 			swchg_select_cv(info);
 		}
 	}
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 start
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-	if(monkey_flag==2){
-		if(FG_status.ui_soc>=80)
-			kick_to_80=1;
-		else if(FG_status.ui_soc<=70)
-			kick_to_80=0;
-		if(kick_to_80){
-			charging_enable = false;
-			power_path_enable = false;
-			charger_dev_enable(info->chg1_dev, charging_enable);
-			charger_dev_enable_powerpath(info->chg1_dev, power_path_enable);
-		} else{
-			charging_enable = true;
-			power_path_enable = true;
-			charger_dev_enable_powerpath(info->chg1_dev, power_path_enable);
-			charger_dev_enable(info->chg1_dev, charging_enable);
-		}
-		chr_err("[charger]charger monkey test:%d %d %d %d %d!!\n\r",monkey_flag,kick_to_80,FG_status.ui_soc,charging_enable,power_path_enable);
-	}else{
-		kick_to_80=0;
-#endif
+
 	charger_dev_enable(info->chg1_dev, charging_enable);
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-	}
-#endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 end
 }
 
 static int mtk_switch_charging_plug_in(struct charger_manager *info)
@@ -401,7 +297,6 @@ static int mtk_switch_charging_plug_in(struct charger_manager *info)
 	swchgalg->state = CHR_CC;
 	info->polling_interval = CHARGING_INTERVAL;
 	swchgalg->disable_charging = false;
-	get_monotonic_boottime(&swchgalg->charging_begin_time);
 	charger_manager_notifier(info, CHARGER_NOTIFY_START_CHARGING);
 
 	return 0;
@@ -409,15 +304,10 @@ static int mtk_switch_charging_plug_in(struct charger_manager *info)
 
 static int mtk_switch_charging_plug_out(struct charger_manager *info)
 {
-	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
-
-	swchgalg->total_charging_time = 0;
-
 	mtk_pe20_set_is_cable_out_occur(info, true);
 	mtk_pe_set_is_cable_out_occur(info, true);
 	mtk_pe30_plugout_reset(info);
 	mtk_pdc_plugout(info);
-	mtk_pe40_plugout_reset(info);
 	charger_manager_notifier(info, CHARGER_NOTIFY_STOP_CHARGING);
 	return 0;
 }
@@ -430,60 +320,22 @@ static int mtk_switch_charging_do_charging(struct charger_manager *info, bool en
 	if (en) {
 		swchgalg->disable_charging = false;
 		swchgalg->state = CHR_CC;
-		get_monotonic_boottime(&swchgalg->charging_begin_time);
 		charger_manager_notifier(info, CHARGER_NOTIFY_NORMAL);
-		mtk_pe40_set_is_enable(info, en);
 	} else {
-		/* disable might change state , so first */
-		_disable_all_charging(info);
 		swchgalg->disable_charging = true;
 		swchgalg->state = CHR_ERROR;
 		charger_manager_notifier(info, CHARGER_NOTIFY_ERROR);
+
+		_disable_all_charging(info);
 	}
 
 	return 0;
-}
-
-static int mtk_switch_chr_pe40_init(struct charger_manager *info)
-{
-	swchg_turn_on_charging(info);
-	return mtk_pe40_init_state(info);
-}
-
-static int mtk_switch_chr_pe40_cc(struct charger_manager *info)
-{
-	swchg_turn_on_charging(info);
-	return mtk_pe40_cc_state(info);
-}
-
-/* return false if total charging time exceeds max_charging_time */
-static bool mtk_switch_check_charging_time(struct charger_manager *info)
-{
-	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
-	struct timespec time_now;
-
-	if (info->enable_sw_safety_timer) {
-		get_monotonic_boottime(&time_now);
-		chr_debug("%s: begin: %ld, now: %ld\n", __func__,
-			swchgalg->charging_begin_time.tv_sec, time_now.tv_sec);
-
-		if (swchgalg->total_charging_time >= info->data.max_charging_time) {
-			chr_err("%s: SW safety timeout: %d sec > %d sec\n",
-				__func__, swchgalg->total_charging_time,
-				info->data.max_charging_time);
-			charger_dev_notify(info->chg1_dev, CHARGER_DEV_NOTIFY_SAFETY_TIMEOUT);
-			return false;
-		}
-	}
-
-	return true;
 }
 
 static int mtk_switch_chr_cc(struct charger_manager *info)
 {
 	bool chg_done = false;
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
-	struct timespec time_now, charging_time;
 
 	/* check bif */
 	if (IS_ENABLED(CONFIG_MTK_BIF_SUPPORT)) {
@@ -494,40 +346,17 @@ static int mtk_switch_chr_cc(struct charger_manager *info)
 		}
 	}
 
-	get_monotonic_boottime(&time_now);
-	charging_time = timespec_sub(time_now, swchgalg->charging_begin_time);
-
-	swchgalg->total_charging_time = charging_time.tv_sec;
-
-	if (mtk_pe40_is_ready(info)) {
-		chr_err("enter PE4.0!\n");
-		swchgalg->state = CHR_PE40_INIT;
-		info->pe4.is_connect = true;
-		return 1;
-	}
+	/* turn on LED */
 
 	swchg_turn_on_charging(info);
 
 	charger_dev_is_charging_done(info->chg1_dev, &chg_done);
-	//modify XLLSHLSS-5 by zhipeng.pan 20180105 start
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-	if (monkey_flag == 2){
-		/*do nothing when monkey test*/
-	} else {
-		if (chg_done) {
-		swchgalg->state = CHR_BATFULL;
-		charger_dev_do_event(info->chg1_dev, EVENT_EOC, 0);
-		chr_err("battery full!\n");
-		}
-	}
-#else
 	if (chg_done) {
 		swchgalg->state = CHR_BATFULL;
 		charger_dev_do_event(info->chg1_dev, EVENT_EOC, 0);
 		chr_err("battery full!\n");
 	}
-#endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20180105 end
+
 	/* If it is not disabled by throttling,
 	 * enable PE+/PE+20, if it is disabled
 	 */
@@ -559,11 +388,8 @@ int mtk_switch_chr_err(struct charger_manager *info)
 			(info->sw_jeita.sm != TEMP_BELOW_T0) && (info->sw_jeita.sm != TEMP_ABOVE_T4)) {
 			info->sw_jeita.error_recovery_flag = true;
 			swchgalg->state = CHR_CC;
-			get_monotonic_boottime(&swchgalg->charging_begin_time);
 		}
 	}
-
-	swchgalg->total_charging_time = 0;
 
 	_disable_all_charging(info);
 	return 0;
@@ -573,8 +399,6 @@ int mtk_switch_chr_full(struct charger_manager *info)
 {
 	bool chg_done = false;
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
-
-	swchgalg->total_charging_time = 0;
 
 	/* turn off LED */
 
@@ -590,9 +414,7 @@ int mtk_switch_chr_full(struct charger_manager *info)
 		charger_dev_do_event(info->chg1_dev, EVENT_RECHARGE, 0);
 		mtk_pe20_set_to_check_chr_type(info, true);
 		mtk_pe_set_to_check_chr_type(info, true);
-		mtk_pe40_set_is_enable(info, true);
 		info->enable_dynamic_cv = true;
-		get_monotonic_boottime(&swchgalg->charging_begin_time);
 		chr_err("battery recharging!\n");
 		info->polling_interval = CHARGING_INTERVAL;
 	}
@@ -621,56 +443,33 @@ static int mtk_switch_charging_run(struct charger_manager *info)
 	struct switch_charging_alg_data *swchgalg = info->algorithm_data;
 	int ret = 0;
 
-	chr_err("%s [%d %d], timer=%d\n", __func__, swchgalg->state,
-		info->pd_type,
-		swchgalg->total_charging_time);
+	chr_err("mtk_switch_charging_run [%d]\n", swchgalg->state);
 
 	if (mtk_pe30_check_charger(info) == true)
 		swchgalg->state = CHR_PE30;
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 start
-#if defined(CONFIG_TRAN_CHARGER_AGING_SUPPORT)
-	if(kick_to_80 ==1) {
-		mtk_pe20_set_to_check_chr_type(info, false);
-		mtk_pe_set_to_check_chr_type(info, false);
-	}
-#endif
-	//modify XLLSHLSS-5 by zhipeng.pan 20170105 end
-	if (mtk_is_TA_support_pe30(info) == false &&
-		mtk_pdc_check_charger(info) == false &&
-		mtk_is_TA_support_pd_pps(info) == false) {
+
+	if (mtk_is_TA_support_pe30(info) == false) {
 		mtk_pe20_check_charger(info);
 		mtk_pe_check_charger(info);
 	}
 
-	do {
-		switch (swchgalg->state) {
-			chr_err("mtk_switch_charging_run2 [%d] %d\n", swchgalg->state, info->pd_type);
-		case CHR_CC:
-			ret = mtk_switch_chr_cc(info);
-			break;
+	switch (swchgalg->state) {
+	case CHR_CC:
+		ret = mtk_switch_chr_cc(info);
+		break;
 
-		case CHR_PE40_INIT:
-			ret = mtk_switch_chr_pe40_init(info);
-			break;
+	case CHR_BATFULL:
+		ret = mtk_switch_chr_full(info);
+		break;
 
-		case CHR_PE40_CC:
-			ret = mtk_switch_chr_pe40_cc(info);
-			break;
+	case CHR_ERROR:
+		ret = mtk_switch_chr_err(info);
+		break;
 
-		case CHR_BATFULL:
-			ret = mtk_switch_chr_full(info);
-			break;
-
-		case CHR_ERROR:
-			ret = mtk_switch_chr_err(info);
-			break;
-
-		case CHR_PE30:
-			ret = mtk_switch_pe30(info);
-			break;
-		}
-	} while (ret != 0);
-	mtk_switch_check_charging_time(info);
+	case CHR_PE30:
+		ret = mtk_switch_pe30(info);
+		break;
+	}
 
 	charger_dev_dump_registers(info->chg1_dev);
 	return 0;
@@ -695,10 +494,6 @@ int charger_dev_event(struct notifier_block *nb, unsigned long event, void *v)
 	case CHARGER_DEV_NOTIFY_SAFETY_TIMEOUT:
 		info->safety_timeout = true;
 		chr_err("%s: safety timer timeout\n", __func__);
-
-		/* If sw safety timer timeout, do not wake up charger thread */
-		if (info->enable_sw_safety_timer)
-			return NOTIFY_DONE;
 		break;
 	case CHARGER_DEV_NOTIFY_VBUS_OVP:
 		info->vbusov_stat = data->vbusov_stat;

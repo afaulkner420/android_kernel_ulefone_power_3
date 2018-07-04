@@ -30,6 +30,7 @@
 #include <linux/uaccess.h>
 
 #include <mt-plat/upmu_common.h>
+#include <mach/mtk_pmic_wrap.h>
 #include "include/pmic_regulator.h"
 #include "include/regulator_codegen.h"
 
@@ -75,7 +76,14 @@ static ssize_t show_buck_ldo_info(struct device *dev, struct device_attribute *a
 	return len;
 }
 
-static DEVICE_ATTR(buck_ldo_info, 0444, show_buck_ldo_info, NULL); /* 444 no write permission */
+static ssize_t store_buck_ldo_info(struct device *dev, struct device_attribute *attr,
+				  const char *buf, size_t size)
+{
+	pr_info("[%s]\n", __func__);
+	return 0;
+}
+
+static DEVICE_ATTR(buck_ldo_info, 0664, show_buck_ldo_info, store_buck_ldo_info);     /*664*/
 
 /*****************************************************************************
  * PMIC6355 linux reguplator driver
@@ -106,22 +114,18 @@ static ssize_t store_buck_api(struct device *dev, struct device_attribute *attr,
 		pvalue = (char *)buf;
 		if (size > 5) {
 			addr = strsep(&pvalue, " ");
-			if (addr)
-				ret = kstrtou32(addr, 10, (unsigned int *)&buck_type);
+			ret = kstrtou32(addr, 10, (unsigned int *)&buck_type);
 		} else
 			ret = kstrtou32(pvalue, 10, (unsigned int *)&buck_type);
 
 		if (buck_type == 9999) {
 			pr_err("[store_buck_api] regulator_test!\n");
 				pmic_regulator_en_test();
-#if 0
 				pmic_regulator_vol_test();
-#endif
 		} else {
 			if (size > 5) {
 				val =  strsep(&pvalue, " ");
-				if (val)
-					ret = kstrtou32(val, 10, (unsigned int *)&buck_uV);
+				ret = kstrtou32(val, 10, (unsigned int *)&buck_uV);
 
 				pr_err("[store_buck_api] write buck_type[%d] with voltgae %d !\n",
 					buck_type, buck_uV);
@@ -208,11 +212,6 @@ static int pmic_regulator_cust_dts_parser(struct platform_device *pdev, struct d
 static int pmic_regulator_buck_dts_parser(struct platform_device *pdev, struct device_node *np)
 {
 	struct device_node *buck_regulators;
-#if 1
-	struct regulator_config config = {};
-	struct regulator_dev *rdev;
-	struct regulation_constraints *c;
-#endif
 	int matched, i = 0, ret = 0;
 #ifdef REGULATOR_TEST
 	int isEn;
@@ -234,56 +233,35 @@ static int pmic_regulator_buck_dts_parser(struct platform_device *pdev, struct d
 	}
 
 	for (i = 0; i < pmic_regulator_buck_matches_size; i++) {
-		if (mt_bucks[i].isUsedable != 1)
-			continue;
-#if 1
-		config.dev = &(pdev->dev);
-		config.init_data = pmic_regulator_buck_matches[i].init_data;
-		config.of_node = pmic_regulator_buck_matches[i].of_node;
-		config.driver_data = &(mt_bucks[i]);
-		mt_bucks[i].desc.owner = THIS_MODULE;
-		rdev = regulator_register(&mt_bucks[i].desc, &config);
+		if (mt_bucks[i].isUsedable == 1) {
+			mt_bucks[i].config.dev = &(pdev->dev);
+			mt_bucks[i].config.init_data = pmic_regulator_buck_matches[i].init_data;
+			mt_bucks[i].config.of_node = pmic_regulator_buck_matches[i].of_node;
+			mt_bucks[i].config.driver_data = pmic_regulator_buck_matches[i].driver_data;
+			mt_bucks[i].desc.owner = THIS_MODULE;
 
-		if (IS_ERR(rdev)) {
-			ret = PTR_ERR(rdev);
-			pr_notice("[regulator_register] failed to register %s (%d)\n",
-				mt_bucks[i].desc.name, ret);
-			continue;
-		} else
-			pr_info("[regulator_register] pass to register %s, min_uV:%d max_uV:%d\n",
-				mt_bucks[i].desc.name,
-				config.init_data->constraints.min_uV,
-				config.init_data->constraints.max_uV);
-		c = rdev->constraints;
-		c->valid_ops_mask |= mt_bucks[i].constraints.valid_ops_mask;
-		c->valid_modes_mask |= mt_bucks[i].constraints.valid_modes_mask;
-#else
-		mt_bucks[i].config.dev = &(pdev->dev);
-		mt_bucks[i].config.init_data = pmic_regulator_buck_matches[i].init_data;
-		mt_bucks[i].config.of_node = pmic_regulator_buck_matches[i].of_node;
-		mt_bucks[i].config.driver_data = pmic_regulator_buck_matches[i].driver_data;
-		mt_bucks[i].desc.owner = THIS_MODULE;
-		mt_bucks[i].rdev =
-			regulator_register(&mt_bucks[i].desc, &mt_bucks[i].config);
+			mt_bucks[i].rdev =
+			    regulator_register(&mt_bucks[i].desc, &mt_bucks[i].config);
 
-		if (IS_ERR(mt_bucks[i].rdev)) {
-			ret = PTR_ERR(mt_bucks[i].rdev);
-			pr_notice("[regulator_register] failed to register %s (%d)\n",
-				mt_bucks[i].desc.name, ret);
-			continue;
-		} else
-			pr_info("[regulator_register] pass to register %s, min_uV:%d max_uV:%d\n",
-				mt_bucks[i].desc.name,
-				mt_bucks[i].config.init_data->constraints.min_uV,
-				mt_bucks[i].config.init_data->constraints.max_uV);
-#endif
+			if (IS_ERR(mt_bucks[i].rdev)) {
+				ret = PTR_ERR(mt_bucks[i].rdev);
+				pr_warn("[regulator_register] failed to register %s (%d)\n",
+								mt_bucks[i].desc.name, ret);
+				continue;
+			} else
+				PMICLOG("[regulator_register] pass to register %s\n", mt_bucks[i].desc.name);
 
 #ifdef REGULATOR_TEST
-		mt_bucks[i].reg = regulator_get(&(pdev->dev), mt_bucks[i].desc.name);
-		isEn = regulator_is_enabled(mt_bucks[i].reg);
-		if (isEn != 0)
-			PMICLOG("[regulator] %s is default on\n", mt_bucks[i].desc.name);
+			mt_bucks[i].reg = regulator_get(&(pdev->dev), mt_bucks[i].desc.name);
+			isEn = regulator_is_enabled(mt_bucks[i].reg);
+			if (isEn != 0)
+				PMICLOG("[regulator] %s is default on\n", mt_bucks[i].desc.name);
 #endif /*--REGULATOR_TEST--*/
+
+			PMICLOG("[PMIC]mt_bucks[%d].config.init_data min_uv:%d max_uv:%d\n",
+				i, mt_bucks[i].config.init_data->constraints.min_uV,
+				mt_bucks[i].config.init_data->constraints.max_uV);
+		}
 	}
 
 out:
@@ -294,10 +272,6 @@ out:
 static int pmic_regulator_ldo_dts_parser(struct platform_device *pdev, struct device_node *np)
 {
 	struct device_node *ldo_regulators;
-#if 1
-	struct regulator_config config = {};
-	struct regulator_dev *rdev;
-#endif
 	int matched, i = 0, ret;
 #ifdef REGULATOR_TEST
 	int isEn;
@@ -320,63 +294,44 @@ static int pmic_regulator_ldo_dts_parser(struct platform_device *pdev, struct de
 	}
 
 	for (i = 0; i < pmic_regulator_ldo_matches_size; i++) {
-		if (mt_ldos[i].isUsedable != 1)
-			continue;
-#if 1
-		config.dev = &(pdev->dev);
-		config.init_data = pmic_regulator_ldo_matches[i].init_data;
-		config.of_node = pmic_regulator_ldo_matches[i].of_node;
-		config.driver_data = pmic_regulator_ldo_matches[i].driver_data;
-		mt_ldos[i].desc.owner = THIS_MODULE;
+		if (mt_ldos[i].isUsedable == 1) {
+			mt_ldos[i].config.dev = &(pdev->dev);
+			mt_ldos[i].config.init_data = pmic_regulator_ldo_matches[i].init_data;
+			mt_ldos[i].config.of_node = pmic_regulator_ldo_matches[i].of_node;
+			mt_ldos[i].config.driver_data = pmic_regulator_ldo_matches[i].driver_data;
+			mt_ldos[i].desc.owner = THIS_MODULE;
 
-		rdev = regulator_register(&mt_ldos[i].desc, &config);
+			mt_ldos[i].rdev =
+			    regulator_register(&mt_ldos[i].desc, &mt_ldos[i].config);
 
-		if (IS_ERR(rdev)) {
-			ret = PTR_ERR(rdev);
-			pr_notice("[regulator_register] failed to register %s (%d)\n",
-				mt_ldos[i].desc.name, ret);
-			continue;
-		} else {
-			PMICLOG("[regulator_register] pass to register %s, min_uV:%d max_uV:%d\n",
-				mt_ldos[i].desc.name,
-				config.init_data->constraints.min_uV,
-				config.init_data->constraints.max_uV);
-		}
-#else
-		mt_ldos[i].config.dev = &(pdev->dev);
-		mt_ldos[i].config.init_data = pmic_regulator_ldo_matches[i].init_data;
-		mt_ldos[i].config.of_node = pmic_regulator_ldo_matches[i].of_node;
-		mt_ldos[i].config.driver_data = pmic_regulator_ldo_matches[i].driver_data;
-		mt_ldos[i].desc.owner = THIS_MODULE;
-
-		mt_ldos[i].rdev =
-			regulator_register(&mt_ldos[i].desc, &mt_ldos[i].config);
-
-		if (IS_ERR(mt_ldos[i].rdev)) {
-			ret = PTR_ERR(mt_ldos[i].rdev);
-			pr_notice("[regulator_register] failed to register %s (%d)\n",
-				mt_ldos[i].desc.name, ret);
-			continue;
-		} else {
-			PMICLOG("[regulator_register] pass to register %s, min_uV:%d max_uV:%d\n",
-				mt_ldos[i].desc.name,
-				mt_ldos[i].config.init_data->constraints.min_uV,
-				mt_ldos[i].config.init_data->constraints.max_uV);
-		}
-#endif
+			if (IS_ERR(mt_ldos[i].rdev)) {
+				ret = PTR_ERR(mt_ldos[i].rdev);
+				pr_warn("[regulator_register] failed to register %s (%d)\n",
+					mt_ldos[i].desc.name, ret);
+				continue;
+			} else {
+				PMICLOG("[regulator_register] pass to register %s\n",
+					mt_ldos[i].desc.name);
+			}
 
 #ifdef REGULATOR_TEST
-		mt_ldos[i].reg = regulator_get(&(pdev->dev), mt_ldos[i].desc.name);
-		isEn = regulator_is_enabled(mt_ldos[i].reg);
-		if (isEn != 0)
-			PMICLOG("[regulator] %s is default on\n", mt_ldos[i].desc.name);
+			mt_ldos[i].reg = regulator_get(&(pdev->dev), mt_ldos[i].desc.name);
+			isEn = regulator_is_enabled(mt_ldos[i].reg);
+			if (isEn != 0)
+				PMICLOG("[regulator] %s is default on\n", mt_ldos[i].desc.name);
 #endif /*--REGULATOR_TEST--*/
-		/* To initialize varriables which were used to record status, */
-		/* if ldo regulator have been modified by user.               */
-		/* mt_ldos[i].vosel.ldo_user = mt_ldos[i].rdev->use_count;  */
-		if (mt_ldos[i].da_vol_cb != NULL)
-			mt_ldos[i].vosel.def_sel = (mt_ldos[i].da_vol_cb)();
-		mt_ldos[i].vosel.cur_sel = mt_ldos[i].vosel.def_sel;
+			/* To initialize varriables which were used to record status, */
+			/* if ldo regulator have been modified by user.               */
+			/* mt_ldos[i].vosel.ldo_user = mt_ldos[i].rdev->use_count;  */
+			if (mt_ldos[i].da_vol_cb != NULL)
+				mt_ldos[i].vosel.def_sel = (mt_ldos[i].da_vol_cb)();
+
+			mt_ldos[i].vosel.cur_sel = mt_ldos[i].vosel.def_sel;
+
+			PMICLOG("[PMIC]mt_ldos[%d].config.init_data min_uv:%d max_uv:%d\n",
+				i, mt_ldos[i].config.init_data->constraints.min_uV,
+				mt_ldos[i].config.init_data->constraints.max_uV);
+		}
 	}
 	/*--for ldo customization--*/
 	ret = pmic_regulator_cust_dts_parser(pdev, ldo_regulators);
@@ -513,68 +468,73 @@ void pmic_regulator_en_test(void)
 
 	/*for (i = 0; i < ARRAY_SIZE(mt_ldos); i++) {*/
 	for (i = 0; i < mt_ldos_size; i++) {
-		if (mt_ldos[i].isUsedable != 1)
-			continue;
 		/*---VIO18 should not be off---*/
-		if (strcmp("va09", mt_ldos[i].desc.name) != 0)
-			continue;
-		reg = mt_ldos[i].reg;
-		pr_info("[regulator enable test] %s\n", mt_ldos[i].desc.name);
+		if (i != 1) {
+			if (mt_ldos[i].isUsedable == 1) {
+				reg = mt_ldos[i].reg;
+				PMICLOG("[regulator enable test] %s\n", mt_ldos[i].desc.name);
 
-		ret1 = regulator_enable(reg);
-		ret2 = regulator_is_enabled(reg);
+				ret1 = regulator_enable(reg);
+				ret2 = regulator_is_enabled(reg);
 
-		if (ret2 == (mt_ldos[i].da_en_cb()))
-			pr_info("[enable test pass]\n");
-		else
-			pr_info("[enable test fail]\n");
+				if (ret2 == (mt_ldos[i].da_en_cb()))
+					PMICLOG("[enable test pass]\n");
+				else
+					PMICLOG("[enable test fail]\n");
 
-		ret1 = regulator_disable(reg);
-		ret2 = regulator_is_enabled(reg);
+				ret1 = regulator_disable(reg);
+				ret2 = regulator_is_enabled(reg);
 
-		if (ret2 == (mt_ldos[i].da_en_cb()))
-			pr_info("[disable test pass]\n");
-		else
-			pr_info("[disable test fail]\n");
+				if (ret2 == (mt_ldos[i].da_en_cb()))
+					PMICLOG("[disable test pass]\n");
+				else
+					PMICLOG("[disable test fail]\n");
+			}
+		} /*---VIO18 should not be off---*/
 	}
 }
 
 void pmic_regulator_vol_test(void)
 {
-	int i, j;
+	int i = 0, j, sj = 0;
+	/*int ret1, ret2;*/
 	struct regulator *reg;
-	const int *pVoltage;
-	const int *idxs;
-	int rvoltage;
 
 	for (i = 0; i < mt_ldos_size; i++) {
+		const int *pVoltage;
+
 		reg = mt_ldos[i].reg;
-		if (mt_ldos[i].isUsedable != 1)
-			continue;
-		pr_info("[regulator voltage test] %s n_voltages:%d\n",
-			mt_ldos[i].desc.name, mt_ldos[i].desc.n_voltages);
+		/*---VIO18 should not be off---*/
+		if (i != 1 && (mt_ldos[i].isUsedable == 1)) {
+			PMICLOG("[regulator voltage test] %s voltage:%d\n",
+				mt_ldos[i].desc.name, mt_ldos[i].desc.n_voltages);
 
-		if (mt_ldos[i].pvoltages == NULL)
-			continue;
+			if (mt_ldos[i].pvoltages != NULL) {
+				pVoltage = (const int *)mt_ldos[i].pvoltages;
 
-		pVoltage = mt_ldos[i].pvoltages;
-		idxs = mt_ldos[i].idxs;
-		for (j = 0; j < mt_ldos[i].desc.n_voltages; j++) {
-			regulator_set_voltage(reg, pVoltage[j], pVoltage[j]);
-			rvoltage = regulator_get_voltage(reg);
+				if (i == 8)
+					sj = 8;
+				else
+					sj = 0;
 
-			if (idxs[j] == mt_ldos[i].da_vol_cb() &&
-			    (pVoltage[j] == rvoltage)) {
-				pr_info("[%d]:pass  set_voltage:%d  rvoltage:%d\n",
-					idxs[j],
-					pVoltage[j], rvoltage);
-			} else {
-				pr_info("[%d:%d]:fail  set_voltage:%d  rvoltage:%d\n",
-					idxs[j], mt_ldos[i].da_vol_cb(),
-					pVoltage[j], rvoltage);
+				for (j = sj; j < mt_ldos[i].desc.n_voltages; j++) {
+					int rvoltage;
+
+					regulator_set_voltage(reg, pVoltage[j], pVoltage[j]);
+					rvoltage = regulator_get_voltage(reg);
+
+					if (j == (mt_ldos[i].da_vol_cb())
+						   && (pVoltage[j] == rvoltage)) {
+						PMICLOG("[%d:%d]:pass  set_voltage:%d  rvoltage:%d\n",
+							j, j, pVoltage[j], rvoltage);
+					} else {
+						PMICLOG("[%d:%d]:fail  set_voltage:%d  rvoltage:%d\n",
+							j, (mt_ldos[i].da_vol_cb()), pVoltage[j], rvoltage);
+					}
+				}
 			}
 		}
-	}
+	} /*---VIO18 should not be off---*/
 }
 #endif /*--REGULATOR_TEST--*/
 
@@ -705,10 +665,8 @@ static int proc_utilization_show(struct seq_file *m, void *v)
 				voltage_reg = -1;
 				voltage = -1;
 			}
-		} else {
+		} else
 			voltage = mt_ldos[i].desc.fixed_uV;
-			voltage_reg = -1;
-		}
 
 		seq_printf(m, "%s   status:%d     voltage:%duv    voltage_reg:%d\n",
 			   mt_ldos[i].desc.name, en, voltage, voltage_reg);

@@ -49,11 +49,7 @@ int is_ext_buck2_exist(void)
 	#ifdef CONFIG_REGULATOR_RT5738
 	struct regulator *reg;
 
-#if defined(CONFIG_MACH_MT6775)
-	reg = regulator_get(NULL, "ext_buck_vpu");
-#else
-	reg = regulator_get(NULL, "ext_buck_lp4x");
-#endif
+	reg = regulator_get(NULL, "dram_vdd2");
 	if (reg == NULL)
 		return 0;
 	regulator_put(reg);

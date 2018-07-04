@@ -192,7 +192,6 @@ struct ext4_io_submit {
 	struct bio		*io_bio;
 	ext4_io_end_t		*io_end;
 	sector_t		io_next_block;
-	struct inode		*io_crypt_inode;
 };
 
 /*
@@ -222,7 +221,6 @@ struct ext4_io_submit {
 #define	EXT4_MAX_BLOCK_SIZE		65536
 #define EXT4_MIN_BLOCK_LOG_SIZE		10
 #define EXT4_MAX_BLOCK_LOG_SIZE		16
-#define EXT4_MAX_CLUSTER_LOG_SIZE	30
 #ifdef __KERNEL__
 # define EXT4_BLOCK_SIZE(s)		((s)->s_blocksize)
 #else
@@ -590,8 +588,6 @@ enum {
 #define EXT4_ENCRYPTION_MODE_AES_256_GCM	2
 #define EXT4_ENCRYPTION_MODE_AES_256_CBC	3
 #define EXT4_ENCRYPTION_MODE_AES_256_CTS	4
-#define EXT4_ENCRYPTION_MODE_AES_256_HEH	126
-#define EXT4_ENCRYPTION_MODE_PRIVATE		127
 
 #include "ext4_crypto.h"
 
@@ -1444,7 +1440,7 @@ struct ext4_sb_info {
 	struct list_head s_es_list;	/* List of inodes with reclaimable extents */
 	long s_es_nr_inode;
 	struct ext4_es_stats s_es_stats;
-	struct mb2_cache *s_mb_cache;
+	struct mb_cache *s_mb_cache;
 	spinlock_t s_es_lock ____cacheline_aligned_in_smp;
 
 	/* Ratelimit ext4 messages. */
@@ -2264,13 +2260,11 @@ extern struct kmem_cache *ext4_crypt_info_cachep;
 bool ext4_valid_contents_enc_mode(uint32_t mode);
 uint32_t ext4_validate_encryption_key_size(uint32_t mode, uint32_t size);
 extern struct workqueue_struct *ext4_read_workqueue;
-struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode,
-					    gfp_t gfp_flags);
+struct ext4_crypto_ctx *ext4_get_crypto_ctx(struct inode *inode);
 void ext4_release_crypto_ctx(struct ext4_crypto_ctx *ctx);
 void ext4_restore_control_page(struct page *data_page);
 struct page *ext4_encrypt(struct inode *inode,
-			  struct page *plaintext_page,
-			  gfp_t gfp_flags);
+			  struct page *plaintext_page);
 int ext4_decrypt(struct page *page);
 int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex);
 extern const struct dentry_operations ext4_encrypted_d_ops;
@@ -2338,7 +2332,6 @@ void ext4_free_crypt_info(struct ext4_crypt_info *ci);
 void ext4_free_encryption_info(struct inode *inode, struct ext4_crypt_info *ci);
 
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
-int ext4_default_data_encryption_mode(void);
 int ext4_has_encryption_key(struct inode *inode);
 
 int ext4_get_encryption_info(struct inode *inode);
@@ -2348,33 +2341,7 @@ static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
 	return EXT4_I(inode)->i_crypt_info;
 }
 
-static inline int ext4_using_hardware_encryption(struct inode *inode)
-{
-	struct ext4_crypt_info *ci = ext4_encryption_info(inode);
-
-	return S_ISREG(inode->i_mode) && ci &&
-		ci->ci_data_mode == EXT4_ENCRYPTION_MODE_PRIVATE;
-}
-
-static inline int ext4_using_software_encryption(struct inode *inode)
-{
-	struct ext4_crypt_info *ci;
-
-	if (!ext4_encrypted_inode(inode))
-		return 0;
-
-	ci = ext4_encryption_info(inode);
-
-	return S_ISREG(inode->i_mode) && ci &&
-		ci->ci_data_mode != EXT4_ENCRYPTION_MODE_INVALID &&
-		ci->ci_data_mode != EXT4_ENCRYPTION_MODE_PRIVATE;
-}
-
 #else
-static inline int ext4_default_data_encryption_mode(void)
-{
-	return 0;
-}
 static inline int ext4_has_encryption_key(struct inode *inode)
 {
 	return 0;
@@ -2387,16 +2354,8 @@ static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
 {
 	return NULL;
 }
-static inline int ext4_using_hardware_encryption(struct inode *inode)
-{
-	return 0;
-}
-static inline int ext4_using_software_encryption(struct inode *inode)
-{
-	return 0;
-}
-
 #endif
+
 
 /* dir.c */
 extern int __ext4_check_dir_entry(const char *, unsigned int, struct inode *,
@@ -3237,13 +3196,6 @@ extern int ext4_bio_write_page(struct ext4_io_submit *io,
 			       struct writeback_control *wbc,
 			       bool keep_towrite);
 
-extern int ext4_bio_write_page_crypt(struct ext4_io_submit *io,
-			struct page *page,
-			int len,
-			struct writeback_control *wbc,
-			bool keep_towrite,
-			struct inode *inode);
-
 /* mmp.c */
 extern int ext4_multi_mount_protect(struct super_block *, ext4_fsblk_t);
 
@@ -3293,11 +3245,6 @@ extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
 #define EXT4_RESIZING	0
 extern int ext4_resize_begin(struct super_block *sb);
 extern void ext4_resize_end(struct super_block *sb);
-
-static inline void inode_nohighmem(struct inode *inode)
-{
-	mapping_set_gfp_mask(inode->i_mapping, GFP_USER);
-}
 
 #endif	/* __KERNEL__ */
 

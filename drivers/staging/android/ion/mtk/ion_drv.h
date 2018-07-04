@@ -33,9 +33,7 @@ enum ION_MM_CMDS {
 	ION_MM_GET_DEBUG_INFO,
 	ION_MM_SET_SF_BUF_INFO,
 	ION_MM_GET_SF_BUF_INFO,
-	ION_MM_CONFIG_BUFFER_EXT,
-	ION_MM_ACQ_CACHE_POOL,
-	ION_MM_QRY_CACHE_POOL,
+	ION_MM_CONFIG_BUFFER_EXT
 };
 
 enum ION_SYS_CMDS {
@@ -115,7 +113,7 @@ struct ion_sys_get_phys_param {
 	unsigned long len;
 };
 
-#define ION_MM_DBG_NAME_LEN 48
+#define ION_MM_DBG_NAME_LEN 16
 #define ION_MM_SF_BUF_INFO_LEN 16
 
 struct ion_sys_client_name {
@@ -186,20 +184,12 @@ struct ion_mm_sf_buf_info {
 	unsigned int info[ION_MM_SF_BUF_INFO_LEN];
 };
 
-struct ion_mm_cache_pool_info {
-	size_t len;
-	size_t align;
-	unsigned int heap_id_mask;
-	unsigned int flags;
-	unsigned int ret;
-};
-
 struct ion_mm_data {
 	enum ION_MM_CMDS mm_cmd;
 	union {
 		struct ion_mm_config_buffer_param config_buffer_param;
 		struct ion_mm_buf_debug_info buf_debug_info_param;
-		struct ion_mm_cache_pool_info cache_pool_info_param;
+		struct ion_mm_sf_buf_info sf_buf_info_param;
 	};
 };
 
@@ -252,7 +242,7 @@ int ion_device_destroy_heaps(struct ion_device *dev);
 
 struct ion_heap *ion_sec_heap_create(struct ion_platform_heap *unused);
 void ion_sec_heap_destroy(struct ion_heap *heap);
-void ion_sec_heap_dump_info(void);
+
 #endif
 
 #endif

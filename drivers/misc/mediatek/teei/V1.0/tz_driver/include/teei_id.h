@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -11,7 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-
 
 #ifndef __TEEI_ID_H_
 #define __TEEI_ID_H_
@@ -58,6 +57,7 @@ enum _global_cmd_id {
 /* add by lodovico */
 /* void printff(); */
 
+#if 1
 int service_smc_call(u32 teei_cmd_type, u32 dev_file_id, u32 svc_id,
 	u32 cmd_id, u32 context, u32 enc_id,
 	const void *cmd_buf,
@@ -68,11 +68,12 @@ int service_smc_call(u32 teei_cmd_type, u32 dev_file_id, u32 svc_id,
 	int *ret_resp_len,
 	void *wq,
 	void *arg_lock, int *error_code);
+#endif
 
 enum teei_cmd_type {
 	TEEI_CMD_TYPE_INVALID = 0x0,
 	TEEI_CMD_TYPE_SOCKET_INIT,
-	TEEI_CMD_TYPE_INITIALIZE_CONTEXT,
+	TEEI_CMD_TYPE_INITILIZE_CONTEXT,
 	TEEI_CMD_TYPE_FINALIZE_CONTEXT,
 	TEEI_CMD_TYPE_OPEN_SESSION,
 	TEEI_CMD_TYPE_CLOSE_SESSION,
@@ -92,12 +93,10 @@ enum teei_cmd_type {
  *     end   - mva end
  * @return:
  * ***************************************************************/
-static inline void Flush_Dcache_By_Area(unsigned long start,
-		unsigned long end)
+static inline void Flush_Dcache_By_Area(unsigned long start, unsigned long end)
 {
-//modify OSODEV-1176 by chengwenwu 20171123 start
-#ifdef CONFIG_MICROTRUST_TEE_SUPPORT
-#else
+
+
 	if (boot_soter_flag == START_STATUS) {
 #ifdef CONFIG_ARM64
 		__flush_dcache_area((void *)start, (end - start));
@@ -105,7 +104,7 @@ static inline void Flush_Dcache_By_Area(unsigned long start,
 	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 
 	__asm__ __volatile__ (
-	    "1:  mcr p15, 0, %[i], c7, c14, 1\n"
+	    "1:  mcr p15, 0, %[i], c7, c14, 1\n" /* Clean and Invalidate Data Cache Line (using MVA) Register */
 	    "    add %[i], %[i], %[clsz]\n"
 	    "    cmp %[i], %[end]\n"
 	    "    blo 1b\n"
@@ -116,14 +115,12 @@ static inline void Flush_Dcache_By_Area(unsigned long start,
 	    [clsz] "i"   (Cache_line_size)
 	    : "memory");
 
-	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory");
+	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory"); /* invalidate btc */
 
 	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 #endif
 
 	}
-#endif
-//modify OSODEV-1176 by chengwenwu 20171123 end
 }
 /******************************************************************
  * @brief:
@@ -134,8 +131,7 @@ static inline void Flush_Dcache_By_Area(unsigned long start,
  * @return:
  * *****************************************************************/
 
-static inline void __Invalidate_Dcache_By_Area(unsigned long start,
-		unsigned long end)
+static inline void __Invalidate_Dcache_By_Area(unsigned long start, unsigned long end)
 {
 #ifdef CONFIG_ARM64
 
@@ -153,7 +149,7 @@ static inline void __Invalidate_Dcache_By_Area(unsigned long start,
 		"dsb	sy\n\t"
 		"sub	x3, x2, #1\n\t"
 		"bic	x0, x0, x3\n\t"
-		"1:	dc      ivac, x0\n\t"
+		"1:	dc      ivac, x0\n\t"                       /* invalidate D line / unified line */
 		"add	x0, x0, x2\n\t"
 		"cmp	x0, x1\n\t"
 		"b.lo	1b\n\t"
@@ -169,43 +165,42 @@ static inline void __Invalidate_Dcache_By_Area(unsigned long start,
 #else
 	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 	__asm__ __volatile__ (
-		"1:  mcr p15, 0, %[i], c7, c6, 1\n"
+		"1:  mcr p15, 0, %[i], c7, c6, 1\n" /* Invalidate Data Cache Line (using MVA) Register */
 		"    add %[i], %[i], %[clsz]\n"
 		"    cmp %[i], %[end]\n"
 		"    blo 1b\n"
 		:
 		[i]    "=&r" (start)
-		:        "0" ((unsigned long)start & (~(Cache_line_size - 1))),
-		[end]  "r" (end),
-		[clsz] "i" (Cache_line_size)
+		:        "0"   ((unsigned long)start & (~(Cache_line_size - 1))),
+		[end]  "r"   (end),
+		[clsz] "i"   (Cache_line_size)
 		: "memory");
 
-	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory");
-	__asm__ __volatile__ ("dsb" : : : "memory");
+	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory"); /* invalidate btc */
+	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 
 
 
 #endif
 }
 
-static inline void Invalidate_Dcache_By_Area(unsigned long start,
-	unsigned long end)
+static inline void Invalidate_Dcache_By_Area(unsigned long start, unsigned long end)
 {
 #if 0
 	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 	__asm__ __volatile__ (
-	    "1:  mcr p15, 0, %[i], c7, c6, 1\n"
+	    "1:  mcr p15, 0, %[i], c7, c6, 1\n" /* Invalidate Data Cache Line (using MVA) Register */
 	    "    add %[i], %[i], %[clsz]\n"
 	    "    cmp %[i], %[end]\n"
 	    "    blo 1b\n"
 	    :
 	    [i]    "=&r" (start)
-	    :        "0" ((unsigned long)start & (~(Cache_line_size - 1))),
+	    :        "0"   ((unsigned long)start & (~(Cache_line_size - 1))),
 	    [end]  "r"   (end),
 	    [clsz] "i"   (Cache_line_size)
 	    : "memory");
 
-	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory");
+	asm volatile ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0) : "memory"); /* invalidate btc */
 	__asm__ __volatile__ ("dsb" : : : "memory"); /* dsb */
 #endif
 
@@ -218,7 +213,7 @@ static inline void Invalidate_Dcache_By_Area(unsigned long start,
 	    "lsl	x2, x2, x3\n\t"
 	    "sub	x3, x2, #1\n\t"
 	    "bic	%[start], %[start], x3\n\t"
-	    "1:	dc	ivac, %[start]\n\t"
+	    "1:	dc	ivac, %[start]\n\t"			/* invalidate D line / unified line */
 	    "add	%[start],%[start] , x2\n\t"
 	    "cmp	%[start], %[end]\n\t"
 	    "b.lo	1b\n\t"
@@ -229,13 +224,9 @@ static inline void Invalidate_Dcache_By_Area(unsigned long start,
 	    : "memory");
 #endif
 
-//modify OSODEV-1176 by chengwenwu 20171123 start
-#ifdef CONFIG_MICROTRUST_TEE_SUPPORT
-#else
 	if (boot_soter_flag == START_STATUS)
 		__Invalidate_Dcache_By_Area(start, end);
-#endif
-//modify OSODEV-1176 by chengwenwu 20171123 end
+
 }
 
 /* add end */

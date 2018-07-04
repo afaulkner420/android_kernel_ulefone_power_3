@@ -32,9 +32,7 @@
 #if defined(CONFIG_MTK_WATCHDOG) && defined(CONFIG_MTK_WD_KICKER)
 #include <mach/wd_api.h>
 #endif
-#if defined(CONFIG_MTK_PMIC) || defined(CONFIG_MTK_PMIC_NEW_ARCH)
 #include <mt-plat/upmu_common.h>
-#endif
 #include <mtk_spm_misc.h>
 #include <mtk_spm_sleep.h>
 #include <mtk_dramc.h>

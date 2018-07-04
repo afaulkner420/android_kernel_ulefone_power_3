@@ -2771,7 +2771,7 @@ static long btrfs_fallocate(struct file *file, int mode,
 		if (!ret)
 			ret = btrfs_prealloc_file_range(inode, mode,
 					range->start,
-					range->len, i_blocksize(inode),
+					range->len, 1 << inode->i_blkbits,
 					offset + len, &alloc_hint);
 		list_del(&range->list);
 		kfree(range);

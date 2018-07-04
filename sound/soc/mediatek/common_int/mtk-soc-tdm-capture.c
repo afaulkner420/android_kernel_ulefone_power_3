@@ -73,9 +73,9 @@
 #include <sound/jack.h>
 
 /* information about */
-struct afe_mem_control_t  *TDM_VUL_Control_context;
+AFE_MEM_CONTROL_T  *TDM_VUL_Control_context;
 static struct snd_dma_buffer *Capture_dma_buf;
-static struct audio_digital_i2s *mAudioDigitalI2S;
+static AudioDigtalI2S *mAudioDigitalI2S;
 static bool mCaptureUseSram;
 
 /*
@@ -128,7 +128,7 @@ static void StopAudioCaptureHardware(struct snd_pcm_substream *substream)
 
 static void StartAudioCaptureHardware(struct snd_pcm_substream *substream)
 {
-	struct audio_digital_i2s m2ndI2SInAttribute;
+	AudioDigtalI2S m2ndI2SInAttribute;
 
 	pr_debug("StartAudioCaptureHardware\n");
 
@@ -189,7 +189,7 @@ static int mtk_capture_pcm_prepare(struct snd_pcm_substream *substream)
 
 static int mtk_capture_alsa_stop(struct snd_pcm_substream *substream)
 {
-	struct afe_block_t *Vul_Block = &(TDM_VUL_Control_context->rBlock);
+	AFE_BLOCK_T *Vul_Block = &(TDM_VUL_Control_context->rBlock);
 
 	pr_debug("mtk_capture_alsa_stop\n");
 	StopAudioCaptureHardware(substream);
@@ -408,7 +408,7 @@ static int mtk_afe_capture_probe(struct snd_soc_platform *platform)
 	AudDrv_Allocate_mem_Buffer(platform->dev, Soc_Aud_Digital_Block_MEM_VUL,
 				   UL1_MAX_BUFFER_SIZE);
 	Capture_dma_buf =  Get_Mem_Buffer(Soc_Aud_Digital_Block_MEM_VUL);
-	mAudioDigitalI2S =  kzalloc(sizeof(struct audio_digital_i2s), GFP_KERNEL);
+	mAudioDigitalI2S =  kzalloc(sizeof(AudioDigtalI2S), GFP_KERNEL);
 	return 0;
 }
 

@@ -108,23 +108,6 @@ static struct pmic_wrap_setting pw = {
 		._[CMD_13]   = {PMIC_RG_BUCK_VPROC11_EN_ADDR, _BITS_(0:0, 0),},
 		._[CMD_14]   = {PMIC_RG_BUCK_VPROC11_EN_ADDR, _BITS_(1:0, 1),},
 		._[CMD_15]   = {PMIC_RG_BUCK_VPROC11_EN_ADDR, _BITS_(1:0, 3),},
-#elif defined(CONFIG_MACH_MT6775)
-		._[CMD_0]    = {PMIC_RG_LDO_VSRAM_PROC_EN_ADDR, _BITS_(0:0, 1),},
-		._[CMD_1]    = {PMIC_RG_LDO_VSRAM_PROC_EN_ADDR, _BITS_(0:0, 0),},
-		._[CMD_2]    = {PMIC_RG_LDO_VSRAM_PROC_EN_ADDR, _BITS_(1:0, 1),},
-		._[CMD_3]    = {PMIC_RG_LDO_VSRAM_PROC_EN_ADDR, _BITS_(1:0, 3),},
-		._[CMD_4]    = {PMIC_RG_SRCLKEN_IN2_EN_ADDR, _BITS_(0:0, 1),},
-		._[CMD_5]    = {PMIC_RG_SRCLKEN_IN2_EN_ADDR, _BITS_(0:0, 0),},
-		._[CMD_6]    = {PMIC_RG_LDO_VSRAM_GPU_EN_ADDR, _BITS_(0:0, 1),},
-		._[CMD_7]    = {PMIC_RG_LDO_VSRAM_GPU_EN_ADDR, _BITS_(0:0, 0),},
-		._[CMD_8]    = {PMIC_RG_BUCK_VCORE_VOSEL_ADDR, VOLT_TO_PMIC_VAL(62500),},
-		._[CMD_9]    = {PMIC_RG_BUCK_VCORE_VOSEL_ADDR, VOLT_TO_PMIC_VAL(70000),},
-		._[CMD_10]   = {PMIC_RG_BUCK_VCORE_VOSEL_ADDR, VOLT_TO_PMIC_VAL(80000),},
-		._[CMD_11]   = {PMIC_RG_BUCK_VPROC11_EN_ADDR, _BITS_(0:0, 1),},
-		._[CMD_12]   = {PMIC_RG_BUCK_VPROC11_EN_ADDR, _BITS_(0:0, 0),},
-		._[CMD_13]   = {0, 0,},
-		._[CMD_14]   = {0, 0,},
-		._[CMD_15]   = {0, 0,},
 #else
 		._[IDX_ALL_1_VSRAM_PWR_ON]      = {MT6335_LDO_VSRAM_DVFS1_CON0, _BITS_(0:0, 1),},
 		._[IDX_ALL_1_VSRAM_SHUTDOWN]    = {MT6335_LDO_VSRAM_DVFS1_CON0, _BITS_(0:0, 0),},
@@ -221,7 +204,7 @@ void mt_spm_pmic_wrap_set_cmd(enum pmic_wrap_phase_id phase, int idx, unsigned i
 }
 EXPORT_SYMBOL(mt_spm_pmic_wrap_set_cmd);
 
-#if !defined(CONFIG_MACH_MT6775)	/* TODO: fix it for MT6775 */
+#if 1
 void mt_spm_pmic_wrap_set_cmd_full(enum pmic_wrap_phase_id phase, int idx, unsigned int cmd_addr,
 				   unsigned int cmd_wdata)
 {

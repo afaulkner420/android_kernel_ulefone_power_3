@@ -24,28 +24,14 @@
 #include "mmdvfs_config_mt6759.h"
 #elif defined(SMI_BIA)
 #include "mmdvfs_config_mt6763.h"
-#elif defined(SMI_VIN)
-#include "mmdvfs_config_mt6758.h"
-#elif defined(SMI_ZIO)
-#include "mmdvfs_config_mt6739.h"
-#elif defined(SMI_SYL)
-#include "mmdvfs_config_mt6771.h"
-#elif defined(SMI_CAN)
-#include "mmdvfs_config_mt6775.h"
 #endif
 
 #include "mtk_smi.h"
 #include "mmdvfs_mgr.h"
 #include "mmdvfs_internal.h"
-
-#ifdef CONFIG_MTK_FREQ_HOPPING
 #include "mach/mtk_freqhopping.h"
-#endif
-
-#ifdef USE_DDR_TYPE
-#include "mt_emi_api.h"
-#endif
-#include "mmdvfs_pmqos.h"
+#include "emi_mbw.h"
+#include "emi_bwl.h"
 
 
 /* Class: mmdvfs_step_util */
@@ -57,7 +43,6 @@ static int mmdvfs_get_clients_clk_opp(struct mmdvfs_step_util *self, struct mmdv
 	int clients_mask, int clk_id);
 static bool in_camera_scenario;
 u32 camera_bw_config;
-u32 normal_bw_config;
 
 #if defined(SMI_WHI)
 struct mmdvfs_step_util mmdvfs_step_util_obj = {
@@ -146,78 +131,6 @@ struct mmdvfs_step_util mmdvfs_step_util_obj_mt6763 = {
 	mmdvfs_step_util_set_step,
 	mmdvfs_get_clients_clk_opp
 };
-
-#elif defined(SMI_VIN)
-struct mmdvfs_step_util mmdvfs_step_util_obj_mt6758 = {
-	{0},
-	MMDVFS_SCEN_COUNT,
-	{0},
-	MT6758_MMDVFS_OPP_MAX,
-	mt6758_mmdvfs_legacy_step_to_opp,
-	MMDVFS_VOLTAGE_COUNT,
-	mt6758_mmdvfs_mmclk_opp_to_legacy_mmclk_step,
-	MT6758_MMDVFS_OPP_MAX,
-	MMDVFS_FINE_STEP_OPP0,
-	mmdvfs_step_util_init,
-	mmdvfs_get_legacy_mmclk_step_from_mmclk_opp,
-	mmdvfs_get_opp_from_legacy_step,
-	mmdvfs_step_util_set_step,
-	mmdvfs_get_clients_clk_opp
-};
-
-#elif defined(SMI_ZIO)
-struct mmdvfs_step_util mmdvfs_step_util_obj_mt6739 = {
-	{0},
-	MMDVFS_SCEN_COUNT,
-	{0},
-	MT6739_MMDVFS_OPP_MAX,
-	mt6739_mmdvfs_legacy_step_to_opp,
-	MMDVFS_VOLTAGE_COUNT,
-	mt6739_mmdvfs_mmclk_opp_to_legacy_mmclk_step,
-	MT6739_MMDVFS_OPP_MAX,
-	MMDVFS_FINE_STEP_OPP0,
-	mmdvfs_step_util_init,
-	mmdvfs_get_legacy_mmclk_step_from_mmclk_opp,
-	mmdvfs_get_opp_from_legacy_step,
-	mmdvfs_step_util_set_step,
-	mmdvfs_get_clients_clk_opp
-};
-
-#elif defined(SMI_SYL)
-struct mmdvfs_step_util mmdvfs_step_util_obj_mt6771 = {
-	{0},
-	MMDVFS_SCEN_COUNT,
-	{0},
-	MT6771_MMDVFS_OPP_MAX,
-	mt6771_mmdvfs_legacy_step_to_opp,
-	MMDVFS_VOLTAGE_COUNT,
-	mt6771_mmdvfs_mmclk_opp_to_legacy_mmclk_step,
-	MT6771_MMDVFS_OPP_MAX,
-	MMDVFS_FINE_STEP_OPP0,
-	mmdvfs_step_util_init,
-	mmdvfs_get_legacy_mmclk_step_from_mmclk_opp,
-	mmdvfs_get_opp_from_legacy_step,
-	mmdvfs_step_util_set_step,
-	mmdvfs_get_clients_clk_opp
-};
-
-#elif defined(SMI_CAN)
-struct mmdvfs_step_util mmdvfs_step_util_obj_mt6775 = {
-	{0},
-	MMDVFS_SCEN_COUNT,
-	{0},
-	MT6775_MMDVFS_OPP_MAX,
-	mt6775_mmdvfs_legacy_step_to_opp,
-	MMDVFS_VOLTAGE_COUNT,
-	mt6775_mmdvfs_mmclk_opp_to_legacy_mmclk_step,
-	MT6775_MMDVFS_OPP_MAX,
-	MMDVFS_FINE_STEP_OPP0,
-	mmdvfs_step_util_init,
-	mmdvfs_get_legacy_mmclk_step_from_mmclk_opp,
-	mmdvfs_get_opp_from_legacy_step,
-	mmdvfs_step_util_set_step,
-	mmdvfs_get_clients_clk_opp
-};
 #endif
 
 /* Class: mmdvfs_adaptor */
@@ -230,7 +143,7 @@ static int mmdvfs_determine_step(struct mmdvfs_adaptor *self, int smi_scenario,
 	struct mmdvfs_cam_property *cam_setting, struct mmdvfs_video_property *codec_setting);
 static int mmdvfs_apply_hw_configurtion_by_step(struct mmdvfs_adaptor *self, int mmdvfs_step, int current_step);
 static int mmdvfs_apply_vcore_hw_configurtion_by_step(struct mmdvfs_adaptor *self, int mmdvfs_step);
-static int mmdvfs_apply_clk_hw_configurtion_by_step(struct mmdvfs_adaptor *self, int mmdvfs_step, bool to_high);
+static int mmdvfs_apply_clk_hw_configurtion_by_step(struct mmdvfs_adaptor *self, int mmdvfs_step);
 static int mmdvfs_get_cam_sys_clk(struct mmdvfs_adaptor *self, int mmdvfs_step);
 
 static int is_camera_profile_matched(struct mmdvfs_cam_property *cam_setting,
@@ -368,119 +281,6 @@ struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6763_lp3 = {
 	mmdvfs_get_cam_sys_clk,
 	mmdvfs_single_profile_dump,
 };
-
-#elif defined(SMI_VIN)
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6758 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6758_mmdvfs_clk_sources_setting, MT6758_MMDVFS_CLK_SOURCE_NUM,
-	mt6758_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6758_step_profile, MT6758_MMDVFS_OPP_MAX,
-	MT6758_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
-#elif defined(SMI_ZIO)
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6739 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6739_mmdvfs_clk_sources_setting, MT6739_MMDVFS_CLK_SOURCE_NUM,
-	mt6739_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6739_step_profile, MT6739_MMDVFS_OPP_MAX,
-	MT6739_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
-#elif defined(SMI_SYL)
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6771 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6771_mmdvfs_clk_sources_setting, MT6771_MMDVFS_CLK_SOURCE_NUM,
-	mt6771_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6771_step_profile, MT6771_MMDVFS_OPP_MAX,
-	MT6771_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6771_3600 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6771_mmdvfs_clk_sources_setting, MT6771_MMDVFS_CLK_SOURCE_NUM,
-	mt6771_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6771_step_profile_3600, MT6771_MMDVFS_OPP_MAX,
-	MT6771_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6771_lp3 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6771_mmdvfs_clk_sources_setting, MT6771_MMDVFS_CLK_SOURCE_NUM,
-	mt6771_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6771_step_profile_lp3, MT6771_MMDVFS_OPP_MAX,
-	MT6771_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
-#elif defined(SMI_CAN)
-struct mmdvfs_adaptor mmdvfs_adaptor_obj_mt6775 = {
-	KIR_MM,
-	0, 0, 0,
-	mt6775_mmdvfs_clk_sources_setting, MT6775_MMDVFS_CLK_SOURCE_NUM,
-	mt6775_mmdvfs_clk_hw_map_setting, MMDVFS_CLK_MUX_NUM,
-	mt6775_step_profile, MT6775_MMDVFS_OPP_MAX,
-	MT6775_MMDVFS_SMI_USER_CONTROL_SCEN_MASK,
-	mmdvfs_profile_dump,
-	mmdvfs_single_hw_configuration_dump,
-	mmdvfs_hw_configuration_dump,
-	mmdvfs_determine_step,
-	mmdvfs_apply_hw_configurtion_by_step,
-	mmdvfs_apply_vcore_hw_configurtion_by_step,
-	mmdvfs_apply_clk_hw_configurtion_by_step,
-	mmdvfs_get_cam_sys_clk,
-	mmdvfs_single_profile_dump,
-};
-
 #endif
 
 /* class: ISP PMQoS Handler */
@@ -505,39 +305,6 @@ struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6759 
 #elif defined(SMI_BIA)
 struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6763 = {
 	mt6763_mmdvfs_threshold_settings,
-	MMDVFS_PM_QOS_SUB_SYS_NUM,
-	get_step_by_threshold
-};
-
-#elif defined(SMI_VIN)
-struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6758 = {
-	mt6758_mmdvfs_threshold_settings,
-	MMDVFS_PM_QOS_SUB_SYS_NUM,
-	get_step_by_threshold
-};
-
-#elif defined(SMI_ZIO)
-struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6739 = {
-	mt6739_mmdvfs_threshold_settings,
-	MMDVFS_PM_QOS_SUB_SYS_NUM,
-	get_step_by_threshold
-};
-
-#elif defined(SMI_SYL)
-struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6771 = {
-	mt6771_mmdvfs_threshold_settings,
-	MMDVFS_PM_QOS_SUB_SYS_NUM,
-	get_step_by_threshold
-};
-struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6771_3600 = {
-	mt6771_mmdvfs_threshold_settings_3600,
-	MMDVFS_PM_QOS_SUB_SYS_NUM,
-	get_step_by_threshold
-};
-
-#elif defined(SMI_CAN)
-struct mmdvfs_thresholds_dvfs_handler mmdvfs_thresholds_dvfs_handler_obj_mt6775 = {
-	mt6775_mmdvfs_threshold_settings,
 	MMDVFS_PM_QOS_SUB_SYS_NUM,
 	get_step_by_threshold
 };
@@ -586,14 +353,14 @@ static int mmdvfs_apply_hw_configurtion_by_step(struct mmdvfs_adaptor *self,
 
 			if (self->apply_clk_hw_configurtion_by_step) {
 				MMDVFSDEBUG(3, "Apply CLK setting:\n");
-				self->apply_clk_hw_configurtion_by_step(self, mmdvfs_step, true);
+				self->apply_clk_hw_configurtion_by_step(self, mmdvfs_step);
 			} else {
 				MMDVFSDEBUG(3, "apply_clk_hw_configurtion_by_step is NULL. No clk change.\n");
 			}
 		} else {
 			if (self->apply_clk_hw_configurtion_by_step) {
 				MMDVFSDEBUG(3, "Apply CLK setting:\n");
-				self->apply_clk_hw_configurtion_by_step(self, mmdvfs_step, false);
+				self->apply_clk_hw_configurtion_by_step(self, mmdvfs_step);
 			} else {
 				MMDVFSDEBUG(3, "apply_clk_hw_configurtion_by_step is NULL. No clk change.\n");
 			}
@@ -647,8 +414,7 @@ static int mmdvfs_apply_vcore_hw_configurtion_by_step(
 		vcore_step = hw_config_ptr->vcore_step;
 	}
 
-	if (vcorefs_request_dvfs_opp(self->vcore_kicker, vcore_step) != 0)
-		MMDVFSMSG("Set vcore step failed: %d\n", vcore_step);
+	vcorefs_request_dvfs_opp(self->vcore_kicker, vcore_step);
 	/* Set vcore step */
 	MMDVFSDEBUG(3, "Set vcore step: %d\n", vcore_step);
 
@@ -656,112 +422,8 @@ static int mmdvfs_apply_vcore_hw_configurtion_by_step(
 
 }
 
-static void mmdvfs_configure_clk_hw(struct mmdvfs_adaptor *self,
-	struct mmdvfs_hw_configurtion *hw_config_ptr, int clk_idx, int mmdvfs_step)
-{
-	/* Get the clk step setting of each mm clks */
-	int clk_step = hw_config_ptr->clk_steps[clk_idx];
-	/* Get the specific clk descriptor */
-	struct mmdvfs_clk_hw_map *clk_hw_map_ptr = &(self->mmdvfs_clk_hw_maps[clk_idx]);
-	int clk_mux_mask = get_mmdvfs_clk_mux_mask();
-
-	if (clk_step < 0 || clk_step >= clk_hw_map_ptr->total_step) {
-		MMDVFSDEBUG(3, "invalid clk step (%d) for %s\n", clk_step,
-		clk_hw_map_ptr->clk_mux.ccf_name);
-		return;
-	}
-	if (!((1 << clk_idx) & clk_mux_mask)) {
-		MMDVFSMSG("CLK %d(%s) swich is not enabled, mask(0x%x)\n",
-		clk_idx, clk_hw_map_ptr->clk_mux.ccf_name, clk_mux_mask);
-		return;
-	}
-	/* Apply the clk setting */
-	if (clk_hw_map_ptr->config_method == MMDVFS_CLK_CONFIG_BY_MUX) {
-		/* Get clk source */
-		int clk_source_id = clk_hw_map_ptr->step_clk_source_id_map[clk_step];
-		int ccf_ret = -1;
-
-		if (clk_source_id < 0 || clk_source_id >= self->mmdvfs_clk_sources_num) {
-			MMDVFSDEBUG(3, "invalid clk source id: %d, step:%d, mux:%s\n",
-			clk_source_id, mmdvfs_step, clk_hw_map_ptr->clk_mux.ccf_name);
-			return;
-		}
-		MMDVFSDEBUG(3, "Change %s source to %s, expect clk = %d\n",
-		clk_hw_map_ptr->clk_mux.ccf_name,
-		self->mmdvfs_clk_sources[clk_source_id].ccf_name,
-		self->mmdvfs_clk_sources[clk_source_id].clk_rate_mhz);
-
-		if (clk_hw_map_ptr->clk_mux.ccf_handle == NULL ||
-			self->mmdvfs_clk_sources[clk_source_id].ccf_handle == NULL)   {
-			MMDVFSMSG("CCF handle can't be NULL during MMDVFS\n");
-			return;
-		}
-
-		ccf_ret = clk_prepare_enable((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle);
-		MMDVFSDEBUG(3, "clk_prepare_enable: andle = %lx\n",
-		((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle));
-
-		if (ccf_ret)
-			MMDVFSMSG("prepare clk NG: %s\n", clk_hw_map_ptr->clk_mux.ccf_name);
-
-		ccf_ret = clk_set_parent((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle,
-			(struct clk *)self->mmdvfs_clk_sources[clk_source_id].ccf_handle);
-		MMDVFSDEBUG(3, "clk_set_parent: handle = (%lx,%lx), src id = %d\n",
-		((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle),
-		((unsigned long)self->mmdvfs_clk_sources[clk_source_id].ccf_handle),
-		clk_source_id);
-
-		if (ccf_ret)
-			MMDVFSMSG("Failed to set parent:%s,%s\n",
-			clk_hw_map_ptr->clk_mux.ccf_name,
-			self->mmdvfs_clk_sources[clk_source_id].ccf_name);
-
-		clk_disable_unprepare((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle);
-		MMDVFSDEBUG(3, "clk_disable_unprepare: handle = %lx\n",
-		((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle));
-	} else if (clk_hw_map_ptr->config_method == MMDVFS_CLK_CONFIG_PLL_RATE) {
-		int clk_rate = clk_hw_map_ptr->step_pll_freq_map[clk_step];
-		int pll_id = clk_hw_map_ptr->pll_id;
-
-		if (pll_id == -1) {
-			int ccf_ret = -1;
-
-			if (clk_rate < 0) {
-				MMDVFSMSG("invalid clk rate: %d, step:%d, pll:%s\n",
-				clk_rate, mmdvfs_step, clk_hw_map_ptr->clk_mux.ccf_name);
-				return;
-			}
-			if (clk_hw_map_ptr->clk_mux.ccf_handle == NULL) {
-				MMDVFSMSG("CCF handle can't be NULL during MMDVFS\n");
-				return;
-			}
-
-			ccf_ret = clk_set_rate((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle,
-				clk_rate);
-			MMDVFSMSG("clk_set_rate: handle = (%lx), rate = %d\n",
-			((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle), clk_rate);
-
-			if (ccf_ret)
-				MMDVFSMSG("Failed to set rate:%s->%d\n",
-				clk_hw_map_ptr->clk_mux.ccf_name, clk_rate);
-		} else {
-#ifdef CONFIG_MTK_FREQ_HOPPING
-			int hopping_ret = -1;
-
-			hopping_ret = mt_dfs_general_pll(pll_id, clk_rate);
-			MMDVFSMSG("pll_hopping_rate: id = (%d), dds = 0x%08x\n", pll_id, clk_rate);
-
-			if (hopping_ret)
-				MMDVFSMSG("Failed to hopping rate:%d->0x%08x\n", pll_id, clk_rate);
-#else
-			MMDVFSMSG("pll_hopping NOT SUPPORT: id = (%d)\n", pll_id);
-#endif
-		}
-	}
-}
-
 static int mmdvfs_apply_clk_hw_configurtion_by_step(
-	struct mmdvfs_adaptor *self, int mmdvfs_step_request, bool to_high)
+	struct mmdvfs_adaptor *self, int mmdvfs_step_request)
 {
 	struct mmdvfs_hw_configurtion *hw_config_ptr = NULL;
 	int clk_idx = 0;
@@ -799,12 +461,104 @@ static int mmdvfs_apply_clk_hw_configurtion_by_step(
 	MMDVFSDEBUG(3, "CLK SWITCH: total = %d, step: (%d)\n", hw_config_ptr->total_clks, mmdvfs_step);
 
 	/* Get each clk and setp it accord to config method   */
-	if (to_high)
-		for (clk_idx = 0; clk_idx < hw_config_ptr->total_clks; clk_idx++)
-			mmdvfs_configure_clk_hw(self, hw_config_ptr, clk_idx, mmdvfs_step);
-	else
-		for (clk_idx = hw_config_ptr->total_clks - 1; clk_idx >= 0; clk_idx--)
-			mmdvfs_configure_clk_hw(self, hw_config_ptr, clk_idx, mmdvfs_step);
+	for (clk_idx = 0; clk_idx < hw_config_ptr->total_clks; clk_idx++) {
+		/* Get the clk step setting of each mm clks */
+		int clk_step = hw_config_ptr->clk_steps[clk_idx];
+		/* Get the specific clk descriptor */
+		struct mmdvfs_clk_hw_map *clk_hw_map_ptr = &(self->mmdvfs_clk_hw_maps[clk_idx]);
+
+		if (clk_step < 0 || clk_step >= clk_hw_map_ptr->total_step) {
+			MMDVFSDEBUG(3, "invalid clk step (%d) for %s\n", clk_step,
+			clk_hw_map_ptr->clk_mux.ccf_name);
+		} else {
+			if (!((1 << clk_idx) & clk_mux_mask)) {
+				MMDVFSMSG("CLK %d(%s) swich is not enabled, mask(0x%x)\n",
+				clk_idx, clk_hw_map_ptr->clk_mux.ccf_name, clk_mux_mask);
+				continue;
+			}
+			/* Apply the clk setting, only support mux now */
+			if (clk_hw_map_ptr->config_method == MMDVFS_CLK_CONFIG_BY_MUX) {
+				/* Get clk source */
+				int clk_source_id = clk_hw_map_ptr->step_clk_source_id_map[clk_step];
+
+				if (clk_source_id < 0 || clk_source_id >= self->mmdvfs_clk_sources_num)
+					MMDVFSDEBUG(3, "invalid clk source id: %d, step:%d, mux:%s\n",
+					clk_source_id, mmdvfs_step, clk_hw_map_ptr->clk_mux.ccf_name);
+				else {
+					int ccf_ret = -1;
+
+					MMDVFSDEBUG(3, "Change %s source to %s, expect clk = %d\n",
+					clk_hw_map_ptr->clk_mux.ccf_name,
+					self->mmdvfs_clk_sources[clk_source_id].ccf_name,
+					self->mmdvfs_clk_sources[clk_source_id].clk_rate_mhz);
+
+					if (clk_hw_map_ptr->clk_mux.ccf_handle == NULL ||
+						self->mmdvfs_clk_sources[clk_source_id].ccf_handle == NULL)   {
+						MMDVFSMSG("CCF handle can't be NULL during MMDVFS\n");
+						continue;
+					}
+
+					ccf_ret = clk_prepare_enable((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle);
+					MMDVFSDEBUG(3, "clk_prepare_enable: andle = %lx\n",
+					((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle));
+
+					if (ccf_ret)
+						MMDVFSMSG("prepare clk NG: %s\n", clk_hw_map_ptr->clk_mux.ccf_name);
+
+					ccf_ret = clk_set_parent((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle,
+						(struct clk *)self->mmdvfs_clk_sources[clk_source_id].ccf_handle);
+					MMDVFSMSG("clk_set_parent: handle = (%lx,%lx), src id = %d\n",
+					((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle),
+					((unsigned long)self->mmdvfs_clk_sources[clk_source_id].ccf_handle),
+					clk_source_id);
+
+
+					if (ccf_ret)
+						MMDVFSMSG("Failed to set parent:%s,%s\n",
+						clk_hw_map_ptr->clk_mux.ccf_name,
+						self->mmdvfs_clk_sources[clk_source_id].ccf_name);
+
+					clk_disable_unprepare((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle);
+					MMDVFSDEBUG(3, "clk_disable_unprepare: handle = %lx\n",
+					((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle));
+				}
+			} else if (clk_hw_map_ptr->config_method == MMDVFS_CLK_CONFIG_PLL_RATE) {
+				int clk_rate = clk_hw_map_ptr->step_pll_freq_map[clk_step];
+				int pll_id = clk_hw_map_ptr->pll_id;
+
+				if (pll_id == -1) {
+					int ccf_ret = -1;
+
+					if (clk_rate < 0) {
+						MMDVFSMSG("invalid clk rate: %d, step:%d, pll:%s\n",
+						clk_rate, mmdvfs_step, clk_hw_map_ptr->clk_mux.ccf_name);
+						continue;
+					}
+					if (clk_hw_map_ptr->clk_mux.ccf_handle == NULL) {
+						MMDVFSMSG("CCF handle can't be NULL during MMDVFS\n");
+						continue;
+					}
+
+					ccf_ret = clk_set_rate((struct clk *)clk_hw_map_ptr->clk_mux.ccf_handle,
+						clk_rate);
+					MMDVFSMSG("clk_set_rate: handle = (%lx), rate = %d\n",
+					((unsigned long)clk_hw_map_ptr->clk_mux.ccf_handle), clk_rate);
+
+					if (ccf_ret)
+						MMDVFSMSG("Failed to set rate:%s->%d\n",
+						clk_hw_map_ptr->clk_mux.ccf_name, clk_rate);
+				} else {
+					int hopping_ret = -1;
+
+					hopping_ret = mt_dfs_general_pll(pll_id, clk_rate);
+					MMDVFSMSG("pll_hopping_rate: id = (%d), dds = 0x%08x\n", pll_id, clk_rate);
+
+					if (hopping_ret)
+						MMDVFSMSG("Failed to hopping rate:%d->0x%08x\n", pll_id, clk_rate);
+				}
+			}
+		}
+	}
 	return 0;
 
 }
@@ -852,10 +606,9 @@ static void mmdvfs_single_profile_dump(struct mmdvfs_profile *profile)
 		MMDVFSDEBUG(3, "mmdvfs_single_profile_dump: NULL profile found\n");
 		return;
 	}
-	MMDVFSDEBUG(3, "%s, %d, (%d,%d,0x%x,%d), (%d,%d,%d)\n",
-	profile->profile_name, profile->smi_scenario_id,
-	profile->cam_limit.sensor_size, profile->cam_limit.feature_flag,
-	profile->cam_limit.fps, profile->cam_limit.preview_size,
+	MMDVFSDEBUG(3, "%s, %d, (%d,%d,%d), (%d,%d,%d)\n", profile->profile_name,
+	profile->smi_scenario_id, profile->cam_limit.sensor_size,
+	profile->cam_limit.feature_flag, profile->cam_limit.fps,
 	profile->video_limit.width, profile->video_limit.height,
 	profile->video_limit.codec);
 }
@@ -1013,15 +766,11 @@ static int is_camera_profile_matched(struct mmdvfs_cam_property *cam_setting,
 			& (~(MMDVFS_CAMERA_MODE_FLAG_DEFAULT));
 
 		/* Check the minium sensor resolution */
-		if (cam_setting->sensor_size < profile_property->sensor_size)
+		if (!(cam_setting->sensor_size >= profile_property->sensor_size))
 			is_match = 0;
 
 		/* Check the minium sensor resolution */
-		if (cam_setting->fps < profile_property->fps)
-			is_match = 0;
-
-		/* Check the minium sensor resolution */
-		if (cam_setting->preview_size < profile_property->preview_size)
+		if (!(cam_setting->fps >= profile_property->fps))
 			is_match = 0;
 
 		/* Check the if the feature match */
@@ -1145,8 +894,7 @@ static int mmdvfs_step_util_set_step(struct mmdvfs_step_util *self, s32 step, u3
 	}
 
 	if (camera_bw_config && in_camera_scenario != has_camera_scenario) {
-#if defined(SPECIAL_BW_CONFIG_MM)
-		u32 bw_config = has_camera_scenario ? camera_bw_config : normal_bw_config;
+		u32 bw_config = has_camera_scenario ? camera_bw_config : 0x05000407;
 		u32 old_bw_config, new_bw_config;
 
 		MMDVFSDEBUG(3, "[DRAM setting] in camera? %d\n", has_camera_scenario);
@@ -1156,10 +904,8 @@ static int mmdvfs_step_util_set_step(struct mmdvfs_step_util *self, s32 step, u3
 		new_bw_config = BM_GetBW();
 		MMDVFSDEBUG(3, "[DRAM setting] old:0x%08x, want:0x%08x, new:0x%08x\n",
 			old_bw_config, bw_config, new_bw_config);
-#else
-		MMDVFSDEBUG(3, "[DRAM setting] not support\n");
-#endif
 	}
+
 	return final_opp;
 }
 
@@ -1237,12 +983,6 @@ struct mmdvfs_adaptor *g_mmdvfs_non_force_adaptor;
 struct mmdvfs_step_util *g_mmdvfs_step_util;
 struct mmdvfs_step_util *g_mmdvfs_non_force_step_util;
 struct mmdvfs_thresholds_dvfs_handler *g_mmdvfs_thresholds_dvfs_handler;
-
-#ifdef CONFIG_MTK_QOS_SUPPORT
-static int mask_concur[MMDVFS_OPP_NUM_LIMITATION];
-static void update_qos_scenario(void);
-#endif
-
 void mmdvfs_config_util_init(void)
 {
 	int mmdvfs_profile_id = mmdvfs_get_mmdvfs_profile();
@@ -1275,7 +1015,6 @@ void mmdvfs_config_util_init(void)
 #if defined(SMI_BIA)
 		if (get_dram_type() == TYPE_LPDDR3) {
 			camera_bw_config = 0x07000507;
-			normal_bw_config = 0x05000407;
 			g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6763_lp3;
 			MMDVFSMSG("g_mmdvfs_step_util init with lp3\n");
 		} else if (get_dram_type() == TYPE_LPDDR4 && get_ch_num() == 1) {
@@ -1287,50 +1026,6 @@ void mmdvfs_config_util_init(void)
 		}
 		g_mmdvfs_step_util = &mmdvfs_step_util_obj_mt6763;
 		g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6763;
-#endif
-		break;
-	case MMDVFS_PROFILE_VIN:
-#if defined(SMI_VIN)
-		g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6758;
-		g_mmdvfs_step_util = &mmdvfs_step_util_obj_mt6758;
-		g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6758;
-#endif
-		break;
-	case MMDVFS_PROFILE_ZIO:
-#if defined(SMI_ZIO)
-		g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6739;
-		g_mmdvfs_step_util = &mmdvfs_step_util_obj_mt6739;
-		g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6739;
-#endif
-		break;
-	case MMDVFS_PROFILE_SYL:
-#if defined(SMI_SYL)
-		g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6771;
-#if defined(USE_DDR_TYPE)
-		if (get_dram_type() == TYPE_LPDDR3) {
-			g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6771_lp3;
-			MMDVFSMSG("g_mmdvfs_step_util init with lp3\n");
-		} else if (dram_steps_freq(0) == 3600) {
-			g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6771_3600;
-			g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6771_3600;
-			legacy_to_qos_step[MMDVFS_FINE_STEP_OPP1].qos_step = 0;
-			MMDVFSMSG("g_mmdvfs_step_util init with lp4 2-ch (3600)\n");
-		} else{
-			g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6771;
-			MMDVFSMSG("g_mmdvfs_step_util init with lp4 2-ch\n");
-		}
-#else
-		g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6771;
-		MMDVFSMSG("g_mmdvfs_step_util init with lp4 2-ch\n");
-#endif
-		g_mmdvfs_step_util = &mmdvfs_step_util_obj_mt6771;
-#endif
-		break;
-	case MMDVFS_PROFILE_CAN:
-#if defined(SMI_CAN)
-		g_mmdvfs_adaptor = &mmdvfs_adaptor_obj_mt6775;
-		g_mmdvfs_step_util = &mmdvfs_step_util_obj_mt6775;
-		g_mmdvfs_thresholds_dvfs_handler = &mmdvfs_thresholds_dvfs_handler_obj_mt6775;
 #endif
 		break;
 
@@ -1346,10 +1041,6 @@ void mmdvfs_config_util_init(void)
 
 	if (g_mmdvfs_non_force_step_util)
 		g_mmdvfs_non_force_step_util->init(g_mmdvfs_non_force_step_util);
-
-#ifdef CONFIG_MTK_QOS_SUPPORT
-	update_qos_scenario();
-#endif
 }
 
 void mmdvfs_pm_qos_update_request(struct mmdvfs_pm_qos_request *req, u32 mmdvfs_pm_qos_class, u32 new_value)
@@ -1453,96 +1144,3 @@ u32 mmdvfs_qos_get_cur_thres(struct mmdvfs_pm_qos_request *req, u32 mmdvfs_pm_qo
 	return clk_rate_mhz;
 }
 
-#ifdef CONFIG_MTK_QOS_SUPPORT
-static int get_qos_step(s32 opp)
-{
-	if (opp == MMDVFS_FINE_STEP_UNREQUEST)
-		return opp;
-	if (opp >= ARRAY_SIZE(legacy_to_qos_step))
-		return MMDVFS_FINE_STEP_UNREQUEST;
-
-	return legacy_to_qos_step[opp].qos_step;
-}
-
-void mmdvfs_qos_update(struct mmdvfs_step_util *step_util, int new_step)
-{
-	int i;
-	int *concur = step_util->mmdvfs_concurrency_of_opps;
-
-	i = ARRAY_SIZE(qos_apply_profiles) - 1;
-	if (qos_apply_profiles[i].smi_scenario_id == QOS_ALL_SCENARIO) {
-		MMDVFSDEBUG(5, "force update qos step: %d\n", new_step);
-		mmdvfs_qos_force_step(get_qos_step(new_step));
-		return;
-	}
-	for (i = 0; i < MMDVFS_OPP_NUM_LIMITATION; i++) {
-		if (mask_concur[i] & concur[i]) {
-			/* scenario matched, check */
-			MMDVFSDEBUG(5, "qos match,S(%d,%d,0x%0x,0x%0x)\n",
-				new_step, i, mask_concur[i],
-				step_util->mmdvfs_concurrency_of_opps[i]);
-			mmdvfs_qos_force_step(get_qos_step(i));
-			return;
-		}
-	}
-	/* No scenario is matched, cancel qos step anyway */
-	mmdvfs_qos_force_step(get_qos_step(MMDVFS_FINE_STEP_UNREQUEST));
-}
-
-static void update_qos_scenario(void)
-{
-	int i;
-
-	memset(&mask_concur, 0, sizeof(mask_concur));
-	for (i = 0; i < ARRAY_SIZE(qos_apply_profiles); i++) {
-		int opp = qos_apply_profiles[i].mask_opp;
-
-		if (opp >= MMDVFS_OPP_NUM_LIMITATION || opp < 0)
-			continue;
-		mask_concur[opp] |= (1 << qos_apply_profiles[i].smi_scenario_id);
-	}
-}
-
-int set_qos_scenario(const char *val, const struct kernel_param *kp)
-{
-	int i, result, scenario, opp;
-
-	result = sscanf(val, "%d %d", &scenario, &opp);
-	if (result != 2) {
-		MMDVFSMSG("invalid input: %s, result(%d)\n", val, result);
-		return -EINVAL;
-	}
-	if (scenario != QOS_ALL_SCENARIO &&
-		(scenario < 0 || scenario > MMDVFS_SCEN_COUNT)) {
-		MMDVFSMSG("scenario %d not in %d~%d\n", scenario, 0, MMDVFS_SCEN_COUNT);
-		return -EINVAL;
-	}
-	if (opp < MMDVFS_FINE_STEP_UNREQUEST || opp > MMDVFS_FINE_STEP_OPP5) {
-		MMDVFSMSG("opp %d not in %d~%d\n", opp,
-			MMDVFS_FINE_STEP_UNREQUEST, MMDVFS_FINE_STEP_OPP5);
-		return -EINVAL;
-	}
-	/* only update latest debug entry */
-	i = ARRAY_SIZE(qos_apply_profiles) - 1;
-	qos_apply_profiles[i].smi_scenario_id = scenario;
-	qos_apply_profiles[i].mask_opp = opp;
-
-	update_qos_scenario();
-	return 0;
-}
-
-int get_qos_scenario(char *buf, const struct kernel_param *kp)
-{
-	int i, off = 0;
-
-	for (i = 0; i < ARRAY_SIZE(qos_apply_profiles); i++) {
-		off += snprintf(buf + off, PAGE_SIZE - off,
-			"[%d]%s: %d / %d\n", i,
-			qos_apply_profiles[i].profile_name,
-			qos_apply_profiles[i].smi_scenario_id,
-			qos_apply_profiles[i].mask_opp);
-	}
-	buf[off] = '\0';
-	return off;
-}
-#endif

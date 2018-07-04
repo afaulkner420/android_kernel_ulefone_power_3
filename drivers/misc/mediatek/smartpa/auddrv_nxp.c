@@ -50,6 +50,9 @@
  *****************************************************************************/
 #include "auddrv_nxp.h"
 #include <linux/gpio.h>
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
+
 
 #define I2C_MASTER_CLOCK       (400000)
 #define NXPEXTSPK_I2C_DEVNAME "mtksmartpa"
@@ -63,6 +66,9 @@
 
 
 #define RW_BUFFER_LENGTH (256)
+#define TFA_I2CSLAVEBASE        0x34
+#define TFA_I2CSLAVEBASE_R      0x34
+
 
 /*****************************************************************************
 *           V A R I A B L E     D E L A R A T I O N
@@ -167,10 +173,21 @@ static long AudDrv_nxpspk_ioctl(struct file *fp, unsigned int cmd, unsigned long
 	int ret = 0;
 
 	switch (cmd) {
-	default: {
-		ret = -1;
-		break;
-	}
+      /* This part do not work ok now , it is used for stereo application. */
+        case I2C_SLAVE:
+        case I2C_SLAVE_FORCE:
+            if((arg == TFA_I2CSLAVEBASE) ||(arg == TFA_I2CSLAVEBASE_R))
+            {
+                //new_client->client->addr = arg;
+                return 0;
+            }
+            else
+                return -1;
+
+        default:
+            printk("%s bad ioctl %u\n", __func__, cmd);
+            return -EINVAL;
+
 	}
 	return ret;
 }

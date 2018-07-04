@@ -46,12 +46,6 @@ extern unsigned int	soidle_profile[4];
 			pr_debug(SODI_TAG fmt, ##args);		\
 	} while (0)
 
-#if defined(CONFIG_MACH_MT6763) || defined(CONFIG_MACH_MT6739)
-#define SUPPORT_SW_SET_SPM_MEMEPLL_MODE
-#else
-#undef SUPPORT_SW_SET_SPM_MEMEPLL_MODE
-#endif
-
 enum spm_sodi_step {
 	SPM_SODI_ENTER = 0,
 	SPM_SODI_ENTER_SSPM_ASYNC_IPI_BEFORE_WFI,
@@ -109,11 +103,6 @@ void spm_trigger_wfi_for_sodi(u32 pcm_flags);
 unsigned int spm_sodi_output_log(
 	struct wake_status *wakesta, struct pcm_desc *pcmdesc,
 	u32 sodi_flags, u32 operation_cond);
-
-extern void spm_sodi_post_process(void);
-extern void spm_sodi_pre_process(struct pwr_ctrl *pwrctrl, u32 operation_cond);
-extern void spm_sodi_pcm_setup_before_wfi(
-		u32 cpu, struct pcm_desc *pcmdesc, struct pwr_ctrl *pwrctrl, u32 operation_cond);
 
 #endif /* __MTK_SPM_SODI_H__ */
 

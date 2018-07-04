@@ -102,7 +102,7 @@
 
 #endif
 
-static struct afe_mem_control_t *pMemControl;
+static AFE_MEM_CONTROL_T *pMemControl;
 static unsigned int mPlaybackDramState;
 static struct snd_dma_buffer *Dl1_Playback_dma_buf;
 
@@ -364,7 +364,7 @@ static int mtk_pcm_copy(struct snd_pcm_substream *substream,
 			int channel, snd_pcm_uframes_t pos,
 			void __user *dst, snd_pcm_uframes_t count)
 {
-	struct afe_block_t *Afe_Block = NULL;
+	AFE_BLOCK_T *Afe_Block = NULL;
 	int copy_size = 0, Afe_WriteIdx_tmp;
 	unsigned long flags;
 	/* struct snd_pcm_runtime *runtime = substream->runtime; */
@@ -651,9 +651,6 @@ static int mtk_soc_dl1_probe(struct platform_device *pdev)
 #else
 	ret = Register_Aud_Irq(&pdev->dev, MT6735_AFE_MCU_IRQ_LINE);
 #endif
-
-	/* config smartpa gpio pins, set initial state : SMARTPA_OFF */
-	AudDrv_GPIO_SMARTPA_Select(0);
 
 	return snd_soc_register_platform(&pdev->dev, &mtk_soc_platform);
 }

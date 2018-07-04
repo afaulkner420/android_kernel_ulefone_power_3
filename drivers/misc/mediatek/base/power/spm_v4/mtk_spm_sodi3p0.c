@@ -19,7 +19,8 @@
 #include <linux/slab.h>
 #include <mt-plat/mtk_secure_api.h>
 
-#include <mtk_gpt.h>
+/* #include <mach/irqs.h> */
+#include <mach/mtk_gpt.h>
 #if defined(CONFIG_MTK_WATCHDOG) && defined(CONFIG_MTK_WD_KICKER)
 #include <mach/wd_api.h>
 #endif
@@ -28,33 +29,26 @@
 #if defined(CONFIG_MTK_SYS_CIRQ)
 #include <mt-plat/mtk_cirq.h>
 #endif
-#if defined(CONFIG_MTK_PMIC) || defined(CONFIG_MTK_PMIC_NEW_ARCH)
 #include <mt-plat/upmu_common.h>
-#endif
-
-#if defined(CONFIG_MACH_MT6739)
-#include <mtk_pmic_api_buck.h>
-#include <mt-plat/mtk_rtc.h>
-#endif
-
 #include <mt-plat/mtk_io.h>
 
 #include <mtk_spm_sodi3.h>
 #include <mtk_spm_resource_req.h>
 #include <mtk_spm_resource_req_internal.h>
 #include <mtk_spm_pmic_wrap.h>
+#include <mtk_spm_vcore_dvfs.h>
 
 #include <mtk_power_gs_api.h>
 
 #include <trace/events/mtk_idle_event.h>
 
 #include <mtk_idle_internal.h>
-#include <mtk_idle_profile.h>
 
 #ifdef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
 #include <sspm_define.h>
 #include <sspm_timesync.h>
 #endif
+
 
 /**************************************
  * only for internal debug
@@ -73,6 +67,30 @@ struct spm_lp_scen __spm_sodi3 = {
 };
 
 static bool gSpm_sodi3_en = true;
+
+static void spm_sodi3_pre_process(struct pwr_ctrl *pwrctrl, u32 operation_cond)
+{
+#ifndef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
+	mt_spm_pmic_wrap_set_phase(PMIC_WRAP_PHASE_ALLINONE);
+
+	spm_pmic_power_mode(PMIC_PWR_SODI3, 0, 0);
+#endif
+
+#if defined(CONFIG_MACH_MT6763)
+	dvfsrc_md_scenario_update(1);
+#endif
+}
+
+static void spm_sodi3_post_process(void)
+{
+#if defined(CONFIG_MACH_MT6763)
+	dvfsrc_md_scenario_update(0);
+#endif
+
+#ifndef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
+	mt_spm_pmic_wrap_set_phase(PMIC_WRAP_PHASE_ALLINONE);
+#endif
+}
 
 #ifdef CONFIG_MTK_TINYSYS_SSPM_SUPPORT
 static void spm_sodi3_notify_sspm_before_wfi(struct pwr_ctrl *pwrctrl, u32 operation_cond)
@@ -144,12 +162,6 @@ static void spm_sodi3_notify_sspm_after_wfi_async_wait(void)
 #else /* CONFIG_MTK_TINYSYS_SSPM_SUPPORT */
 static void spm_sodi3_notify_sspm_before_wfi(struct pwr_ctrl *pwrctrl, u32 operation_cond)
 {
-#if defined(CONFIG_MACH_MT6739)
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
-	wk_auxadc_bgd_ctrl(0);
-	rtc_clock_enable(0);
-#endif
-#endif
 }
 
 static void spm_sodi3_notify_sspm_before_wfi_async_wait(void)
@@ -158,18 +170,30 @@ static void spm_sodi3_notify_sspm_before_wfi_async_wait(void)
 
 static void spm_sodi3_notify_sspm_after_wfi(u32 operation_cond)
 {
-#if defined(CONFIG_MACH_MT6739)
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
-	rtc_clock_enable(1);
-	wk_auxadc_bgd_ctrl(1);
-#endif
-#endif
 }
 
 static void spm_sodi3_notify_sspm_after_wfi_async_wait(void)
 {
 }
 #endif /* CONFIG_MTK_TINYSYS_SSPM_SUPPORT */
+
+static void spm_sodi3_pcm_setup_before_wfi(
+	u32 cpu, struct pcm_desc *pcmdesc, struct pwr_ctrl *pwrctrl, u32 operation_cond)
+{
+	unsigned int resource_usage;
+
+	spm_sodi3_pre_process(pwrctrl, operation_cond);
+
+	__spm_sync_pcm_flags(pwrctrl);
+
+	/* Get SPM resource request and update reg_spm_xxx_req */
+	resource_usage = spm_get_resource_usage();
+
+	mt_secure_call(MTK_SIP_KERNEL_SPM_SODI_ARGS,
+		pwrctrl->pcm_flags, resource_usage, pwrctrl->timer_val);
+	mt_secure_call(MTK_SIP_KERNEL_SPM_PWR_CTRL_ARGS,
+		SPM_PWR_CTRL_SODI3, PWR_WDT_DISABLE, pwrctrl->wdt_disable);
+}
 
 static void spm_sodi3_pcm_setup_after_wfi(struct pwr_ctrl *pwrctrl, u32 operation_cond)
 {
@@ -211,18 +235,6 @@ static void spm_sodi3_resume_wdt(struct pwr_ctrl *pwrctrl, void *api)
 #endif
 }
 
-static void spm_sodi3_atf_time_sync(void)
-{
-	/* Get local_clock and sync to ATF */
-	u64 time_to_sync = local_clock();
-
-#ifdef CONFIG_ARM64
-	mt_secure_call(MTK_SIP_KERNEL_TIME_SYNC, time_to_sync, 0, 0);
-#else
-	mt_secure_call(MTK_SIP_KERNEL_TIME_SYNC, (u32)time_to_sync, (u32)(time_to_sync >> 32), 0);
-#endif
-}
-
 unsigned int spm_go_to_sodi3(u32 spm_flags, u32 spm_data, u32 sodi3_flags)
 {
 	void *api = NULL;
@@ -234,8 +246,7 @@ unsigned int spm_go_to_sodi3(u32 spm_flags, u32 spm_data, u32 sodi3_flags)
 	unsigned int wr = WR_NONE;
 	struct pcm_desc *pcmdesc = NULL;
 	struct pwr_ctrl *pwrctrl = __spm_sodi3.pwrctrl;
-	u32 cpu = smp_processor_id();
-	u32 spm_flags1 = spm_data;
+	u32 cpu = spm_data;
 	unsigned int operation_cond = 0;
 
 	spm_sodi3_footprint(SPM_SODI3_ENTER);
@@ -244,18 +255,13 @@ unsigned int spm_go_to_sodi3(u32 spm_flags, u32 spm_data, u32 sodi3_flags)
 	operation_cond |= soidle_pre_handler();
 	profile_so3_end(PIDX_PRE_HANDLER);
 
-#ifdef SUPPORT_SW_SET_SPM_MEMEPLL_MODE
 	if (spm_get_sodi_mempll() == 1)
 		spm_flags |= SPM_FLAG_SODI_CG_MODE; /* CG mode */
 	else
 		spm_flags &= ~SPM_FLAG_SODI_CG_MODE; /* PDN mode */
-#endif
 
 	set_pwrctrl_pcm_flags(pwrctrl, spm_flags);
-
-	__sync_big_buck_ctrl_pcm_flag(&spm_flags1);
-	__sync_vcore_ctrl_pcm_flag(operation_cond, &spm_flags1);
-	set_pwrctrl_pcm_flags1(pwrctrl, spm_flags1);
+	/* set_pwrctrl_pcm_flags1(pwrctrl, spm_data); */
 
 	pwrctrl->timer_val = PCM_SEC_TO_TICK(2);
 
@@ -302,10 +308,10 @@ unsigned int spm_go_to_sodi3(u32 spm_flags, u32 spm_data, u32 sodi3_flags)
 			goto RESTORE_IRQ;
 		}
 	}
+#endif
 
 	if (sodi3_flags & SODI_FLAG_DUMP_LP_GS)
 		mt_power_gs_dump_sodi3(GS_ALL);
-#endif
 
 	spm_sodi3_footprint_val((1 << SPM_SODI3_ENTER_WFI) |
 		(1 << SPM_SODI3_B4) | (1 << SPM_SODI3_B5) | (1 << SPM_SODI3_B6));
@@ -368,8 +374,6 @@ RESTORE_IRQ:
 	profile_so3_end(PIDX_POST_HANDLER);
 
 	spm_sodi3_resume_wdt(pwrctrl, api);
-
-	spm_sodi3_atf_time_sync();
 
 	profile_so3_start(PIDX_SSPM_AFTER_WFI_ASYNC_WAIT);
 	spm_sodi3_notify_sspm_after_wfi_async_wait();

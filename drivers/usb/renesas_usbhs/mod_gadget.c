@@ -37,7 +37,6 @@ struct usbhsg_gpriv;
 struct usbhsg_uep {
 	struct usb_ep		 ep;
 	struct usbhs_pipe	*pipe;
-	spinlock_t		lock;	/* protect the pipe */
 
 	char ep_name[EP_NAME_SIZE];
 
@@ -639,25 +638,16 @@ usbhsg_ep_enable_end:
 static int usbhsg_ep_disable(struct usb_ep *ep)
 {
 	struct usbhsg_uep *uep = usbhsg_ep_to_uep(ep);
-	struct usbhs_pipe *pipe;
-	unsigned long flags;
-	int ret = 0;
+	struct usbhs_pipe *pipe = usbhsg_uep_to_pipe(uep);
 
-	spin_lock_irqsave(&uep->lock, flags);
-	pipe = usbhsg_uep_to_pipe(uep);
-	if (!pipe) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (!pipe)
+		return -EINVAL;
 
 	usbhsg_pipe_disable(uep);
 	usbhs_pipe_free(pipe);
 
 	uep->pipe->mod_private	= NULL;
 	uep->pipe		= NULL;
-
-out:
-	spin_unlock_irqrestore(&uep->lock, flags);
 
 	return 0;
 }
@@ -708,11 +698,8 @@ static int usbhsg_ep_dequeue(struct usb_ep *ep, struct usb_request *req)
 {
 	struct usbhsg_uep *uep = usbhsg_ep_to_uep(ep);
 	struct usbhsg_request *ureq = usbhsg_req_to_ureq(req);
-	struct usbhs_pipe *pipe;
-	unsigned long flags;
+	struct usbhs_pipe *pipe = usbhsg_uep_to_pipe(uep);
 
-	spin_lock_irqsave(&uep->lock, flags);
-	pipe = usbhsg_uep_to_pipe(uep);
 	if (pipe)
 		usbhs_pkt_pop(pipe, usbhsg_ureq_to_pkt(ureq));
 
@@ -721,7 +708,6 @@ static int usbhsg_ep_dequeue(struct usb_ep *ep, struct usb_request *req)
 	 * even if the pipe is NULL.
 	 */
 	usbhsg_queue_pop(uep, ureq, -ECONNRESET);
-	spin_unlock_irqrestore(&uep->lock, flags);
 
 	return 0;
 }
@@ -868,10 +854,10 @@ static int usbhsg_try_stop(struct usbhs_priv *priv, u32 status)
 {
 	struct usbhsg_gpriv *gpriv = usbhsg_priv_to_gpriv(priv);
 	struct usbhs_mod *mod = usbhs_mod_get_current(priv);
-	struct usbhsg_uep *uep;
+	struct usbhsg_uep *dcp = usbhsg_gpriv_to_dcp(gpriv);
 	struct device *dev = usbhs_priv_to_dev(priv);
 	unsigned long flags;
-	int ret = 0, i;
+	int ret = 0;
 
 	/********************  spin lock ********************/
 	usbhs_lock(priv, flags);
@@ -903,9 +889,7 @@ static int usbhsg_try_stop(struct usbhs_priv *priv, u32 status)
 	usbhs_sys_set_test_mode(priv, 0);
 	usbhs_sys_function_ctrl(priv, 0);
 
-	/* disable all eps */
-	usbhsg_for_each_uep_with_dcp(uep, gpriv, i)
-		usbhsg_ep_disable(&uep->ep);
+	usbhsg_ep_disable(&dcp->ep);
 
 	dev_dbg(dev, "stop gadget\n");
 
@@ -1088,7 +1072,6 @@ int usbhs_mod_gadget_probe(struct usbhs_priv *priv)
 		ret = -ENOMEM;
 		goto usbhs_mod_gadget_probe_err_gpriv;
 	}
-	spin_lock_init(&uep->lock);
 
 	gpriv->transceiver = usb_get_phy(USB_PHY_TYPE_UNDEFINED);
 	dev_info(dev, "%stransceiver found\n",

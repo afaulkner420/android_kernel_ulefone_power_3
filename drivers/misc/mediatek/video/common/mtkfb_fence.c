@@ -189,13 +189,15 @@ static struct disp_session_sync_info *_get_session_sync_info(unsigned int sessio
 			sprintf(name, "%s%d_waitvsync", disp_session_mode_spy(session_id),
 				DISP_SESSION_DEV(session_id));
 			dprec_logger_event_init(&session_info->event_waitvsync, name,
-						DPREC_LOGGER_LEVEL_DEFAULT,
+						DPREC_LOGGER_LEVEL_DEFAULT |
+						DPREC_LOGGER_LEVEL_SYSTRACE,
 						&session_info->event_prepare.mmp);
 
 			sprintf(name, "%s%d_err", disp_session_mode_spy(session_id),
 				DISP_SESSION_DEV(session_id));
 			dprec_logger_event_init(&session_info->event_err, name,
-						DPREC_LOGGER_LEVEL_DEFAULT,
+						DPREC_LOGGER_LEVEL_DEFAULT |
+						DPREC_LOGGER_LEVEL_SYSTRACE,
 						&session_info->event_prepare.mmp);
 
 			for (j = 0; j < (sizeof(session_info->session_layer_info) /
@@ -365,7 +367,6 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client, struct ion_hand
 				      unsigned int *mva)
 {
 	size_t size;
-	ion_phys_addr_t phy_addr;
 
 	if (!ion_client) {
 		MTKFB_FENCE_ERR("invalid ion client!\n");
@@ -374,8 +375,7 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client, struct ion_hand
 	if (!handle)
 		return 0;
 
-	ion_phys(client, handle, &phy_addr, &size);
-	*mva = (unsigned int)phy_addr;
+	ion_phys(client, handle, (ion_phys_addr_t *) mva, &size);
 	MTKFB_FENCE_LOG("alloc mmu addr hnd=0x%p,mva=0x%08x\n", handle, (unsigned int)*mva);
 	return size;
 }

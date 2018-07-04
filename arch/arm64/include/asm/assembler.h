@@ -108,15 +108,6 @@
 	.endm
 
 /*
- * NOP sequence
- */
-	.macro	nops, num
-	.rept	\num
-	nop
-	.endr
-	.endm
-
-/*
  * Emit an entry into the exception table
  */
 	.macro		_asm_extable, from, to
@@ -223,25 +214,14 @@ lr	.req	x30		// link register
 	.endm
 
 	/*
-	 * @dst: Result of per_cpu(sym, smp_processor_id())
 	 * @sym: The name of the per-cpu variable
+	 * @reg: Result of per_cpu(sym, smp_processor_id())
 	 * @tmp: scratch register
 	 */
-	.macro adr_this_cpu, dst, sym, tmp
-	adr_l	\dst, \sym
+	.macro this_cpu_ptr, sym, reg, tmp
+	adr_l	\reg, \sym
 	mrs	\tmp, tpidr_el1
-	add	\dst, \dst, \tmp
-	.endm
-
-	/*
-	 * @dst: Result of READ_ONCE(per_cpu(sym, smp_processor_id()))
-	 * @sym: The name of the per-cpu variable
-	 * @tmp: scratch register
-	 */
-	.macro ldr_this_cpu dst, sym, tmp
-	adr_l	\dst, \sym
-	mrs	\tmp, tpidr_el1
-	ldr	\dst, [\dst, \tmp]
+	add	\reg, \reg, \tmp
 	.endm
 
 /*
@@ -403,11 +383,15 @@ alternative_endif
  */
 	.macro	post_ttbr0_update_workaround
 #ifdef CONFIG_CAVIUM_ERRATUM_27456
-alternative_if ARM64_WORKAROUND_CAVIUM_27456
+alternative_if_not ARM64_WORKAROUND_CAVIUM_27456
+	nop
+	nop
+	nop
+alternative_else
 	ic	iallu
 	dsb	nsh
 	isb
-alternative_else_nop_endif
+alternative_endif
 #endif
 	.endm
 

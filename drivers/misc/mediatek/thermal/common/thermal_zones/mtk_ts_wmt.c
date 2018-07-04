@@ -68,9 +68,9 @@ struct linux_thermal_ctrl_if {
 	struct thermal_cooling_device *cl_pa2_dev;
 };
 
-struct wmt_tm_t {
+typedef struct wmt_tm {
 	struct linux_thermal_ctrl_if linux_if;
-};
+} wmt_tm_t;
 
 struct wmt_stats {
 	unsigned long pre_time;
@@ -115,7 +115,8 @@ static unsigned int tm_pid;
 static unsigned int tm_input_pid;
 static unsigned int tm_wfd_stat;
 /* static unsigned int wifi_in_soc = 0; */
-static struct task_struct *pg_task;
+static struct task_struct g_task;
+static struct task_struct *pg_task = &g_task;
 
 /* + Cooler info + */
 static int g_num_trip;
@@ -150,8 +151,8 @@ static unsigned int g_trip_temp[COOLER_NUM] = { 125000, 115000, 105000, 85000, 0
 static int g_thermal_trip[COOLER_NUM] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* - Cooler info - */
 
-static struct wmt_tm_t g_wmt_tm;
-static struct wmt_tm_t *pg_wmt_tm = &g_wmt_tm;
+wmt_tm_t g_wmt_tm;
+wmt_tm_t *pg_wmt_tm = &g_wmt_tm;
 
 #define init_wifi_tput_ratio (100)
 
@@ -216,9 +217,6 @@ static int wmt_send_signal(int level)
 
 	if (ret == 0 && tm_input_pid != tm_pid) {
 		tm_pid = tm_input_pid;
-
-		if (pg_task != NULL)
-			put_task_struct(pg_task);
 		pg_task = get_pid_task(find_vpid(tm_pid), PIDTYPE_PID);
 	}
 
@@ -1337,15 +1335,14 @@ static void mtkts_wmt_start_thermal_timer(void)
 	if (!isTimerCancelled)
 		return;
 
+	isTimerCancelled = 0;
 
 	if (down_trylock(&sem_mutex))
 		return;
 
-	if (p_linux_if->thz_dev != NULL && p_linux_if->interval != 0) {
+	if (p_linux_if->thz_dev != NULL && p_linux_if->interval != 0)
 		mod_delayed_work(system_freezable_power_efficient_wq, &(p_linux_if->thz_dev->poll_queue),
 				 round_jiffies(msecs_to_jiffies(2000)));
-		isTimerCancelled = 0;
-	}
 	up(&sem_mutex);
 }
 

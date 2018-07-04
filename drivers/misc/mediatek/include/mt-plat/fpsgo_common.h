@@ -90,17 +90,8 @@ int fpsgo_fstb_sample_window(long long time_usec);
 int fpsgo_fstb_fps_range(int nr_level, struct fps_level *level);
 int fpsgo_fstb_fps_error_threhosld(int threshold);
 int fpsgo_fstb_percentile_frametime(int ratio);
-int fpsgo_fstb_force_vag(int arg);
-int fpsgo_fstb_vag_fps(int arg);
 
 int fpsgo_switch_fbt_game(int);
-void fpsgo_switch_fbt_ux(int);
-void fpsgo_game_enable(int);
-
-void fpsgo_switch_twanted(int);
-void fpsgo_switch_init_boost(int);
-void fpsgo_switch_ema(int);
-void fpsgo_switch_super_boost(int);
 
 int fbt_cpu_set_bhr(int new_bhr);
 int fbt_cpu_set_bhr_opp(int new_opp);
@@ -139,17 +130,8 @@ static inline int fpsgo_fstb_sample_window(long long time_usec) { return 0; }
 static inline int fpsgo_fstb_fps_range(int nr_level, struct fps_level *level) { return 0; }
 static inline int fpsgo_fstb_fps_error_threhosld(int threshold) { return 0; }
 static inline int fpsgo_fstb_percentile_frametime(int ratio) { return 0; }
-static inline int fpsgo_fstb_force_vag(int arg) { return 0; }
-static inline int fpsgo_fstb_vag_fps(int arg) { return 0; }
 
 static inline int fpsgo_switch_fbt_game(int en) { return 0; }
-static inline void fpsgo_switch_fbt_ux(int arg) { }
-static inline void fpsgo_game_enable(int arg) {}
-
-static inline void fpsgo_switch_twanted(int arg) { }
-static inline void fpsgo_switch_init_boost(int arg) { }
-static inline void fpsgo_switch_ema(int arg) { }
-static inline void fpsgo_switch_super_boost(int arg) { }
 
 static inline int fbt_cpu_set_bhr(int new_bhr) { return 0; }
 static inline int fbt_cpu_set_bhr_opp(int new_opp) { return 0; }
@@ -163,13 +145,9 @@ static inline int fbt_cpu_set_floor_opp(int new_opp) { return 0; }
 #endif
 
 #ifdef CONFIG_MTK_FPSGO_FBT_GAME
-void xgf_igather_timer(const void * const, int);
-void xgf_qudeq_notify(unsigned int cmd, unsigned long arg);
-void fpsgo_update_render_dep(struct task_struct *p);
+void xgf_igather_timer(const struct hrtimer * const, int);
 #else
-static inline void xgf_igather_timer(const void * const t, int v) { }
-static inline void xgf_qudeq_notify(unsigned int cmd, unsigned long arg) { }
-static inline void fpsgo_update_render_dep(struct task_struct *p) { }
+static inline void xgf_igather_timer(const struct hrtimer * const t, int v) { }
 #endif
 
 #endif

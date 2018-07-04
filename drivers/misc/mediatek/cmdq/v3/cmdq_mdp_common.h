@@ -19,15 +19,6 @@
 
 #include <linux/types.h>
 
-/* for debug share sram clock */
-extern atomic_t g_mdp_wrot0_usage;
-
-/* runtime pm to probe MDP device */
-typedef s32 (*CmdqMDPProbe) (void);
-
-void mdp_init(void);
-void mdp_deinit(void);
-
 /* dump mmsys config */
 typedef void (*CmdqDumpMMSYSConfig) (void);
 
@@ -82,12 +73,7 @@ typedef const char *(*CmdqPraseErrorModByEngFlag) (const struct TaskStruct *task
 
 typedef u64 (*CmdqMdpGetEngineGroupBits) (u32 engine_group);
 
-typedef void (*CmdqMdpEnableCommonClock) (bool enable);
-/* meansure task bandwidth for pmqos */
-typedef u32(*CmdqMdpMeansureBandwidth) (u32 bandwidth);
-
 struct cmdqMDPFuncStruct {
-	CmdqMDPProbe mdp_probe;
 	CmdqDumpMMSYSConfig dumpMMSYSConfig;
 	CmdqVEncDumpInfo vEncDumpInfo;
 	CmdqMdpInitModuleBaseVA initModuleBaseVA;
@@ -111,31 +97,6 @@ struct cmdqMDPFuncStruct {
 	CmdqPraseErrorModByEngFlag parseErrModByEngFlag;
 	CmdqMdpGetEngineGroupBits getEngineGroupBits;
 	CmdqErrorResetCB errorReset;
-	CmdqMdpEnableCommonClock mdpEnableCommonClock;
-	CmdqMdpMeansureBandwidth meansureBandwidth;
-	CmdqBeginTaskCB beginTask;
-	CmdqEndTaskCB endTask;
-	CmdqBeginTaskCB beginISPTask;
-	CmdqEndTaskCB endISPTask;
-	CmdqStartTaskCB_ATOMIC startTask_atomic;
-	CmdqFinishTaskCB_ATOMIC finishTask_atomic;
-};
-
-struct mdp_task {
-	struct list_head entry;
-	struct TaskStruct *cmdq_task;
-	u32 bandwidth;
-};
-
-struct mdp_context {
-	struct list_head mdp_tasks;
-	struct mdp_task *bandwidth_task;
-};
-
-struct mdp_pmqos_record {
-	uint32_t mdp_throughput;
-	struct timeval submit_tm;
-	struct timeval end_tm;
 };
 
 /* track MDP task */
@@ -145,7 +106,6 @@ struct mdp_pmqos_record {
 #define MDP_PORT_BUF_INFO_NUM (MDP_MAX_PLANE_NUM * 2) /* each plane has 2 info address and size */
 #define MDP_BUF_INFO_STR_LEN 8 /* each buf info length */
 #define MDP_DISPATCH_KEY_STR_LEN (TASK_COMM_LEN + 5) /* dispatch key format is MDP_(ThreadName) */
-#define MDP_TOTAL_THREAD 8
 
 struct cmdqMDPTaskStruct {
 	char callerName[TASK_COMM_LEN];
@@ -155,13 +115,7 @@ struct cmdqMDPTaskStruct {
 #ifdef __cplusplus
 extern "C" {
 #endif
-	void cmdq_mdp_init(void);
-	void cmdq_mdp_deinit(void);
-
 	void cmdq_mdp_virtual_function_setting(void);
-	void cmdq_mdp_map_mmsys_VA(void);
-	long cmdq_mdp_get_module_base_VA_MMSYS_CONFIG(void);
-	void cmdq_mdp_unmap_mmsys_VA(void);
 	struct cmdqMDPFuncStruct *cmdq_mdp_get_func(void);
 
 	void cmdq_mdp_enable(uint64_t engineFlag, enum CMDQ_ENG_ENUM engine);
@@ -189,8 +143,6 @@ extern "C" {
 	void cmdq_mdp_check_TF_address(unsigned int mva, char *module);
 	const char *cmdq_mdp_parse_error_module_by_hwflag(const struct TaskStruct *task);
 
-	s32 cmdq_mdp_dump_wrot0_usage(void);
-
 /**************************************************************************************/
 /*******************                    Platform dependent function                    ********************/
 /**************************************************************************************/
@@ -208,6 +160,8 @@ extern "C" {
 	uint32_t cmdq_mdp_rdma_get_reg_offset_src_addr(void);
 	uint32_t cmdq_mdp_wrot_get_reg_offset_dst_addr(void);
 	uint32_t cmdq_mdp_wdma_get_reg_offset_dst_addr(void);
+
+	long cmdq_mdp_get_module_base_VA_MDP_WROT0(void);
 
 	void testcase_clkmgr_mdp(void);
 

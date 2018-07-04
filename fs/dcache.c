@@ -274,6 +274,7 @@ void take_dentry_name_snapshot(struct name_snapshot *name, struct dentry *dentry
 	spin_lock(&dentry->d_lock);
 	if (unlikely(dname_external(dentry))) {
 		struct external_name *p = external_name(dentry);
+
 		atomic_inc(&p->u.count);
 		spin_unlock(&dentry->d_lock);
 		name->name = p->name;
@@ -289,6 +290,7 @@ void release_dentry_name_snapshot(struct name_snapshot *name)
 {
 	if (unlikely(name->name != name->inline_name)) {
 		struct external_name *p;
+
 		p = container_of(name->name, struct external_name, name[0]);
 		if (unlikely(atomic_dec_and_test(&p->u.count)))
 			kfree_rcu(p, u.head);
@@ -1155,12 +1157,11 @@ void shrink_dcache_sb(struct super_block *sb)
 		LIST_HEAD(dispose);
 
 		freed = list_lru_walk(&sb->s_dentry_lru,
-			dentry_lru_isolate_shrink, &dispose, 1024);
+			dentry_lru_isolate_shrink, &dispose, UINT_MAX);
 
 		this_cpu_sub(nr_dentry_unused, freed);
 		shrink_dentry_list(&dispose);
-		cond_resched();
-	} while (list_lru_count(&sb->s_dentry_lru) > 0);
+	} while (freed > 0);
 }
 EXPORT_SYMBOL(shrink_dcache_sb);
 
@@ -1350,11 +1351,8 @@ int d_set_mounted(struct dentry *dentry)
 	}
 	spin_lock(&dentry->d_lock);
 	if (!d_unlinked(dentry)) {
-		ret = -EBUSY;
-		if (!d_mountpoint(dentry)) {
-			dentry->d_flags |= DCACHE_MOUNTED;
-			ret = 0;
-		}
+		dentry->d_flags |= DCACHE_MOUNTED;
+		ret = 0;
 	}
  	spin_unlock(&dentry->d_lock);
 out:
@@ -1559,6 +1557,7 @@ void d_invalidate(struct dentry *dentry)
 			detach_mounts(data.mountpoint);
 			dput(data.mountpoint);
 		}
+
 		cond_resched();
 	}
 }

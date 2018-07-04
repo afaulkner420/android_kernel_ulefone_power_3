@@ -29,14 +29,6 @@ static inline u32 pe_get_ibat(void)
 	return battery_meter_get_battery_current() * 100;
 }
 
-static bool cancel_pe(struct charger_manager *pinfo)
-{
-	if (mtk_pdc_check_charger(pinfo) ||
-		mtk_is_TA_support_pd_pps(pinfo))
-		return true;
-	return false;
-}
-
 static int pe_enable_hw_vbus_ovp(struct charger_manager *pinfo, bool enable)
 {
 	int ret = 0;
@@ -59,8 +51,6 @@ static int pe_enable_vbus_ovp(struct charger_manager *pinfo, bool enable)
 		pr_err("%s: failed, ret = %d\n", __func__, ret);
 		return ret;
 	}
-
-	charger_enable_vbus_ovp(pinfo, enable);
 
 	return ret;
 }
@@ -208,19 +198,18 @@ static int pe_increase_ta_vchr(struct charger_manager *pinfo, u32 vchr_target)
 		vchr_before = pe_get_vbus();
 		__pe_increase_ta_vchr(pinfo);
 		vchr_after = pe_get_vbus();
-		//modify XLLSHLSS-5 by zhipeng.pan 20180202 start
-		if (abs(vchr_after - vchr_target) <= 1200000) {
+
+		if (abs(vchr_after - vchr_target) <= 1000000) {
 			pr_err("%s: OK\n", __func__);
 			return ret;
 		}
-		//modify XLLSHLSS-5 by zhipeng.pan 20180202 end
 		pr_err("%s: retry, cnt = %d, vchr = (%d, %d), vchr_target = %d\n",
 			__func__, retry_cnt, vchr_before / 1000,
 			vchr_after / 1000, vchr_target / 1000);
 
 		retry_cnt++;
 	} while (mt_get_charger_type() != CHARGER_UNKNOWN && retry_cnt < 3 &&
-		pinfo->enable_hv_charging && cancel_pe(pinfo) != true);
+		pinfo->enable_hv_charging);
 
 	ret = -EIO;
 	pr_err("%s: failed, vchr = (%d, %d), vchr_target = %d\n",
@@ -259,8 +248,8 @@ static int pe_detect_ta(struct charger_manager *pinfo)
 	/* Enable OVP */
 	pe_enable_vbus_ovp(pinfo, true);
 
-	/* Set MIVR to 4.6V for vbus 5V */
-	pe_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+	/* Set MIVR to 4.5V for vbus 5V */
+	pe_set_mivr(pinfo, 4500000);
 
 _err:
 	pr_err("%s: failed, is_connect = %d\n",
@@ -352,9 +341,6 @@ int mtk_pe_reset_ta_vchr(struct charger_manager *pinfo)
 		retry_cnt++;
 	} while (retry_cnt < 3);
 
-	/* Set aicr to 500 mA after reset TA*/
-	ret = charger_dev_set_input_current(pinfo->chg1_dev, 500000);
-
 	if (pe->is_connect) {
 		pr_err("%s: failed, ret = %d\n", __func__, ret);
 		/*
@@ -367,7 +353,7 @@ int mtk_pe_reset_ta_vchr(struct charger_manager *pinfo)
 
 	/* Enable OVP */
 	ret = pe_enable_vbus_ovp(pinfo, true);
-	pe_set_mivr(pinfo, pinfo->data.min_charger_voltage);
+	pe_set_mivr(pinfo, 4500000);
 	pr_err("%s: OK\n", __func__);
 
 	return ret;
@@ -419,9 +405,6 @@ int mtk_pe_check_charger(struct charger_manager *pinfo)
 	    pinfo->data.ta_stop_battery_soc <= battery_get_bat_soc())
 		goto _err;
 
-	if (cancel_pe(pinfo))
-		goto _err;
-
 	/* Reset/Init/Detect TA */
 	ret = mtk_pe_reset_ta_vchr(pinfo);
 	if (ret < 0)
@@ -429,9 +412,6 @@ int mtk_pe_check_charger(struct charger_manager *pinfo)
 
 	ret = pe_init_ta(pinfo);
 	if (ret < 0)
-		goto _err;
-
-	if (cancel_pe(pinfo))
 		goto _err;
 
 	ret = pe_detect_ta(pinfo);

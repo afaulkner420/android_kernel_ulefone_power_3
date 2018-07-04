@@ -15,10 +15,20 @@
 #ifndef __AP_THERMAL_LIMIT_H__
 #define __AP_THERMAL_LIMIT_H__
 
+/*
+* 1: turn on ATM TTJ_85C protection; 0: turn off
+* This is used for Thermal reboot protection
+* while Tskin control ATM disable in PPM.
+* Use another PPM API for reboot protection.
+*/
+#define ATM_TTJ_85_PROTECT				(0)
+
 struct apthermolmt_user {
 	char *log;
 	unsigned int cpu_limit;
-	unsigned int vpu_limit;
+#if ATM_TTJ_85_PROTECT
+	unsigned int cpu_limit_85c;
+#endif
 	unsigned int gpu_limit;
 	void *ptr;
 };
@@ -44,12 +54,14 @@ extern
 void apthermolmt_set_cpu_power_limit
 (struct apthermolmt_user *handle, unsigned int limit);
 
+#if ATM_TTJ_85_PROTECT
 /*
  *	@limit 0x7FFFFFFF for unlimit
  */
 extern
-void apthermolmt_set_vpu_power_limit
+void apthermolmt_set_cpu_power_limit_85C
 (struct apthermolmt_user *handle, unsigned int limit);
+#endif
 
 /*
  *	@limit 0x7FFFFFFF for unlimit
@@ -77,8 +89,5 @@ unsigned int apthermolmt_get_cpu_power_limit(void);
 
 extern
 unsigned int apthermolmt_get_gpu_power_limit(void);
-
-extern
-unsigned int apthermolmt_get_vpu_power_limit(void);
 
 #endif	/* __AP_THERMAL_LIMIT_H__ */

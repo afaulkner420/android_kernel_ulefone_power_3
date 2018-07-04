@@ -1534,7 +1534,6 @@ static int select_pmem_id(struct nd_region *nd_region, u8 *pmem_id)
 static int find_pmem_label_set(struct nd_region *nd_region,
 		struct nd_namespace_pmem *nspm)
 {
-	u64 altcookie = nd_region_interleave_set_altcookie(nd_region);
 	u64 cookie = nd_region_interleave_set_cookie(nd_region);
 	struct nd_namespace_label *nd_label;
 	u8 select_id[NSLABEL_UUID_LEN];
@@ -1543,10 +1542,8 @@ static int find_pmem_label_set(struct nd_region *nd_region,
 	int rc = -ENODEV, l;
 	u16 i;
 
-	if (cookie == 0) {
-		dev_dbg(&nd_region->dev, "invalid interleave-set-cookie\n");
+	if (cookie == 0)
 		return -ENXIO;
-	}
 
 	/*
 	 * Find a complete set of labels by uuid.  By definition we can start
@@ -1555,24 +1552,13 @@ static int find_pmem_label_set(struct nd_region *nd_region,
 	for_each_label(l, nd_label, nd_region->mapping[0].labels) {
 		u64 isetcookie = __le64_to_cpu(nd_label->isetcookie);
 
-		if (isetcookie != cookie) {
-			dev_dbg(&nd_region->dev, "invalid cookie in label: %pUb\n",
-					nd_label->uuid);
-			if (isetcookie != altcookie)
-				continue;
+		if (isetcookie != cookie)
+			continue;
 
-			dev_dbg(&nd_region->dev, "valid altcookie in label: %pUb\n",
-					nd_label->uuid);
-		}
-
-		for (i = 0; nd_region->ndr_mappings; i++) {
-			if (has_uuid_at_pos(nd_region, nd_label->uuid, cookie, i))
-				continue;
-			if (has_uuid_at_pos(nd_region, nd_label->uuid, altcookie, i))
-				continue;
-			break;
-		}
-
+		for (i = 0; nd_region->ndr_mappings; i++)
+			if (!has_uuid_at_pos(nd_region, nd_label->uuid,
+						cookie, i))
+				break;
 		if (i < nd_region->ndr_mappings) {
 			/*
 			 * Give up if we don't find an instance of a

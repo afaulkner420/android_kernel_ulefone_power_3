@@ -85,7 +85,7 @@ static struct voice_ultra_info ultra_info = {
 	.capture_info_ready = false,
 };
 
-static struct audio_digital_pcm  Voice1Pcm = {
+static AudioDigitalPCM  Voice1Pcm = {
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
 	.mVbt16kModeSel  = Soc_Aud_VBT_16K_MODE_VBT_16K_MODE_DISABLE,
 	.mExtModemSel = Soc_Aud_EXT_MODEM_MODEM_2_USE_INTERNAL_MODEM,
@@ -100,7 +100,7 @@ static struct audio_digital_pcm  Voice1Pcm = {
 	.mModemPcmOn = false,
 };
 
-static struct audio_digital_pcm  Voice2IntPcm = {
+static AudioDigitalPCM  Voice2IntPcm = {
 	.mBclkOutInv = false,
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
 	.mVbt16kModeSel  = Soc_Aud_VBT_16K_MODE_VBT_16K_MODE_DISABLE,
@@ -229,7 +229,7 @@ static int send_ipi_enable(bool enable)
 #ifdef CONFIG_MTK_TINYSYS_SCP_SUPPORT
 #define VOICE_ULTRA_ENABLE_ID 1
 #define VOICE_ULTRA_DISABLE_ID 0
-	struct ipi_msg_t ipi_msg;
+	ipi_msg_t ipi_msg;
 
 	pr_warn("%s(), enable = %d\n", __func__, enable);
 

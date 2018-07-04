@@ -164,11 +164,6 @@ int _session_inited(struct disp_session_config config)
 	return 0;
 }
 
-int disp_mgr_has_mem_session(void)
-{
-	return has_memory_session;
-}
-
 int disp_create_session(struct disp_session_config *config)
 {
 	int ret = 0;
@@ -353,34 +348,38 @@ int _ioctl_prepare_present_fence(unsigned long arg)
 	void __user *argp = (void __user *)arg;
 	struct fence_data data;
 	struct disp_present_fence preset_fence_struct;
+	static unsigned int fence_idx;
 	struct disp_sync_info *layer_info = NULL;
-	int timeline_id;
+	int timeline_id = disp_sync_get_present_timeline_id();
 
 	if (copy_from_user(&preset_fence_struct, (void __user *)arg, sizeof(struct disp_present_fence))) {
 		pr_err("[FB Driver]: copy_from_user failed! line:%d\n", __LINE__);
 		return -EFAULT;
 	}
 
-	timeline_id = disp_sync_get_present_timeline_id(preset_fence_struct.session_id);
-	layer_info = _get_sync_info(preset_fence_struct.session_id, timeline_id);
-	if (layer_info == NULL) {
-		DISPERR("layer_info is null\n");
-		ret = -EFAULT;
-		return ret;
+	if (DISP_SESSION_TYPE(preset_fence_struct.session_id) != DISP_SESSION_PRIMARY) {
+		DISPERR("non-primary ask for present fence! session=0x%x\n",
+			preset_fence_struct.session_id);
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = 0;
+	} else {
+		layer_info = _get_sync_info(preset_fence_struct.session_id, timeline_id);
+		if (layer_info == NULL) {
+			DISPERR("layer_info is null\n");
+			ret = -EFAULT;
+			return ret;
+		}
+		/* create fence */
+		data.fence = MTK_FB_INVALID_FENCE_FD;
+		data.value = ++fence_idx;
+		ret = fence_create(layer_info->timeline, &data);
+		if (ret != 0) {
+			DISPPR_ERROR("%s%d,layer%d create Fence Object failed!\n",
+				     disp_session_mode_spy(preset_fence_struct.session_id),
+				     DISP_SESSION_DEV(preset_fence_struct.session_id), timeline_id);
+			ret = -EFAULT;
+		}
 	}
-
-	mutex_lock(&layer_info->sync_lock);
-	/* create fence */
-	data.fence = MTK_FB_INVALID_FENCE_FD;
-	data.value = ++prepare_present_fence_idx[DISP_SESSION_TYPE(preset_fence_struct.session_id) - 1];
-	ret = fence_create(layer_info->timeline, &data);
-	if (ret != 0) {
-		DISPPR_ERROR("%s%d,layer%d create Fence Object failed!\n",
-			     disp_session_mode_spy(preset_fence_struct.session_id),
-			     DISP_SESSION_DEV(preset_fence_struct.session_id), timeline_id);
-		ret = -EFAULT;
-	}
-	mutex_unlock(&layer_info->sync_lock);
 
 	preset_fence_struct.present_fence_fd = data.fence;
 	preset_fence_struct.present_fence_index = data.value;
@@ -388,11 +387,9 @@ int _ioctl_prepare_present_fence(unsigned long arg)
 		pr_err("[FB Driver]: copy_to_user failed! line:%d\n", __LINE__);
 		ret = -EFAULT;
 	}
-	if (DISP_SESSION_TYPE(preset_fence_struct.session_id) == DISP_SESSION_PRIMARY) {
-		mmprofile_log_ex(ddp_mmp_get_events()->primary_present_fence_get, MMPROFILE_FLAG_PULSE,
-			       preset_fence_struct.present_fence_fd,
-			       preset_fence_struct.present_fence_index);
-	}
+	mmprofile_log_ex(ddp_mmp_get_events()->present_fence_get, MMPROFILE_FLAG_PULSE,
+		       preset_fence_struct.present_fence_fd,
+		       preset_fence_struct.present_fence_index);
 	DISPPR_FENCE("P+/%s%d/L%d/id%d/fd%d\n",
 		     disp_session_mode_spy(preset_fence_struct.session_id),
 		     DISP_SESSION_DEV(preset_fence_struct.session_id), timeline_id,
@@ -416,7 +413,7 @@ int _ioctl_prepare_buffer(unsigned long arg, enum PREPARE_FENCE_TYPE type)
 	if (type == PREPARE_INPUT_FENCE)
 		DISPDBG("There is do nothing in input fence.\n");
 	else if (type == PREPARE_PRESENT_FENCE)
-		info.layer_id = disp_sync_get_present_timeline_id(info.session_id);
+		info.layer_id = disp_sync_get_present_timeline_id();
 	else if (type == PREPARE_OUTPUT_FENCE)
 		info.layer_id = disp_sync_get_output_timeline_id();
 	else
@@ -674,12 +671,7 @@ int disp_validate_ioctl_params(struct disp_frame_cfg_t *cfg)
 {
 	int i;
 
-	if ((DISP_SESSION_TYPE(cfg->session_id) != DISP_SESSION_PRIMARY) &&
-		(DISP_SESSION_TYPE(cfg->session_id) != DISP_SESSION_EXTERNAL) &&
-		(DISP_SESSION_TYPE(cfg->session_id) != DISP_SESSION_MEMORY)) {
-		disp_aee_print("unsupported session 0x%x\n", cfg->session_id);
-		return -1;
-	}
+	/* TODO: check session_id */
 
 	if (cfg->input_layer_num > _get_max_layer(cfg->session_id)) {
 		disp_aee_print("sess:0x%x layer_num %d>%d\n", cfg->session_id,
@@ -742,15 +734,9 @@ int disp_input_free_dirty_roi(struct disp_frame_cfg_t *cfg)
 {
 	int i;
 
-	for (i = 0; i < cfg->input_layer_num; i++) {
-		if (i >= _get_max_layer(cfg->session_id))
-			break;
-		if (!cfg->input_cfg[i].layer_enable || !cfg->input_cfg[i].dirty_roi_num)
-			break;
-
+	for (i = 0; i < cfg->input_layer_num; i++)
 		kfree(cfg->input_cfg[i].dirty_roi_addr);
-		cfg->input_cfg[i].dirty_roi_addr = NULL;
-	}
+
 	return 0;
 }
 
@@ -994,7 +980,7 @@ static long _ioctl_frame_config(unsigned long arg)
 	frame_node = frame_queue_node_create();
 	if (IS_ERR_OR_NULL(frame_node)) {
 		ret_val = ERR_PTR(-ENOMEM);
-		return PTR_ERR(ret_val);
+		goto Error;
 	}
 
 	frame_cfg = &frame_node->frame_cfg;	/* this is initialized correctly when get node from framequeue list */
@@ -1013,8 +999,7 @@ static long _ioctl_frame_config(unsigned long arg)
 	return __frame_config(frame_node);
 
 Error:
-	frame_queue_node_recycle(frame_node);
-
+	frame_queue_node_destroy(frame_node);
 	return PTR_ERR(ret_val);
 }
 
@@ -1243,8 +1228,6 @@ int _ioctl_set_scenario(unsigned long arg)
 		DISPERR("[FB]: copy_to_user failed! line:%d\n", __LINE__);
 		return -EFAULT;
 	}
-	if (scenario_cfg.scenario >= DISP_SCENARIO_NUM)
-		return -EINVAL;
 
 	if (DISP_SESSION_TYPE(scenario_cfg.session_id) == DISP_SESSION_PRIMARY)
 		ret = primary_display_set_scenario(scenario_cfg.scenario);
@@ -1277,7 +1260,7 @@ int set_session_mode(struct disp_session_config *config_info, int force)
 	} else {
 
 		if (has_memory_session)
-			primary_display_switch_mode_blocked(config_info->mode, config_info->session_id, 1);
+			primary_display_switch_mode_blocked(config_info->mode, config_info->session_id, 0);
 		else if (DISP_SESSION_TYPE(config_info->session_id) == DISP_SESSION_PRIMARY)
 			primary_display_switch_mode(config_info->mode, config_info->session_id, 0);
 		else

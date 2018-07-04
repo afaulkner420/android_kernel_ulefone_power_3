@@ -306,6 +306,8 @@ struct fsg_common {
 	struct completion	thread_notifier;
 	struct task_struct	*thread_task;
 
+	/* Callback functions. */
+	const struct fsg_operations	*ops;
 	/* Gadget's private data. */
 	void			*private_data;
 
@@ -403,11 +405,7 @@ static int fsg_set_halt(struct fsg_dev *fsg, struct usb_ep *ep)
 /* Caller must hold fsg->lock */
 static void wakeup_thread(struct fsg_common *common)
 {
-	/*
-	 * Ensure the reading of thread_wakeup_needed
-	 * and the writing of bh->state are completed
-	 */
-	smp_mb();
+	smp_wmb();	/* ensure the write of bh->state is complete */
 	/* Tell the main thread that something has happened */
 	common->thread_wakeup_needed = 1;
 	if (common->thread_task)
@@ -660,11 +658,7 @@ static int sleep_thread(struct fsg_common *common, bool can_freeze)
 	spin_lock_irq(&common->lock);
 	common->thread_wakeup_needed = 0;
 	spin_unlock_irq(&common->lock);
-	/*
-	 * Ensure the writing of thread_wakeup_needed
-	 * and the reading of bh->state are completed
-	 */
-	smp_mb();
+	smp_rmb();	/* ensure the latest bh->state is visible */
 	return rc;
 }
 
@@ -2582,7 +2576,6 @@ static void handle_exception(struct fsg_common *common)
 static int fsg_main_thread(void *common_)
 {
 	struct fsg_common	*common = common_;
-	int			i;
 
 	/*
 	 * Allow the thread to be killed by a signal, but set the signal mask
@@ -2644,16 +2637,22 @@ static int fsg_main_thread(void *common_)
 	common->thread_task = NULL;
 	spin_unlock_irq(&common->lock);
 
-	/* Eject media from all LUNs */
+	if (!common->ops || !common->ops->thread_exits
+	 || common->ops->thread_exits(common) < 0) {
+		int i;
 
-	down_write(&common->filesem);
-	for (i = 0; i < ARRAY_SIZE(common->luns); i++) {
-		struct fsg_lun *curlun = common->luns[i];
+		down_write(&common->filesem);
+		for (i = 0; i < ARRAY_SIZE(common->luns); --i) {
+			struct fsg_lun *curlun = common->luns[i];
 
-		if (curlun && fsg_lun_is_open(curlun))
+			if (!curlun || !fsg_lun_is_open(curlun))
+				continue;
+
 			fsg_lun_close(curlun);
+			curlun->unit_attention_data = SS_MEDIUM_NOT_PRESENT;
+		}
+		up_write(&common->filesem);
 	}
-	up_write(&common->filesem);
 
 	/* Let fsg_unbind() know the thread has exited */
 	complete_and_exit(&common->thread_notifier, 0);
@@ -2863,6 +2862,13 @@ void fsg_common_remove_luns(struct fsg_common *common)
 	_fsg_common_remove_luns(common, ARRAY_SIZE(common->luns));
 }
 EXPORT_SYMBOL_GPL(fsg_common_remove_luns);
+
+void fsg_common_set_ops(struct fsg_common *common,
+			const struct fsg_operations *ops)
+{
+	common->ops = ops;
+}
+EXPORT_SYMBOL_GPL(fsg_common_set_ops);
 
 void fsg_common_free_buffers(struct fsg_common *common)
 {

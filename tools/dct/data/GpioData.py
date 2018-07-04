@@ -1,17 +1,6 @@
 #! /usr/bin/python
 # -*- coding: utf-8 -*-
 
-# Copyright (C) 2016 MediaTek Inc.
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License version 2 as
-# published by the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See http://www.gnu.org/licenses/gpl-2.0.html for more details.
-
 class GpioData:
     _count = 0
     _modNum = 8
@@ -20,7 +9,6 @@ class GpioData:
     _mapList = []
     _modeMap = {}
     _smtMap = {}
-    _map_table = {}
 
     def __init__(self):
         self.__defMode = 0
@@ -129,10 +117,6 @@ class GpioData:
             return 0
         else:
             return 1
-
-    @staticmethod
-    def set_eint_map_table(map_table):
-        GpioData._map_table = map_table
 
     @staticmethod
     def get_modeName(key, idx):

@@ -525,7 +525,7 @@ static ssize_t tsbuck_write(struct file *file, const char __user *buffer, size_t
 	     &t_type[2], bind2, &trip[3], &t_type[3], bind3, &trip[4], &t_type[4], bind4, &trip[5],
 	     &t_type[5], bind5, &trip[6], &t_type[6], bind6, &trip[7], &t_type[7], bind7, &trip[8],
 	     &t_type[8], bind8, &trip[9], &t_type[9], bind9, &time_msec) == 32) {
-		down(&sem_mutex);
+	     down(&sem_mutex);
 		tsbuck_dprintk("[tsbuck_write] tsbuck_unregister_thermal\n");
 		tsbuck_unregister_thermal();
 

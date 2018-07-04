@@ -340,6 +340,29 @@ static unsigned long global_dirtyable_memory(void)
 	if (!vm_highmem_is_dirtyable)
 		x -= highmem_dirtyable_memory(x);
 
+	/*
+	 * movable zone is consider as memory backup pool,
+	 * remove movable zone from dirtyable memory count
+	 */
+	if (IS_ENABLED(CONFIG_ZONE_MOVABLE_CMA)) {
+		struct zone *z;
+		unsigned long dirtyable_memory = 0;
+
+		for_each_populated_zone(z) {
+			if (IS_ZONE_MOVABLE_CMA_ZONE(z))
+				dirtyable_memory += zone_dirtyable_memory(z);
+		}
+
+		if ((long)dirtyable_memory < 0)
+			dirtyable_memory = 0;
+
+		/*
+		 * Make sure that the number of movable pages is never larger
+		 * than the number of the total dirtyable memory.
+		 */
+		x -= min(x, dirtyable_memory);
+	}
+
 	return x + 1;	/* Ensure that we never return 0 */
 }
 
@@ -2001,11 +2024,11 @@ void laptop_mode_timer_fn(unsigned long data)
 	 * We want to write everything out, not just down to the dirty
 	 * threshold
 	 */
-	if (!bdi_has_dirty_io(q->backing_dev_info))
+	if (!bdi_has_dirty_io(&q->backing_dev_info))
 		return;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(wb, &q->backing_dev_info->wb_list, bdi_node)
+	list_for_each_entry_rcu(wb, &q->backing_dev_info.wb_list, bdi_node)
 		if (wb_has_dirty_io(wb))
 			wb_start_writeback(wb, nr_pages, true,
 					   WB_REASON_LAPTOP_TIMER);

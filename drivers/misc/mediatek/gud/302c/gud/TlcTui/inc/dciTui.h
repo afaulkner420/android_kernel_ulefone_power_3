@@ -73,29 +73,29 @@ union dci_cmd_payload_t {
 
 /* Command */
 struct dci_command_t {
-	u32 id;
+	volatile uint32_t id;
 	union dci_cmd_payload_t payload;
 };
 
 /* TUI frame buffer (output from NWd) */
-struct tuiAllocBuffer_t {
+typedef struct {
 	uint64_t    pa;
-};
+} tuiAllocBuffer_t;
 
 #define MAX_DCI_BUFFER_NUMBER 4
 
 /* Response */
 struct dci_response_t {
-	u32	id; /* must be command ID | RSP_ID_MASK */
+	volatile uint32_t	id; /* must be command ID | RSP_ID_MASK */
 	uint32_t		return_code;
 	union {
-		struct tuiAllocBuffer_t alloc_buffer[MAX_DCI_BUFFER_NUMBER];
+		tuiAllocBuffer_t alloc_buffer[MAX_DCI_BUFFER_NUMBER];
 	};
 };
 
 /* DCI buffer */
 struct tui_dci_msg_t {
-	u32     nwd_notif; /* Notification from TlcTui to DrTui */
+	volatile uint32_t     nwd_notif; /* Notification from TlcTui to DrTui */
 	struct dci_command_t  cmd_nwd;   /* Command from DrTui to TlcTui */
 	struct dci_response_t nwd_rsp;   /* Response from TlcTui to DrTui */
 };

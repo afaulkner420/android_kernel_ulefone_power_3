@@ -553,8 +553,8 @@ out:
 	return co;
 }
 
-struct nfs4_stid *nfs4_alloc_stid(struct nfs4_client *cl, struct kmem_cache *slab,
-				  void (*sc_free)(struct nfs4_stid *))
+struct nfs4_stid *nfs4_alloc_stid(struct nfs4_client *cl,
+					 struct kmem_cache *slab)
 {
 	struct nfs4_stid *stid;
 	int new_id;
@@ -570,8 +570,6 @@ struct nfs4_stid *nfs4_alloc_stid(struct nfs4_client *cl, struct kmem_cache *sla
 	idr_preload_end();
 	if (new_id < 0)
 		goto out_free;
-
-	stid->sc_free = sc_free;
 	stid->sc_client = cl;
 	stid->sc_stateid.si_opaque.so_id = new_id;
 	stid->sc_stateid.si_opaque.so_clid = cl->cl_clientid;
@@ -597,12 +595,15 @@ out_free:
 static struct nfs4_ol_stateid * nfs4_alloc_open_stateid(struct nfs4_client *clp)
 {
 	struct nfs4_stid *stid;
+	struct nfs4_ol_stateid *stp;
 
-	stid = nfs4_alloc_stid(clp, stateid_slab, nfs4_free_ol_stateid);
+	stid = nfs4_alloc_stid(clp, stateid_slab);
 	if (!stid)
 		return NULL;
 
-	return openlockstateid(stid);
+	stp = openlockstateid(stid);
+	stp->st_stid.sc_free = nfs4_free_ol_stateid;
+	return stp;
 }
 
 static void nfs4_free_deleg(struct nfs4_stid *stid)
@@ -700,10 +701,11 @@ alloc_init_deleg(struct nfs4_client *clp, struct svc_fh *current_fh,
 		goto out_dec;
 	if (delegation_blocked(&current_fh->fh_handle))
 		goto out_dec;
-	dp = delegstateid(nfs4_alloc_stid(clp, deleg_slab, nfs4_free_deleg));
+	dp = delegstateid(nfs4_alloc_stid(clp, deleg_slab));
 	if (dp == NULL)
 		goto out_dec;
 
+	dp->dl_stid.sc_free = nfs4_free_deleg;
 	/*
 	 * delegation seqid's are never incremented.  The 4.1 special
 	 * meaning of seqid 0 isn't meaningful, really, but let's avoid
@@ -1145,7 +1147,9 @@ static void put_ol_stateid_locked(struct nfs4_ol_stateid *stp,
 
 static bool unhash_lock_stateid(struct nfs4_ol_stateid *stp)
 {
-	lockdep_assert_held(&stp->st_stid.sc_client->cl_lock);
+	struct nfs4_openowner *oo = openowner(stp->st_openstp->st_stateowner);
+
+	lockdep_assert_held(&oo->oo_owner.so_client->cl_lock);
 
 	list_del_init(&stp->st_locks);
 	nfs4_unhash_stid(&stp->st_stid);
@@ -1154,12 +1158,12 @@ static bool unhash_lock_stateid(struct nfs4_ol_stateid *stp)
 
 static void release_lock_stateid(struct nfs4_ol_stateid *stp)
 {
-	struct nfs4_client *clp = stp->st_stid.sc_client;
+	struct nfs4_openowner *oo = openowner(stp->st_openstp->st_stateowner);
 	bool unhashed;
 
-	spin_lock(&clp->cl_lock);
+	spin_lock(&oo->oo_owner.so_client->cl_lock);
 	unhashed = unhash_lock_stateid(stp);
-	spin_unlock(&clp->cl_lock);
+	spin_unlock(&oo->oo_owner.so_client->cl_lock);
 	if (unhashed)
 		nfs4_put_stid(&stp->st_stid);
 }
@@ -5392,6 +5396,7 @@ init_lock_stateid(struct nfs4_ol_stateid *stp, struct nfs4_lockowner *lo,
 	stp->st_stateowner = nfs4_get_stateowner(&lo->lo_owner);
 	get_nfs4_file(fp);
 	stp->st_stid.sc_file = fp;
+	stp->st_stid.sc_free = nfs4_free_lock_stateid;
 	stp->st_access_bmap = 0;
 	stp->st_deny_bmap = open_stp->st_deny_bmap;
 	stp->st_openstp = open_stp;
@@ -5434,7 +5439,7 @@ find_or_create_lock_stateid(struct nfs4_lockowner *lo, struct nfs4_file *fi,
 	lst = find_lock_stateid(lo, fi);
 	if (lst == NULL) {
 		spin_unlock(&clp->cl_lock);
-		ns = nfs4_alloc_stid(clp, stateid_slab, nfs4_free_lock_stateid);
+		ns = nfs4_alloc_stid(clp, stateid_slab);
 		if (ns == NULL)
 			return NULL;
 
@@ -6792,24 +6797,23 @@ nfs4_state_start(void)
 
 	ret = set_callback_cred();
 	if (ret)
-		return ret;
-
+		return -ENOMEM;
 	laundry_wq = alloc_workqueue("%s", WQ_UNBOUND, 0, "nfsd4");
 	if (laundry_wq == NULL) {
 		ret = -ENOMEM;
-		goto out_cleanup_cred;
+		goto out_recovery;
 	}
 	ret = nfsd4_create_callback_queue();
 	if (ret)
 		goto out_free_laundry;
 
 	set_max_delegations();
+
 	return 0;
 
 out_free_laundry:
 	destroy_workqueue(laundry_wq);
-out_cleanup_cred:
-	cleanup_callback_cred();
+out_recovery:
 	return ret;
 }
 
@@ -6848,7 +6852,6 @@ nfs4_state_shutdown(void)
 {
 	destroy_workqueue(laundry_wq);
 	nfsd4_destroy_callback_queue();
-	cleanup_callback_cred();
 }
 
 static void

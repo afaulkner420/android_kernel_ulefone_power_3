@@ -26,8 +26,6 @@
 #include <linux/sort.h>
 #include <linux/string.h>
 #include <linux/average.h>
-#include <linux/topology.h>
-#include <asm/div64.h>
 #include <mt-plat/fpsgo_common.h>
 #include "fstb.h"
 #include "fstb_usedext.h"
@@ -64,7 +62,6 @@ static int fstb_fps_klog_on;
 
 static unsigned int fstb_fps_cur_limit;
 static unsigned int tm_input_fps;
-static unsigned int tm_queue_fps;
 static struct dentry *fstb_debugfs_dir;
 
 #define CFG_MAX_FPS_LIMIT	60
@@ -104,9 +101,6 @@ static int weighted_cpu_time_begin,  weighted_cpu_time_end;
 static long long sorted_weighted_cpu_time[FRAME_TIME_BUFFER_SIZE];
 static struct mutex fstb_lock;
 
-static unsigned long long queue_time_ts[FRAME_TIME_BUFFER_SIZE]; /*timestamp*/
-static int queue_time_begin, queue_time_end;
-
 static int lppfps;
 static int lpp_mode;
 static unsigned int lpp_freq = 1200000;
@@ -121,7 +115,7 @@ static void enable_fstb_timer(void)
 {
 	ktime_t ktime;
 
-	ktime = ktime_set(0, ADJUST_INTERVAL_US * 1000);
+	ktime = ktime_set(ADJUST_INTERVAL_US / 1000000, 0);
 	hrtimer_start(&hrt, ktime, HRTIMER_MODE_REL);
 }
 
@@ -144,8 +138,6 @@ static unsigned int cur_capacity[FRAME_TIME_BUFFER_SIZE];
 int second_chance_flag;
 
 static int vag_flag;
-static int force_vag;
-static int vag_fps = 30;
 
 int is_fstb_enable(void)
 {
@@ -209,29 +201,6 @@ int switch_percentile_frametime(int ratio)
 		return -EINVAL;
 
 	QUANTILE = ratio;
-
-	return 0;
-}
-
-int switch_force_vag(int arg)
-{
-	if (arg == 1) {
-		force_vag = 1;
-		dfrc_set_kernel_policy(DFRC_DRV_API_LOADING, -1, DFRC_DRV_MODE_INTERNAL_SW, 0, 0);
-	} else if (arg == 0) {
-		force_vag = 0;
-	} else
-		return -EINVAL;
-
-	return 0;
-}
-
-int switch_vag_fps(int arg)
-{
-	if (arg <= 60 && arg >= 20)
-		vag_fps = arg;
-	else
-		vag_fps = 30;
 
 	return 0;
 }
@@ -419,10 +388,9 @@ int update_cpu_frame_info(
 		weighted_cpu_time_begin = 0;
 	}
 
-	if (max_cpu_cap > 0 && Max_cap > Curr_cap) {
-		weighted_cpu_time[weighted_cpu_time_end] = frame_time_ns * max_current_cap;
-		do_div(weighted_cpu_time[weighted_cpu_time_end], max_cpu_cap);
-	} else
+	if (max_cpu_cap > 0 && Max_cap > Curr_cap)
+		weighted_cpu_time[weighted_cpu_time_end] = frame_time_ns * max_current_cap / max_cpu_cap;/*weight*/
+	else
 		weighted_cpu_time[weighted_cpu_time_end] = frame_time_ns;
 
 	q2q_time[weighted_cpu_time_end] = Q2Q_time;
@@ -436,7 +404,7 @@ int update_cpu_frame_info(
 		fstb_check_30_fps = 0;
 	fpsgo_systrace_c_fstb(-200, fstb_check_30_fps, "fstb_check_30_fps");
 	/* check if self-control 30 -> if yes, jump to 30 directly*/
-	if (!lpp_mode && !force_vag &&
+	if (!lpp_mode &&
 		fstb_fps_cur_limit > 30 && vag_flag < 2 && asfc_flag == 0 && fstb_check_30_fps == 0 && is_30_fps()) {
 		asfc_flag = 1;
 		fpsgo_systrace_c_fstb(-200, asfc_flag, "asfc_flag");
@@ -464,8 +432,11 @@ int update_cpu_frame_info(
 }
 
 void (*update_lppcap)(unsigned int cap);
+EXPORT_SYMBOL(update_lppcap);
 void (*set_fps)(unsigned int fps);
+EXPORT_SYMBOL(set_fps);
 #define MAX_CAP 100
+#define ceil(n, d) (((n) < 0) ? (-((-(n))/(d))) : (n)/(d) + ((n)%(d) != 0))
 
 static int get_lpp_cpu_max_capacity(unsigned int *ptr_lppcap)
 {
@@ -475,9 +446,6 @@ static int get_lpp_cpu_max_capacity(unsigned int *ptr_lppcap)
 	int cpu_loading_len = weighted_cpu_time_end - weighted_cpu_time_begin;
 	int target_loading_len = 0;
 	unsigned long long compare_loading = 0;
-	unsigned long long temp_loading_len = 0;
-	unsigned long long temp_loading = 0;
-	unsigned long mod = 0;
 
 	/*copy entries to temp array*/
 	/*sort this array*/
@@ -499,11 +467,8 @@ static int get_lpp_cpu_max_capacity(unsigned int *ptr_lppcap)
 
 	/*get lppcap*/
 	if (cpu_loading_len) {
-		if (max_freq && target_fps) {
-			compare_loading = 1000000ULL * (1000 / target_fps) * 100 * lpp_freq;
-			do_div(compare_loading, max_freq);
-		}
-
+		if (max_freq)
+			compare_loading = (1000000ULL * (1000ULL / target_fps) * 100 * lpp_freq / max_freq);
 		if (sorted_cpu_loading[QUANTILE * cpu_loading_len / 100 - 1] <= compare_loading) {
 			/*light loading*/
 			lppcap = MAX_CAP;
@@ -515,25 +480,17 @@ static int get_lpp_cpu_max_capacity(unsigned int *ptr_lppcap)
 				target_fps = lppfps - lpp_fps_budget;
 			target_fps = calculate_fps_limit(target_fps);
 
-			temp_loading_len = target_fps * FRAME_TIME_WINDOW_SIZE_US;
-			do_div(temp_loading_len, 1000000);
-			target_loading_len = (int)temp_loading_len;
+			target_loading_len = target_fps * FRAME_TIME_WINDOW_SIZE_US / 1000000;
 			if (cpu_loading_len > target_loading_len) {
 			/*decrease*/
-				temp_loading = sorted_cpu_loading[target_loading_len - 1];
+				lppcap = ceil(sorted_cpu_loading[target_loading_len - 1] / 1000000,
+						(1000 / target_fps));
 				ret = 1;
 			} else if (cpu_loading_len < target_loading_len) {
 			/*increase*/
-				temp_loading = sorted_cpu_loading[QUANTILE * cpu_loading_len / 100 - 1];
+				lppcap = ceil(sorted_cpu_loading[QUANTILE * cpu_loading_len / 100 - 1] / 1000000,
+						(1000 / target_fps));
 				ret = 1;
-			}
-
-			if (ret == 1 && target_fps) {
-				do_div(temp_loading, 1000000);
-				mod = do_div(temp_loading, (1000 / target_fps));
-				lppcap = (unsigned int)temp_loading;
-				if (mod)
-					lppcap++;
 			}
 		}
 		if (lppcap > MAX_CAP)
@@ -548,9 +505,7 @@ static int get_lpp_cpu_max_capacity(unsigned int *ptr_lppcap)
 	fpsgo_systrace_c_fstb(-200, cpu_loading_len, "cpu_loading_len");
 	fpsgo_systrace_c_fstb(-200, target_fps, "target_fps");
 	fpsgo_systrace_c_fstb(-200, sorted_cpu_loading[QUANTILE * cpu_loading_len / 100 - 1], "cpu_loading[Q]");
-	fpsgo_systrace_c_fstb(-200,
-		sorted_cpu_loading[target_loading_len <= FRAME_TIME_BUFFER_SIZE ?
-		target_loading_len - 1 : FRAME_TIME_BUFFER_SIZE - 1], "cpu_loading[target]");
+	fpsgo_systrace_c_fstb(-200, sorted_cpu_loading[target_loading_len - 1], "cpu_loading[target]");
 	fpsgo_systrace_c_fstb(-200, lpp_fps_budget, "lpp_fps_budget");
 	fpsgo_systrace_c_fstb(-200, lppcap, "lppcap");
 	fpsgo_systrace_c_fstb(-200, ret, "need_to_update_cap");
@@ -654,10 +609,8 @@ static int update_fps_limit(int cur_fps_limit)
 	for (i = fps_limit_begin; i < fps_limit_end; i++)
 		tot_fps_limit += fps_limit[i];
 
-	if (fps_limit_end - fps_limit_begin) {
-		avg_fps_limit = tot_fps_limit;
-		do_div(avg_fps_limit, (fps_limit_end - fps_limit_begin));
-	}
+	if (fps_limit_end - fps_limit_begin)
+		avg_fps_limit = tot_fps_limit / (fps_limit_end - fps_limit_begin);
 
 	if (FRAME_TIME_WINDOW_SIZE_US == ADJUST_INTERVAL_US)
 		avg_fps_limit = cur_fps_limit;
@@ -735,8 +688,6 @@ static int get_display_fps(long long interval)
 	int i = display_time_begin, j;
 	unsigned long long frame_interval_count = 0;
 	unsigned long long avg_frame_interval = 0;
-	unsigned long long retval = 0;
-	long long tm_input_fps_no_filter;
 
 	/*remove old entries*/
 	while (i < display_time_end) {
@@ -753,91 +704,15 @@ static int get_display_fps(long long interval)
 		}
 	}
 
-	tm_input_fps_no_filter = (long long)(display_time_end - i) * 1000000LL;
-	do_div(tm_input_fps_no_filter, interval);
-	fpsgo_systrace_c_fstb(-200, (int)tm_input_fps_no_filter, "tm_input_fps_no_filter");
+	fpsgo_systrace_c_fstb(-200, (long long)(display_time_end - i) * 1000000 / interval, "tm_input_fps_no_filter");
 
-	if (avg_frame_interval != 0) {
-		retval = 1000000000ULL * frame_interval_count;
-		do_div(retval, avg_frame_interval);
-		return retval;
-	} else
+	if (avg_frame_interval != 0)
+		return 1000000000ULL * frame_interval_count / avg_frame_interval;
+	else
 		return tm_input_fps;
 
 }
 
-void fstb_queue_time_update(unsigned long long ts)
-{
-	if (queue_time_begin < 0 ||
-		queue_time_end < 0 ||
-		queue_time_begin > queue_time_end ||
-		queue_time_end >= FRAME_TIME_BUFFER_SIZE) {
-		/* purge all data */
-		queue_time_begin = queue_time_end = 0;
-	}
-
-	/*remove old entries*/
-	while (queue_time_begin < queue_time_end) {
-		if (queue_time_ts[queue_time_begin] < ts - (long long)FRAME_TIME_WINDOW_SIZE_US * 1000)
-			queue_time_begin++;
-		else
-			break;
-	}
-
-	if (queue_time_begin == queue_time_end &&
-		queue_time_end == FRAME_TIME_BUFFER_SIZE - 1)
-		queue_time_begin = queue_time_end = 0;
-
-	/*insert entries to weighted_display_time*/
-	/*if buffer full --> move array align first*/
-	if (queue_time_begin < queue_time_end &&
-		queue_time_end == FRAME_TIME_BUFFER_SIZE - 1) {
-		memmove(queue_time_ts, &queue_time_ts[queue_time_begin],
-				sizeof(unsigned long long) * (queue_time_end - queue_time_begin));
-		/*reset index*/
-		queue_time_end = queue_time_end - queue_time_begin;
-		queue_time_begin = 0;
-	}
-
-	queue_time_ts[queue_time_end] = ts;
-	queue_time_end++;
-}
-
-static int fstb_get_queue_fps(long long interval)
-{
-	int i = queue_time_begin, j;
-	long long queue_fps;
-	unsigned long long frame_interval_count = 0;
-	unsigned long long avg_frame_interval = 0;
-	unsigned long long retval = 0;
-
-	/* remove old entries */
-	while (i < queue_time_end) {
-		if (queue_time_ts[i] < sched_clock() - interval * 1000)
-			i++;
-		else
-			break;
-	}
-
-	/* filter */
-	for (j = i + 1; j < queue_time_end; j++) {
-		if ((queue_time_ts[j] - queue_time_ts[j - 1]) < DISPLAY_FPS_FILTER_NS) {
-			avg_frame_interval += (queue_time_ts[j] - queue_time_ts[j - 1]);
-			frame_interval_count++;
-		}
-	}
-
-	queue_fps = (long long)(queue_time_end - i) * 1000000LL;
-	do_div(queue_fps, interval);
-	fpsgo_systrace_c_fstb(-200, (int)queue_fps, "queue_fps_nofilter");
-
-	if (avg_frame_interval != 0) {
-		retval = 1000000000ULL * frame_interval_count;
-		do_div(retval, avg_frame_interval);
-		return retval;
-	} else
-		return queue_fps;
-}
 
 static long long weighted_gpu_time[FRAME_TIME_BUFFER_SIZE];
 static long long weighted_gpu_time_ts[FRAME_TIME_BUFFER_SIZE];	/*timestamp*/
@@ -904,10 +779,9 @@ void gpu_time_update(long long t_gpu, unsigned int cur_freq, unsigned int cur_ma
 		weighted_gpu_time_begin = 0;
 	}
 
-	if (cur_max_freq > 0 && cur_max_freq > cur_freq) {
-		weighted_gpu_time[weighted_gpu_time_end] = t_gpu * cur_freq;
-		do_div(weighted_gpu_time[weighted_gpu_time_end], cur_max_freq);
-	}	else
+	if (cur_max_freq > 0 && cur_max_freq > cur_freq)
+		weighted_gpu_time[weighted_gpu_time_end] = t_gpu * cur_freq / cur_max_freq;/*weight*/
+	else
 		weighted_gpu_time[weighted_gpu_time_end] = t_gpu;
 	weighted_gpu_time_ts[weighted_gpu_time_end] = cur_time_us;
 	weighted_gpu_time_end++;
@@ -952,9 +826,6 @@ static int get_gpu_frame_time(void)
 
 static int fps_update(void)
 {
-	tm_queue_fps = fstb_get_queue_fps(FRAME_TIME_WINDOW_SIZE_US);
-	fpsgo_systrace_c_log(tm_queue_fps, "tm_queue_fps");
-
 	tm_input_fps = get_display_fps(FRAME_TIME_WINDOW_SIZE_US);
 	return 0;
 }
@@ -993,23 +864,6 @@ static int calculate_fps_limit(int target_fps)
 		fps_limit = max_fps_limit;
 
 	return fps_limit;
-}
-
-static long long check_vag(long long target_limit)
-{
-	if (vag_flag == 2)
-		target_limit = max_fps_limit;
-	else if (tm_queue_fps <= (fstb_fps_cur_limit / 2 + 2)) {
-		vag_flag++;
-		if (fstb_fps_cur_limit == 30)
-			asfc_flag = 0;
-		if (vag_flag == 2)
-			target_limit = max_fps_limit;
-	} else
-		vag_flag = 0;
-
-	fpsgo_systrace_c_log(vag_flag, "vag_flag");
-	return target_limit;
 }
 
 static int cur_cpu_time;
@@ -1073,7 +927,7 @@ static void fstb_fps_stats(struct work_struct *work)
 		second_chance_flag = 0;
 		fpsgo_systrace_c_fstb(-200, second_chance_flag, "second_chance_flag");
 		vag_flag = 0;
-		fpsgo_systrace_c_log(vag_flag, "vag_flag");
+		fpsgo_systrace_c_fstb(-200, vag_flag, "vag_flag");
 	} else if (lpp_mode == 1) {
 		target_limit = max_fps_limit;
 		asfc_flag = 0;
@@ -1093,14 +947,23 @@ static void fstb_fps_stats(struct work_struct *work)
 		}
 		fpsgo_systrace_c_fstb(-200, (int)target_limit, "tmp_target_limit");
 		fpsgo_systrace_c_fstb(-200, second_chance_flag, "second_chance_flag");
-		target_limit = check_vag(target_limit);
+
+		if (vag_flag == 2)
+			target_limit = max_fps_limit;
+		else if (tm_input_fps <= (fstb_fps_cur_limit / 2 + 2)) {
+			vag_flag++;
+			if (vag_flag == 2)
+				target_limit = max_fps_limit;
+		} else
+			vag_flag = 0;
+
+		fpsgo_systrace_c_fstb(-200, vag_flag, "vag_flag");
 		/*increase*/
 	} else if (avg_fps_limit - tm_input_fps <= 1) {
 
 		second_chance_flag = 0;
 		fpsgo_systrace_c_fstb(-200, second_chance_flag, "second_chance_flag");
-		tmp_target_limit = 1000000000LL;
-		do_div(tmp_target_limit, (long long)max(cur_cpu_time, cur_gpu_time));
+		tmp_target_limit = 1000000000LL / (long long)max(cur_cpu_time, cur_gpu_time);
 		fpsgo_systrace_c_fstb(-200, (int)tmp_target_limit, "tmp_target_limit");
 
 		if ((int)tmp_target_limit - fstb_fps_cur_limit > fstb_fps_cur_limit * fps_error_threshold / 100) {
@@ -1120,17 +983,14 @@ static void fstb_fps_stats(struct work_struct *work)
 				target_limit = 27;
 			else
 				target_limit = tmp_target_limit;
-			if (target_limit < fstb_fps_cur_limit)
-				target_limit = fstb_fps_cur_limit;
 		} else
 			target_limit = fstb_fps_cur_limit;
-		target_limit = check_vag(target_limit);
+
 		/*stable state*/
 	} else {
 		second_chance_flag = 0;
 		fpsgo_systrace_c_fstb(-200, second_chance_flag, "second_chance_flag");
 		target_limit = fstb_fps_cur_limit;
-		target_limit = check_vag(target_limit);
 	}
 
 	if (vag_flag < 2 && asfc_flag && target_limit > 30)
@@ -1138,22 +998,20 @@ static void fstb_fps_stats(struct work_struct *work)
 
 	fstb_fps_cur_limit = calculate_fps_limit(target_limit);
 
-	if (fstb_fps_cur_limit == 30 && vag_flag == 0) {
+	if (fstb_fps_cur_limit == 30) {
 		asfc_flag = 1;
 		fpsgo_systrace_c_fstb(-200, asfc_flag, "asfc_flag");
 	}
 
-	if (vag_flag == 2 || force_vag)
-		fbt_cpu_vag_set_fps(vag_fps);
+	if (vag_flag == 2)
+		fbt_cpu_vag_set_fps(30);
 	else
 		fbt_cpu_vag_set_fps(0);
 
-#ifdef CONFIG_MTK_DYNAMIC_FPS_FRAMEWORK_SUPPORT
-	if (!lpp_mode && !force_vag)
+	if (lpp_mode == 0)
 		ret = dfrc_set_kernel_policy(DFRC_DRV_API_LOADING,
 				((fstb_fps_cur_limit != 60 && in_game_mode && fstb_enable) ? fstb_fps_cur_limit : -1),
 				DFRC_DRV_MODE_INTERNAL_SW, 0, 0);
-#endif
 
 	update_fps_limit(fstb_fps_cur_limit);
 
@@ -1442,75 +1300,6 @@ static const struct file_operations fstb_tune_error_threshold_fops = {
 	.write = fstb_tune_error_threshold_write,
 	.release = single_release,
 };
-
-static int fstb_tune_force_vag_read(struct seq_file *m, void *v)
-{
-	seq_printf(m, "%d ", force_vag);
-	return 0;
-}
-
-static ssize_t fstb_tune_force_vag_write(struct file *file, const char __user *buffer,
-		size_t count, loff_t *data)
-{
-	int ret;
-	int arg;
-
-	if (!kstrtoint_from_user(buffer, count, 0, &arg))
-		ret = switch_force_vag(arg);
-	else
-		ret = -EINVAL;
-
-	return (ret < 0) ? ret : count;
-}
-
-static int fstb_tune_force_vag_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, fstb_tune_force_vag_read, NULL);
-}
-
-static const struct file_operations fstb_tune_force_vag_fops = {
-	.owner = THIS_MODULE,
-	.open = fstb_tune_force_vag_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.write = fstb_tune_force_vag_write,
-	.release = single_release,
-};
-
-static int fstb_tune_vag_fps_read(struct seq_file *m, void *v)
-{
-	seq_printf(m, "%d ", vag_fps);
-	return 0;
-}
-
-static ssize_t fstb_tune_vag_fps_write(struct file *file, const char __user *buffer,
-		size_t count, loff_t *data)
-{
-	int ret;
-	int arg;
-
-	if (!kstrtoint_from_user(buffer, count, 0, &arg))
-		ret = switch_vag_fps(arg);
-	else
-		ret = -EINVAL;
-
-	return (ret < 0) ? ret : count;
-}
-
-static int fstb_tune_vag_fps_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, fstb_tune_vag_fps_read, NULL);
-}
-
-static const struct file_operations fstb_tune_vag_fps_fops = {
-	.owner = THIS_MODULE,
-	.open = fstb_tune_vag_fps_open,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.write = fstb_tune_vag_fps_write,
-	.release = single_release,
-};
-
 static int fstb_tune_lpp_fps_read(struct seq_file *m, void *v)
 {
 	seq_printf(m, "%d ", lppfps);
@@ -1652,15 +1441,13 @@ static const struct file_operations tm_fps_fops = {
 
 static int __init mtk_fstb_init(void)
 {
-	int num_cluster = 0;
 
 	mtk_fstb_dprintk("init\n");
 
 	fbt_notifier_cpu_frame_time_fps_stabilizer = update_cpu_frame_info;
 	display_time_fps_stablizer = display_time_update;
 	ged_kpi_output_gfx_info_fp = gpu_time_update;
-	num_cluster = arch_get_nr_clusters();
-	max_freq = mt_cpufreq_get_freq_by_idx((num_cluster > 0) ? num_cluster - 1 : 0, 0);
+	max_freq = mt_cpufreq_get_freq_by_idx(1, 0);
 
 	mutex_init(&fstb_lock);
 
@@ -1724,18 +1511,6 @@ static int __init mtk_fstb_init(void)
 			    fstb_debugfs_dir,
 			    NULL,
 			    &fstb_tune_lpp_fps_fops);
-
-	debugfs_create_file("fstb_tune_force_vag",
-			    S_IRUGO | S_IWUSR | S_IWGRP,
-			    fstb_debugfs_dir,
-			    NULL,
-			    &fstb_tune_force_vag_fops);
-
-	debugfs_create_file("fstb_tune_vag_fps",
-			    S_IRUGO | S_IWUSR | S_IWGRP,
-			    fstb_debugfs_dir,
-			    NULL,
-			    &fstb_tune_vag_fps_fops);
 
 	reset_fps_level();
 

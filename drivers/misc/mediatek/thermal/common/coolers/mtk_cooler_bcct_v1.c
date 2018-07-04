@@ -353,12 +353,7 @@ static void chrlmt_set_limit_handler(struct work_struct *work)
 			((chrlmt_bat_chr_curr_limit != -1) ? chrlmt_bat_chr_curr_limit * 1000 : -1));
 		/* High Voltage (Vbus) control*/
 		if (chrlmt_bat_chr_curr_limit == 0)
-			//modify XLLSHLSS-5 by zhipeng.pan 20171208 start
-			#if defined(TRAN_X604) || defined(TRAN_X605)
-			#else
 			charger_manager_enable_high_voltage_charging(pthermal_consumer, false);
-			#endif
-			//miodify XLLSHLSS-5 by zhipeng.pan 20171208 end
 		if (chrlmt_bat_chr_curr_limit == -1)
 			charger_manager_enable_high_voltage_charging(pthermal_consumer, true);
 #else
@@ -1264,16 +1259,16 @@ static int bcct_lcmoff_fb_notifier_callback(struct notifier_block *self, unsigne
 	struct fb_event *evdata = data;
 	int blank;
 
-	/* skip if it's not a blank event */
-	if ((event != FB_EVENT_BLANK) || (data == NULL))
-		return 0;
-
 	/* skip if policy is not enable */
 	if (!chrlmt_lcmoff_policy_enable)
 		return 0;
 
 	blank = *(int *)evdata->data;
 	mtk_cooler_bcct_dprintk("%s: blank = %d, event = %lu\n", __func__, blank, event);
+
+	/* skip if it's not a blank event */
+	if (event != FB_EVENT_BLANK)
+		return 0;
 
 	switch (blank) {
 	/* LCM ON */

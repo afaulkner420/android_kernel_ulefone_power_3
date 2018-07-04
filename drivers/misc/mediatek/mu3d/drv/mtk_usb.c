@@ -26,11 +26,6 @@
 #include "mtk-phy-asic.h"
 /*#include <mach/mt_typedefs.h>*/
 #endif
-#include <linux/phy/mediatek/mtk_usb_phy.h>
-
-#ifdef CONFIG_PHY_MTK_SSUSB
-#include "mtk-ssusb-hal.h"
-#endif
 
 unsigned int cable_mode = CABLE_MODE_NORMAL;
 #ifdef CONFIG_MTK_UART_USB_SWITCH
@@ -150,12 +145,7 @@ void connection_work(struct work_struct *data)
 #ifndef CONFIG_FPGA_EARLY_PORTING
 		if (!mt_usb_is_device()) {
 			connection_work_dev_status = OFF;
-#ifdef CONFIG_PHY_MTK_SSUSB
-			if (musb->is_clk_on)
-				phy_power_off(musb->mtk_phy);
-#else
 			usb_fake_powerdown(musb->is_clk_on);
-#endif
 			musb->is_clk_on = 0;
 			os_printk(K_INFO, "%s, Host mode. directly return\n", __func__);
 			return;
@@ -317,53 +307,6 @@ static bool mu3d_hal_is_vbus_exist(void)
 
 	return vbus_exist;
 
-}
-
-static struct delayed_work disconnect_check_work;
-static bool mu3d_hal_is_vbus_exist(void);
-void do_disconnect_check_work(struct work_struct *data)
-{
-	bool vbus_exist = false;
-	unsigned long flags = 0;
-	struct musb *musb = _mu3d_musb;
-
-	msleep(200);
-
-	vbus_exist = mu3d_hal_is_vbus_exist();
-	os_printk(K_INFO, "vbus_exist:<%d>\n", vbus_exist);
-	if (vbus_exist)
-		return;
-
-	spin_lock_irqsave(&musb->lock, flags);
-	os_printk(K_INFO, "speed <%d>\n", musb->g.speed);
-	/* notify gadget driver, g.speed judge is very important */
-	if (!musb->is_host && musb->g.speed != USB_SPEED_UNKNOWN) {
-		os_printk(K_INFO, "musb->gadget_driver:%p\n", musb->gadget_driver);
-		if (musb->gadget_driver && musb->gadget_driver->disconnect) {
-			os_printk(K_INFO, "musb->gadget_driver->disconnect:%p\n", musb->gadget_driver->disconnect);
-			/* align musb_g_disconnect */
-			spin_unlock(&musb->lock);
-			musb->gadget_driver->disconnect(&musb->g);
-			spin_lock(&musb->lock);
-
-		}
-		musb->g.speed = USB_SPEED_UNKNOWN;
-	}
-	os_printk(K_INFO, "speed <%d>\n", musb->g.speed);
-	spin_unlock_irqrestore(&musb->lock, flags);
-}
-void trigger_disconnect_check_work(void)
-{
-	static int inited;
-
-	if (!mu3d_force_on)
-		return;
-
-	if (!inited) {
-		INIT_DELAYED_WORK(&disconnect_check_work, do_disconnect_check_work);
-		inited = 1;
-	}
-	queue_delayed_work(_mu3d_musb->st_wq, &disconnect_check_work, 0);
 }
 
 static int mu3d_test_connect;
@@ -645,43 +588,6 @@ ssize_t musb_cmode_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static bool saving_mode;
-
-ssize_t musb_saving_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	if (!dev) {
-		pr_info("dev is null!!\n");
-		return 0;
-	}
-	return scnprintf(buf, PAGE_SIZE, "%d\n", saving_mode);
-}
-
-ssize_t musb_saving_mode_store(struct device *dev, struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	int saving;
-	long tmp_val;
-
-	if (!dev) {
-		pr_info("dev is null!!\n");
-		return count;
-	/* } else if (1 == sscanf(buf, "%d", &saving)) { */
-	} else if (kstrtol(buf, 10, &tmp_val) == 0) {
-		saving = tmp_val;
-		pr_info("old=%d new=%d\n", saving, saving_mode);
-		if (saving_mode == (!saving))
-			saving_mode = !saving_mode;
-	}
-	return count;
-}
-
-bool is_saving_mode(void)
-{
-	pr_info("saving_mode : %d\n", saving_mode);
-	return saving_mode;
-}
-
-
 #ifdef CONFIG_MTK_UART_USB_SWITCH
 ssize_t musb_portmode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -736,10 +642,6 @@ ssize_t musb_portmode_store(struct device *dev, struct device_attribute *attr,
 
 ssize_t musb_tx_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-#ifdef CONFIG_PHY_MTK_SSUSB
-	struct musb *musb;
-	u32 value;
-#endif
 	u8 var;
 	u8 var2;
 
@@ -748,13 +650,7 @@ ssize_t musb_tx_show(struct device *dev, struct device_attribute *attr, char *bu
 		return 0;
 	}
 
-#ifdef CONFIG_PHY_MTK_SSUSB
-	musb = dev_to_musb(dev);
-	value = usb_mtkphy_io_read(musb->mtk_phy, 1, 0x6C);
-	var = value >> 16;
-#else
 	var = U3PhyReadReg8((u3phy_addr_t) (U3D_U2PHYDTM1 + 0x2));
-#endif
 	var2 = (var >> 3) & ~0xFE;
 	pr_debug("[MUSB]addr: 0x6E (TX), value: %x - %x\n", var, var2);
 
@@ -767,10 +663,6 @@ ssize_t musb_tx_store(struct device *dev, struct device_attribute *attr,
 		      const char *buf, size_t count)
 {
 	unsigned int val;
-#ifdef CONFIG_PHY_MTK_SSUSB
-	struct musb *musb;
-	u32 value;
-#endif
 	u8 var;
 	u8 var2;
 
@@ -783,13 +675,7 @@ ssize_t musb_tx_store(struct device *dev, struct device_attribute *attr,
 #ifdef CONFIG_FPGA_EARLY_PORTING
 		var = USB_PHY_Read_Register8(U3D_U2PHYDTM1 + 0x2);
 #else
-#ifdef CONFIG_PHY_MTK_SSUSB
-		musb = dev_to_musb(dev);
-		value = usb_mtkphy_io_read(musb->mtk_phy, 1, 0x6C);
-		var = value >> 16;
-#else
 		var = U3PhyReadReg8((u3phy_addr_t) (U3D_U2PHYDTM1 + 0x2));
-#endif
 #endif
 
 		if (val == 0)
@@ -805,14 +691,9 @@ ssize_t musb_tx_store(struct device *dev, struct device_attribute *attr,
 		 * E60802_RG_USB20_BC11_SW_EN_OFST, E60802_RG_USB20_BC11_SW_EN, 0);
 		 */
 		/* Jeremy TODO 0320 */
-#ifdef CONFIG_PHY_MTK_SSUSB
-		musb = dev_to_musb(dev);
-		value = usb_mtkphy_io_read(musb->mtk_phy, 1, 0x6C);
-		var = value >> 16;
-#else
 		var = U3PhyReadReg8((u3phy_addr_t) (U3D_U2PHYDTM1 + 0x2));
 #endif
-#endif
+
 		var2 = (var >> 3) & ~0xFE;
 
 		pr_debug
@@ -825,10 +706,6 @@ ssize_t musb_tx_store(struct device *dev, struct device_attribute *attr,
 
 ssize_t musb_rx_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-#ifdef CONFIG_PHY_MTK_SSUSB
-	struct musb *musb;
-	u32 value;
-#endif
 	u8 var;
 	u8 var2;
 
@@ -839,13 +716,7 @@ ssize_t musb_rx_show(struct device *dev, struct device_attribute *attr, char *bu
 #ifdef CONFIG_FPGA_EARLY_PORTING
 	var = USB_PHY_Read_Register8(U3D_U2PHYDMON1 + 0x3);
 #else
-#ifdef CONFIG_PHY_MTK_SSUSB
-	musb = dev_to_musb(dev);
-	value = usb_mtkphy_io_read(musb->mtk_phy, 1, 0x74);
-	var = value >> 24;
-#else
 	var = U3PhyReadReg8((u3phy_addr_t) (U3D_U2PHYDMON1 + 0x3));
-#endif
 #endif
 	var2 = (var >> 7) & ~0xFE;
 	pr_debug("[MUSB]addr: U3D_U2PHYDMON1 (0x77) (RX), value: %x - %x\n", var, var2);
@@ -855,19 +726,15 @@ ssize_t musb_rx_show(struct device *dev, struct device_attribute *attr, char *bu
 }
 ssize_t musb_uart_path_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	u32 var = 0;
+	u8 var = 0;
 
 	if (!dev) {
 		pr_debug("dev is null!!\n");
 		return 0;
 	}
 
-#ifdef CONFIG_PHY_MTK_SSUSB
-	var = usb_phy_get_uart_path();
-#else
 	var = DRV_Reg32(ap_uart0_base + 0x600);
-#endif
-	pr_debug("[MUSB]addr: (GPIO Misc) 0x600, value: %x\n\n", var);
+	pr_debug("[MUSB]addr: (GPIO Misc) 0x600, value: %x\n\n", DRV_Reg32(ap_uart0_base + 0x600));
 	sw_uart_path = var;
 
 	return scnprintf(buf, PAGE_SIZE, "%x\n", var);

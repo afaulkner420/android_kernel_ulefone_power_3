@@ -41,10 +41,10 @@
 #include "mtk_spm_resource_req.h"
 
 static int dpidle_status = USB_DPIDLE_ALLOWED;
-module_param(dpidle_status, int, 0400);
+module_param(dpidle_status, int, 0644);
 
 static int dpidle_debug;
-module_param(dpidle_debug, int, 0400);
+module_param(dpidle_debug, int, 0644);
 
 static DEFINE_SPINLOCK(usb_hal_dpidle_lock);
 
@@ -655,18 +655,6 @@ void musb_platform_reset(struct musb *musb)
 {
 	u16 swrst = 0;
 	void __iomem *mbase = musb->mregs;
-	u8 bit;
-
-	/* clear all DMA enable bit */
-	for (bit = 0; bit < MUSB_HSDMA_CHANNELS; bit++)
-		musb_writew(mbase, MUSB_HSDMA_CHANNEL_OFFSET(bit, MUSB_HSDMA_CONTROL), 0);
-
-	/* set DMA channel 0 burst mode to boost QMU speed */
-	musb_writel(musb->mregs, 0x204, musb_readl(musb->mregs, 0x204) | 0x600);
-#ifdef CONFIG_MTK_MUSB_DRV_36BIT
-	/* eanble DMA channel 0 36-BIT support */
-	musb_writel(musb->mregs, 0x204, musb_readl(musb->mregs, 0x204) | 0x4000);
-#endif
 
 	swrst = musb_readw(mbase, MUSB_SWRST);
 	swrst |= (MUSB_SWRST_DISUSBRESET | MUSB_SWRST_SWRST);
@@ -1441,16 +1429,6 @@ static int mt_usb_exit(struct musb *musb)
 	return 0;
 }
 
-static void mt_usb_enable_clk(struct musb *musb)
-{
-	usb_enable_clock(true);
-}
-
-static void mt_usb_disable_clk(struct musb *musb)
-{
-	usb_enable_clock(false);
-}
-
 static const struct musb_platform_ops mt_usb_ops = {
 	.init = mt_usb_init,
 	.exit = mt_usb_exit,
@@ -1459,9 +1437,7 @@ static const struct musb_platform_ops mt_usb_ops = {
 	.enable = mt_usb_enable,
 	.disable = mt_usb_disable,
 	/* .set_vbus = mt_usb_set_vbus, */
-	.vbus_status = mt_usb_get_vbus_status,
-	.enable_clk =  mt_usb_enable_clk,
-	.disable_clk =  mt_usb_disable_clk
+	.vbus_status = mt_usb_get_vbus_status
 };
 
 #ifdef CONFIG_MTK_MUSB_DRV_36BIT
@@ -1726,4 +1702,4 @@ static struct kernel_param_ops option_param_ops = {
 	.set = set_option,
 	.get = param_get_int,
 };
-module_param_cb(option, &option_param_ops, &option, 0400);
+module_param_cb(option, &option_param_ops, &option, 0644);

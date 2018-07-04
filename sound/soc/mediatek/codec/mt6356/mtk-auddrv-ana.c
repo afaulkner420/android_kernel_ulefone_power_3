@@ -64,10 +64,10 @@ static DEFINE_SPINLOCK(ana_set_reg_lock);
 /*****************************************************************************
  *                         D A T A   T Y P E S
  *****************************************************************************/
-unsigned int Ana_Get_Reg(unsigned int offset)
+uint32 Ana_Get_Reg(uint32 offset)
 {
 	/* get pmic register */
-	unsigned int Rdata = 0;
+	uint32 Rdata = 0;
 #ifdef AUDIO_USING_WRAP_DRIVER
 	int ret = 0;
 
@@ -79,13 +79,13 @@ unsigned int Ana_Get_Reg(unsigned int offset)
 }
 EXPORT_SYMBOL(Ana_Get_Reg);
 
-void Ana_Set_Reg(unsigned int offset, unsigned int value, unsigned int mask)
+void Ana_Set_Reg(uint32 offset, uint32 value, uint32 mask)
 {
 	/* set pmic register or analog CONTROL_IFACE_PATH */
 
 #ifdef AUDIO_USING_WRAP_DRIVER
 	int ret = 0;
-	unsigned int Reg_Value;
+	uint32 Reg_Value;
 	unsigned long flags = 0;
 
 	PRINTK_ANA_REG("Ana_Set_Reg offset= 0x%x , value = 0x%x mask = 0x%x\n", offset, value,
@@ -213,6 +213,43 @@ void Ana_Log_Print(void)
 	pr_debug("ZCD_CON3 = 0x%x\n", Ana_Get_Reg(ZCD_CON3));
 	pr_debug("ZCD_CON4 = 0x%x\n", Ana_Get_Reg(ZCD_CON4));
 	pr_debug("ZCD_CON5 = 0x%x\n", Ana_Get_Reg(ZCD_CON5));
+
+	pr_debug("ACCDET_DIG_ID = 0x%x\n", Ana_Get_Reg(ACCDET_DIG_ID));
+	pr_debug("ACCDET_DIG_REV0 = 0x%x\n", Ana_Get_Reg(ACCDET_DIG_REV0));
+	pr_debug("ACCDET_DIG_REV1 = 0x%x\n", Ana_Get_Reg(ACCDET_DIG_REV1));
+	pr_debug("ACCDET_CON0 = 0x%x\n", Ana_Get_Reg(ACCDET_CON0));
+	pr_debug("ACCDET_CON1 = 0x%x\n", Ana_Get_Reg(ACCDET_CON1));
+	pr_debug("ACCDET_CON2 = 0x%x\n", Ana_Get_Reg(ACCDET_CON2));
+	pr_debug("ACCDET_CON3 = 0x%x\n", Ana_Get_Reg(ACCDET_CON3));
+	pr_debug("ACCDET_CON4 = 0x%x\n", Ana_Get_Reg(ACCDET_CON4));
+	pr_debug("ACCDET_CON5 = 0x%x\n", Ana_Get_Reg(ACCDET_CON5));
+	pr_debug("ACCDET_CON6 = 0x%x\n", Ana_Get_Reg(ACCDET_CON6));
+	pr_debug("ACCDET_CON7 = 0x%x\n", Ana_Get_Reg(ACCDET_CON7));
+	pr_debug("ACCDET_CON8 = 0x%x\n", Ana_Get_Reg(ACCDET_CON8));
+	pr_debug("ACCDET_CON9 = 0x%x\n", Ana_Get_Reg(ACCDET_CON9));
+	pr_debug("ACCDET_CON10 = 0x%x\n", Ana_Get_Reg(ACCDET_CON10));
+	pr_debug("ACCDET_CON11 = 0x%x\n", Ana_Get_Reg(ACCDET_CON11));
+	pr_debug("ACCDET_CON12 = 0x%x\n", Ana_Get_Reg(ACCDET_CON12));
+	pr_debug("ACCDET_CON13 = 0x%x\n", Ana_Get_Reg(ACCDET_CON13));
+	pr_debug("ACCDET_CON14 = 0x%x\n", Ana_Get_Reg(ACCDET_CON14));
+	pr_debug("ACCDET_CON15 = 0x%x\n", Ana_Get_Reg(ACCDET_CON15));
+	pr_debug("ACCDET_CON16 = 0x%x\n", Ana_Get_Reg(ACCDET_CON16));
+	pr_debug("ACCDET_CON17 = 0x%x\n", Ana_Get_Reg(ACCDET_CON17));
+	pr_debug("ACCDET_CON18 = 0x%x\n", Ana_Get_Reg(ACCDET_CON18));
+	pr_debug("ACCDET_CON19 = 0x%x\n", Ana_Get_Reg(ACCDET_CON19));
+	pr_debug("ACCDET_CON20 = 0x%x\n", Ana_Get_Reg(ACCDET_CON20));
+	pr_debug("ACCDET_CON21 = 0x%x\n", Ana_Get_Reg(ACCDET_CON21));
+	pr_debug("ACCDET_CON22 = 0x%x\n", Ana_Get_Reg(ACCDET_CON22));
+	pr_debug("ACCDET_CON23 = 0x%x\n", Ana_Get_Reg(ACCDET_CON23));
+	pr_debug("ACCDET_CON24 = 0x%x\n", Ana_Get_Reg(ACCDET_CON24));
+	pr_debug("ACCDET_CON25 = 0x%x\n", Ana_Get_Reg(ACCDET_CON25));
+	pr_debug("ACCDET_CON26 = 0x%x\n", Ana_Get_Reg(ACCDET_CON26));
+	pr_debug("ACCDET_CON27 = 0x%x\n", Ana_Get_Reg(ACCDET_CON27));
+	pr_debug("ACCDET_CON28 = 0x%x\n", Ana_Get_Reg(ACCDET_CON28));
+	pr_debug("ACCDET_ELR_NUM = 0x%x\n", Ana_Get_Reg(ACCDET_ELR_NUM));
+	pr_debug("ACCDET_ELR0 = 0x%x\n", Ana_Get_Reg(ACCDET_ELR0));
+	pr_debug("ACCDET_ELR1 = 0x%x\n", Ana_Get_Reg(ACCDET_ELR1));
+	pr_debug("ACCDET_ELR2 = 0x%x\n", Ana_Get_Reg(ACCDET_ELR2));
 
 	pr_debug("GPIO_MODE2 = 0x%x\n", Ana_Get_Reg(GPIO_MODE2));
 	pr_debug("GPIO_MODE3 = 0x%x\n", Ana_Get_Reg(GPIO_MODE3));
@@ -448,6 +485,79 @@ int Ana_Debug_Read(char *buffer, const int size)
 		       Ana_Get_Reg(ZCD_CON4));
 	n += scnprintf(buffer + n, size - n, "ZCD_CON5 = 0x%x\n",
 		       Ana_Get_Reg(ZCD_CON5));
+
+	n += scnprintf(buffer + n, size - n, "ACCDET_DIG_ID = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_DIG_ID));
+	n += scnprintf(buffer + n, size - n, "ACCDET_DIG_REV0 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_DIG_REV0));
+	n += scnprintf(buffer + n, size - n, "ACCDET_DIG_REV1 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_DIG_REV1));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON0 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON0));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON1 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON1));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON2 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON2));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON3 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON3));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON4 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON4));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON5 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON5));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON6 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON6));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON7 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON7));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON8 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON8));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON9 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON9));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON10 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON10));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON11 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON11));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON12 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON12));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON13 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON13));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON14 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON14));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON15 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON15));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON16 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON16));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON17 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON17));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON18 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON18));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON19 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON19));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON20 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON20));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON21 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON21));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON22 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON22));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON23 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON23));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON24 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON24));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON25 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON25));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON26 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON26));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON27 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON27));
+	n += scnprintf(buffer + n, size - n, "ACCDET_CON28 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_CON28));
+	n += scnprintf(buffer + n, size - n, "ACCDET_ELR_NUM = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_ELR_NUM));
+	n += scnprintf(buffer + n, size - n, "ACCDET_ELR0 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_ELR0));
+	n += scnprintf(buffer + n, size - n, "ACCDET_ELR1 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_ELR1));
+	n += scnprintf(buffer + n, size - n, "ACCDET_ELR2 = 0x%x\n",
+		       Ana_Get_Reg(ACCDET_ELR2));
 
 	n += scnprintf(buffer + n, size - n, "GPIO_MODE2  = 0x%x\n",
 		       Ana_Get_Reg(GPIO_MODE2));

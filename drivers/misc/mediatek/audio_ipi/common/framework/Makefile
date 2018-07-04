@@ -35,9 +35,10 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common/tasks/mp3
 endif
 
 
-### spkprotect for headfile include path
+### spkprotect
+ifeq ($(CONFIG_MTK_AUDIO_SCP_SPKPROTECT_SUPPORT),y)
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common/tasks/spkprotect
-
+endif
 
 ### c files
 obj-y += audio_dma_buf_control.o

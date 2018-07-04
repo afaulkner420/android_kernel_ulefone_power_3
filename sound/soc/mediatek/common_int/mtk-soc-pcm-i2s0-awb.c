@@ -60,7 +60,7 @@
 #include "mtk-soc-pcm-platform.h"
 
 /* information about */
-static struct afe_mem_control_t  *I2S0_AWB_Control_context;
+static AFE_MEM_CONTROL_T  *I2S0_AWB_Control_context;
 static struct snd_dma_buffer *Awb_Capture_dma_buf;
 /*
  *    function implementation
@@ -121,7 +121,7 @@ bypass_default_i2s_in:
 
 static void StartAudioI2sInAWBHardware(struct snd_pcm_substream *substream)
 {
-	unsigned int u32Audio2ndI2sIn = 0;
+	uint32 u32Audio2ndI2sIn = 0;
 
 	/*
 	 * SmartPa might use different i2s in different chips.
@@ -181,7 +181,7 @@ static int mtk_i2s0_awb_pcm_prepare(struct snd_pcm_substream *substream)
 
 static int mtk_i2s0_awb_alsa_stop(struct snd_pcm_substream *substream)
 {
-	/* struct afe_block_t *Awb_Block = &(I2S0_AWB_Control_context->rBlock); */
+	/* AFE_BLOCK_T *Awb_Block = &(I2S0_AWB_Control_context->rBlock); */
 	pr_warn("mtk_i2s0_awb_alsa_stop\n");
 	StopAudioI2sInAWBHardware(substream);
 	RemoveMemifSubStream(Soc_Aud_Digital_Block_MEM_AWB, substream);

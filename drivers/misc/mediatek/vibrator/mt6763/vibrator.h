@@ -40,6 +40,5 @@ struct vibrator_hw {
 };
 
 void init_cust_vibrator_dtsi(struct platform_device *pdev);
-void init_vibr_oc_handler(void (*vibr_oc_func)(void));
 
 #endif

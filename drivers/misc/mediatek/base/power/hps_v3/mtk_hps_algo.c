@@ -69,7 +69,7 @@ static int hps_algo_big_task_det(void)
 	int i, j, ret;
 	unsigned int idle_det_time;
 	unsigned int window_length_ms = 0;
-	struct mtk_idle_recent_ratio ratio;
+	hps_idle_ratio_t ratio;
 
 	ret = 0;
 	mtk_idle_recent_ratio_get(&window_length_ms, &ratio);
@@ -632,11 +632,11 @@ void hps_algo_main(void)
 			}
 		}
 	}
-#if 0
+/*
 	if (hps_ctxt.heavy_task_enabled)
 		if (hps_algo_heavytsk_det())
 			hps_sys.action_id = 0xE1;
-#endif
+*/
 
 	if (hps_ctxt.big_task_enabled)
 		if (hps_algo_big_task_det())

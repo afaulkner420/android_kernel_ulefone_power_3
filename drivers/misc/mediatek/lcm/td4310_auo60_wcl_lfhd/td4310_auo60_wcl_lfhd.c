@@ -1,0 +1,348 @@
+/* Copyright Statement:
+ *
+ * This software/firmware and related documentation ("MediaTek Software") are
+ * protected under relevant copyright laws. The information contained herein
+ * is confidential and proprietary to MediaTek Inc. and/or its licensors.
+ * Without the prior written permission of MediaTek inc. and/or its licensors,
+ * any reproduction, modification, use or disclosure of MediaTek Software,
+ * and information contained herein, in whole or in part, shall be strictly prohibited.
+ */
+/* MediaTek Inc. (C) 2010. All rights reserved.
+ *
+ * BY OPENING THIS FILE, RECEIVER HEREBY UNEQUIVOCALLY ACKNOWLEDGES AND AGREES
+ * THAT THE SOFTWARE/FIRMWARE AND ITS DOCUMENTATIONS ("MEDIATEK SOFTWARE")
+ * RECEIVED FROM MEDIATEK AND/OR ITS REPRESENTATIVES ARE PROVIDED TO RECEIVER ON
+ * AN "AS-IS" BASIS ONLY. MEDIATEK EXPRESSLY DISCLAIMS ANY AND ALL WARRANTIES,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE OR NONINFRINGEMENT.
+ * NEITHER DOES MEDIATEK PROVIDE ANY WARRANTY WHATSOEVER WITH RESPECT TO THE
+ * SOFTWARE OF ANY THIRD PARTY WHICH MAY BE USED BY, INCORPORATED IN, OR
+ * SUPPLIED WITH THE MEDIATEK SOFTWARE, AND RECEIVER AGREES TO LOOK ONLY TO SUCH
+ * THIRD PARTY FOR ANY WARRANTY CLAIM RELATING THERETO. RECEIVER EXPRESSLY ACKNOWLEDGES
+ * THAT IT IS RECEIVER'S SOLE RESPONSIBILITY TO OBTAIN FROM ANY THIRD PARTY ALL PROPER LICENSES
+ * CONTAINED IN MEDIATEK SOFTWARE. MEDIATEK SHALL ALSO NOT BE RESPONSIBLE FOR ANY MEDIATEK
+ * SOFTWARE RELEASES MADE TO RECEIVER'S SPECIFICATION OR TO CONFORM TO A PARTICULAR
+ * STANDARD OR OPEN FORUM. RECEIVER'S SOLE AND EXCLUSIVE REMEDY AND MEDIATEK'S ENTIRE AND
+ * CUMULATIVE LIABILITY WITH RESPECT TO THE MEDIATEK SOFTWARE RELEASED HEREUNDER WILL BE,
+ * AT MEDIATEK'S OPTION, TO REVISE OR REPLACE THE MEDIATEK SOFTWARE AT ISSUE,
+ * OR REFUND ANY SOFTWARE LICENSE FEES OR SERVICE CHARGE PAID BY RECEIVER TO
+ * MEDIATEK FOR SUCH MEDIATEK SOFTWARE AT ISSUE.
+ *
+ * The following software/firmware and/or related documentation ("MediaTek Software")
+ * have been modified by MediaTek Inc. All revisions are subject to any receiver's
+ * applicable license agreements with MediaTek Inc.
+ *****************************************************************************/
+
+#if defined(BUILD_LK)
+#include <platform/mt_gpio.h>
+#include <platform/mt_pmic.h>
+#endif
+
+#if !defined(BUILD_LK)
+#include <linux/string.h>
+#endif
+#include "lcm_drv.h"
+
+#if defined(BUILD_LK)
+#else
+#endif
+
+
+// ---------------------------------------------------------------------------
+//  Local Constants
+// ---------------------------------------------------------------------------
+#define FRAME_WIDTH     (1080)
+#define FRAME_HEIGHT    (2160)
+#define LCM_ID			(0x023c)
+
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+// ---------------------------------------------------------------------------
+//  Local Variables
+// ---------------------------------------------------------------------------
+static LCM_UTIL_FUNCS lcm_util = {0};
+
+#define SET_RESET_PIN(v)    (lcm_util.set_reset_pin((v)))
+
+#define UDELAY(n) (lcm_util.udelay(n))
+#define MDELAY(n) (lcm_util.mdelay(n))
+#define REGFLAG_DELAY             							0xFFE
+#define REGFLAG_END_OF_TABLE      							0xFFF   // END OF REGISTERS MARKER
+
+// ---------------------------------------------------------------------------
+//  Local Functions
+// ---------------------------------------------------------------------------
+#define dsi_set_cmdq_V2(cmd, count, ppara, force_update)    lcm_util.dsi_set_cmdq_V2(cmd, count, ppara, force_update)
+#define dsi_set_cmdq(pdata, queue_size, force_update)		lcm_util.dsi_set_cmdq(pdata, queue_size, force_update)
+#define wrtie_cmd(cmd)										lcm_util.dsi_write_cmd(cmd)
+#define write_regs(addr, pdata, byte_nums)					lcm_util.dsi_write_regs(addr, pdata, byte_nums)
+#define read_reg(cmd)										lcm_util.dsi_dcs_read_lcm_reg(cmd)
+#define read_reg_v2(cmd, buffer, buffer_size)   			lcm_util.dsi_dcs_read_lcm_reg_v2(cmd, buffer, buffer_size)
+
+struct LCM_setting_table
+{
+    unsigned cmd;
+    unsigned char count;
+    unsigned char para_list[64];
+};
+
+static void lcm_init_power(void)
+{
+    display_bias_enable();
+    MDELAY(20);
+}
+
+static void lcm_suspend_power(void)
+{
+    display_bias_disable();
+}
+
+static void lcm_resume_power(void)
+{
+    SET_RESET_PIN(0);
+    display_bias_enable();
+    MDELAY(20);
+}
+
+static struct LCM_setting_table lcm_initialization_setting[] =
+{	
+{0xb0, 1,{0x00}},
+{0xb3, 3,{0x31,0x00,0x06}},
+{0xb4, 1,{0x00}},
+{0xb6, 5,{0x33,0x5b,0x81,0x12,0x00}},
+{0xb8, 7,{0x57,0x3d,0x19,0x1e,0x0a,0x50,0x50}},
+{0xb9, 7,{0x6f,0x3d,0x28,0x3c,0x14,0xc8,0xc8}},
+{0xba, 7,{0xb5,0x33,0x41,0x64,0x23,0xa0,0xa0}},
+{0xbb, 2,{0x14,0x14}},
+{0xbc, 2,{0x37,0x32}},
+{0xbd, 2,{0x64,0x32}},
+{0xbe, 1,{0x04}},
+{0xc0, 1,{0x00}},
+{0xc1, 48,{0x04,0x40,0x00,0x00,0x26,0x15,0x19,0x0b,0x63,0xd2,0xd9,0x9a,0x73,0xef,0xbd,0xe7,0x5c,0x6b,0x93,0x4d,0x22,0x18,0x8b,0x2a,0x41,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x02,0x22,0x1b,0x06,0x03,0x00,0x0f,0xff,0x00,0x01,0x00,0x00,0x00}},
+{0xc2, 24,{0x01,0xf8,0x70,0x08,0x68,0x08,0x0c,0x10,0x00,0x08,0x30,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x08,0x00,0x00,0x00,0x00}},
+{0xc3, 62,{0x86,0xd8,0x6d,0x86,0xd0,0x00,0x00,0x00,0x00,0x00,0x44,0x24,0x42,0x00,0x00,0x48,0x84,0x88,0x00,0x00,0x01,0x01,0x03,0x28,0x00,0x01,0x00,0x01,0x00,0x00,0x19,0x00,0x19,0x00,0x00,0x00,0x19,0x00,0x19,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x2e,0x00,0x2e,0x00,0x5a,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0x00}},
+{0xc4, 20,{0x70,0x00,0x00,0x00,0x11,0x11,0x00,0x00,0x00,0x02,0x02,0x31,0x01,0x00,0x00,0x00,0x02,0x01,0x01,0x01}},
+{0xc5, 8,{0x08,0x00,0x00,0x00,0x00,0x70,0x00,0x00}},
+{0xc6, 63,{0x42,0x21,0x21,0x05,0x3d,0x05,0x3d,0x01,0x02,0x01,0x02,0x05,0x05,0x00,0x00,0x05,0x05,0x0b,0x0c,0x05,0x42,0x00,0x6e,0x61,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}},
+{0xc7, 38,{0x00,0x1f,0x30,0x43,0x52,0x5c,0x72,0x80,0x8b,0x95,0x45,0x4f,0x5c,0x70,0x79,0x85,0x90,0x93,0x97,0x00,0x1f,0x30,0x43,0x52,0x5c,0x72,0x80,0x8b,0x95,0x45,0x4f,0x5c,0x70,0x79,0x85,0x90,0x93,0x97}},
+{0xc8, 55,{0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00}},
+{0xc9, 19,{0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00,0x00,0x00,0x00,0x00,0xfc,0x00}},
+{0xca, 43,{0x1c,0xfc,0xfc,0xfc,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}},
+{0xcb, 27,{0xff,0xff,0xff,0xff,0x0f,0x00,0x08,0x00,0x01,0x00,0x31,0xf0,0x40,0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}},
+{0xcc, 2,{0x02,0x01}},
+{0xcd, 38,{0x10,0x00,0x28,0x00,0x28,0x00,0x5c,0x02,0xdf,0xdf,0xe0,0xe0,0xd6,0xd6,0xe0,0xe0,0x01,0x00,0x00,0x00,0x32,0x00,0x32,0x00,0x5d,0x02,0x24,0x24,0x01,0x33,0x00,0x33,0x00,0x5e,0x02,0x24,0x24,0xa2}},
+{0xce, 25,{0x5d,0x40,0x49,0x53,0x59,0x5e,0x63,0x68,0x6e,0x74,0x7e,0x8a,0x98,0xa8,0xbb,0xd0,0xff,0x04,0x00,0x04,0x04,0x42,0x00,0x69,0x5a}},
+{0xcf, 2,{0x4a,0x1d}},
+{0xd0, 19,{0x33,0x57,0xd4,0x31,0x01,0x10,0x10,0x10,0x19,0x19,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x6d,0x65}},
+{0xd1, 1,{0x00}},
+{0xd3, 21,{0x1b,0x3b,0xbb,0x77,0x77,0x77,0xbb,0xb3,0x33,0x00,0x00,0x6d,0x6e,0xc7,0xc7,0x33,0xbb,0xf2,0xfd,0xc6,0x0b}},
+{0xd5, 3,{0x03,0x00,0x00}},
+{0xd6, 1,{0xc1}},
+{0xd7, 33,{0xf6,0xff,0x03,0x05,0x41,0x24,0x80,0x1f,0xc7,0x1f,0x1b,0x00,0x0c,0x07,0x20,0x00,0x00,0x00,0x00,0x00,0x0c,0x00,0x1f,0x00,0xfc,0x00,0x00,0xab,0x67,0x7e,0x5d,0x26,0x00}},
+{0xd9, 7,{0x00,0x16,0x14,0x3f,0x0f,0x57,0x04}},
+{0xdd, 4,{0x30,0x06,0x23,0x65}},
+{0xde, 4,{0x00,0x3f,0xff,0x90}},
+{0xea, 1,{0x1f}},
+{0xee, 3,{0x41,0x51,0x00}},
+{0xf1, 3,{0x00,0x00,0x00}},
+{0xb0, 1,{0x03}},
+    {0xB0,1,{0x00}},
+    {0xD6,1,{0x01}},
+    {0xB0,1,{0x03}},
+
+    {0x11,0,{0x00}},
+    {REGFLAG_DELAY, 130, {}},
+    {0x29,0,{0x00}},
+    {REGFLAG_DELAY, 20, {}},
+    {REGFLAG_END_OF_TABLE, 0x00, {}}
+};
+
+
+static struct LCM_setting_table lcm_sleep_mode_in_setting[] =
+{
+    // Display off sequence
+    {0x28, 0, {0x00}},
+    {REGFLAG_DELAY, 20, {}},
+
+    // Sleep Mode On
+    {0x10, 0, {0x00}},
+    {REGFLAG_DELAY, 120, {}},
+    {REGFLAG_END_OF_TABLE, 0x00, {}}
+};
+
+static void push_table(struct LCM_setting_table *table, unsigned int count, unsigned char force_update)
+{
+    unsigned int i;
+
+    for (i = 0; i < count; i++)
+    {
+        unsigned cmd;
+        cmd = table[i].cmd;
+
+        switch (cmd)
+        {
+            case REGFLAG_DELAY :
+                MDELAY(table[i].count);
+                break;
+            case REGFLAG_END_OF_TABLE :
+                break;
+            default:
+                dsi_set_cmdq_V2(cmd, table[i].count, table[i].para_list, force_update);
+                //MDELAY(2);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  LCM Driver Implementations
+// ---------------------------------------------------------------------------
+static void lcm_set_util_funcs(const LCM_UTIL_FUNCS *util)
+{
+    memcpy(&lcm_util, util, sizeof(LCM_UTIL_FUNCS));
+}
+
+static void lcm_get_params(LCM_PARAMS *params)
+{
+    memset(params, 0, sizeof(LCM_PARAMS));
+
+    params->type = LCM_TYPE_DSI;
+
+    params->width = FRAME_WIDTH;
+    params->height = FRAME_HEIGHT;
+    params->physical_width = 63;
+    params->physical_height = 110;
+    // enable tearing-free
+    params->dbi.te_mode = LCM_DBI_TE_MODE_VSYNC_ONLY;
+    params->dbi.te_edge_polarity = LCM_POLARITY_RISING;
+
+    params->dsi.mode   = SYNC_EVENT_VDO_MODE;//SYNC_EVENT_VDO_MODE;//SYNC_PULSE_VDO_MODE;//BURST_VDO_MODE;
+
+    // DSI
+    /* Command mode setting */
+    params->dsi.LANE_NUM = LCM_FOUR_LANE;
+    //The following defined the fomat for data coming from LCD engine.
+    params->dsi.data_format.color_order = LCM_COLOR_ORDER_RGB;
+    params->dsi.data_format.trans_seq = LCM_DSI_TRANS_SEQ_MSB_FIRST;
+    params->dsi.data_format.padding = LCM_DSI_PADDING_ON_LSB;
+    params->dsi.data_format.format = LCM_DSI_FORMAT_RGB888;
+
+    // Highly depends on LCD driver capability.
+    // Not support in MT6573
+    params->dsi.packet_size=256;
+    params->dsi.PS=LCM_PACKED_PS_24BIT_RGB888;
+
+    params->dsi.vertical_sync_active                = 2; //2
+    params->dsi.vertical_backporch                  = 10; //14
+    params->dsi.vertical_frontporch                 = 14;  //16
+    params->dsi.vertical_active_line                = FRAME_HEIGHT;
+
+    params->dsi.horizontal_sync_active				= 2;//10 8
+    params->dsi.horizontal_backporch				= 50;//34 32; 
+    params->dsi.horizontal_frontporch				= 80;//24 43;
+    params->dsi.horizontal_active_pixel				= FRAME_WIDTH;
+
+    params->dsi.PLL_CLOCK = 540;
+	params->dsi.clk_lp_per_line_enable = 0;
+	params->dsi.esd_check_enable = 1;
+	params->dsi.customization_esd_check_enable = 1;
+	params->dsi.lcm_esd_check_table[0].cmd          = 0x0A;
+	params->dsi.lcm_esd_check_table[0].count        = 1;
+	params->dsi.lcm_esd_check_table[0].para_list[0] = 0x1C;
+}
+//static unsigned int lcm_compare_id(void);
+static void lcm_init(void)
+{
+    SET_RESET_PIN(1);
+    MDELAY(10);
+    SET_RESET_PIN(0);
+    MDELAY(10);
+    SET_RESET_PIN(1);
+    MDELAY(120);
+
+    push_table(lcm_initialization_setting, sizeof(lcm_initialization_setting) / sizeof(struct LCM_setting_table), 1);
+}
+
+static void lcm_suspend(void)
+{
+    push_table(lcm_sleep_mode_in_setting, sizeof(lcm_sleep_mode_in_setting) / sizeof(struct LCM_setting_table), 1);
+    SET_RESET_PIN(0);
+    MDELAY(50);
+}
+
+extern int IMM_GetOneChannelValue(int dwChannel, int data[4], int* rawdata);
+
+static void lcm_resume(void)
+{
+    lcm_init();
+ //   lcm_compare_id();
+}
+static int adc_read_vol(void)
+{
+  int adc[1];
+  int data[4] ={0,0,0,0};
+  int sum = 0;
+  int adc_vol=0;
+  int num = 0;
+
+  for(num=0;num<10;num++)
+  {
+    IMM_GetOneChannelValue(2, data, NULL);
+    sum+=(data[0]*100+data[1]);
+  }
+  adc_vol = sum/10;
+
+#if defined(BUILD_LK)
+  printf("wujie  adc_vol is %d\n",adc_vol);
+#else
+  printk("wujie  adc_vol is %d\n",adc_vol);
+#endif
+
+  return (adc_vol>60) ? 0 : 1;
+}
+static unsigned int lcm_compare_id(void)
+{
+    int array[4];
+    char buffer[3];
+    int id=0;
+
+    SET_RESET_PIN(1);
+    MDELAY(10);
+    SET_RESET_PIN(0);
+    MDELAY(20);
+    SET_RESET_PIN(1);
+    MDELAY(120);
+
+    array[0] = 0x00013700;
+    dsi_set_cmdq(array, 1, 1);
+    MDELAY(10);
+
+    read_reg_v2(0xbf, buffer, 2);
+    id = (buffer[0] << 8) + buffer[1] + adc_read_vol();
+
+#if defined(BUILD_LK)
+    printf("%s,td4310_auo60_wcl_lfhd buffer[0] = 0x%08x, id = 0x%08x\n", __func__, buffer[0], id);
+#else
+    printk("%s,td4310_auo60_wcl_lfhd  buffer[0] = 0x%08x, buffer[1] = 0x%08x, id = 0x%08x\n", __func__, buffer[0], buffer[1], id);
+#endif
+    return (0x023d == id)?1:0;
+}
+
+LCM_DRIVER td4310_auo60_wcl_lfhd_lcm_drv =
+{
+    .name			= "td4310_auo60_wcl_lfhd",
+    .set_util_funcs = lcm_set_util_funcs,
+    .get_params     = lcm_get_params,
+    .init           = lcm_init,
+    .suspend        = lcm_suspend,
+    .resume         = lcm_resume,
+    .compare_id     = lcm_compare_id,
+    .init_power     = lcm_init_power,
+    .resume_power   = lcm_resume_power,
+    .suspend_power  = lcm_suspend_power,
+};

@@ -21,8 +21,6 @@
 #include <linux/preempt.h>
 #include <linux/uaccess.h>
 
-#include "mtk_devinfo.h"
-
 #include <mt-plat/upmu_common.h>
 #include <mach/mtk_pmic.h>
 #include "include/pmic.h"
@@ -38,68 +36,10 @@
 #include "pwrap_hal.h"
 #endif
 
+static unsigned int vmodem_vosel = 0x2C;        /* VMODEM 0.775V: 0x2C */
+
 void vmd1_pmic_setting_on(void)
 {
-	unsigned int vcore_vosel = 0;
-	unsigned int vmodem_vosel = 0;
-	unsigned int segment = get_devinfo_with_index(28);
-	unsigned char vcore_segment = (unsigned char)((segment & 0xC0000000) >> 30);
-	unsigned char vmodem_segment = (unsigned char)((segment & 0x08000000) >> 27);
-
-	if ((vcore_segment & 0x3) == 0x1 ||
-	    (vcore_segment & 0x3) == 0x2) {
-		/* VCORE 1.15V: 0x65 */
-		vcore_vosel = 0x65;
-	} else {
-		/* VCORE 1.20V: 0x6D */
-		vcore_vosel = 0x6D;
-	}
-
-#if defined(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES)
-	/* PMIC special flavor project */
-	if (strncmp(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES,
-		    "mediatek/k39tv1_ctightening", 27) == 0) {
-		if ((vcore_segment & 0x3) == 0x1 ||
-		    (vcore_segment & 0x3) == 0x2) {
-			/* VCORE 1.11250V: 0x5F */
-			vcore_vosel = 0x5F;
-		} else {
-			/* VCORE 1.15625V: 0x66 */
-			vcore_vosel = 0x66;
-		}
-	} else if (strncmp(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES,
-		    "mediatek/k39v1_ctightening", 26) == 0) {
-		if ((vcore_segment & 0x3) == 0x1 ||
-		    (vcore_segment & 0x3) == 0x2) {
-			/* VCORE 1.0875V: 0x5B */
-			vcore_vosel = 0x5B;
-		} else {
-			/* VCORE 1.13125V: 0x62 */
-			vcore_vosel = 0x62;
-		}
-	} else if (strncmp(CONFIG_BUILD_ARM64_APPENDED_DTB_IMAGE_NAMES,
-		    "mediatek/k39v1_bsp_ctighten", 27) == 0) {
-		if ((vcore_segment & 0x3) == 0x1 ||
-		    (vcore_segment & 0x3) == 0x2) {
-			/* VCORE 1.0875V: 0x5B */
-			vcore_vosel = 0x5B;
-		} else {
-			/* VCORE 1.13125V: 0x62 */
-			vcore_vosel = 0x62;
-		}
-	}
-#endif
-
-	if (!vmodem_segment)
-		vmodem_vosel = 0x6F;/* VMODEM 1.19375V: 0x6F */
-	else
-		vmodem_vosel = 0x68;/* VMODEM 1.15V: 0x68 */
-
-	if (pmic_get_register_value(PMIC_DA_VCORE_VOSEL) != vcore_vosel)
-		pr_err("vmd1_pmic_setting_on vcore vosel = 0x%x, da_vosel = 0x%x",
-			pmic_get_register_value(PMIC_RG_BUCK_VCORE_VOSEL),
-			pmic_get_register_value(PMIC_DA_VCORE_VOSEL));
-
 	/* 1.Call PMIC driver API configure VMODEM voltage */
 	pmic_set_register_value(PMIC_RG_BUCK_VMODEM_VOSEL, vmodem_vosel);
 	if (pmic_get_register_value(PMIC_DA_VMODEM_VOSEL) != vmodem_vosel)
@@ -111,15 +51,6 @@ void vmd1_pmic_setting_on(void)
 void vmd1_pmic_setting_off(void)
 {
 	PMICLOG("vmd1_pmic_setting_off\n");
-}
-
-void pmic_enable_smart_reset(unsigned char smart_en,
-	unsigned char smart_sdn_en)
-{
-	pmic_set_register_value(PMIC_RG_SMART_RST_MODE, smart_en);
-	pmic_set_register_value(PMIC_RG_SMART_RST_SDN_EN, smart_sdn_en);
-	pr_info("[%s] smart_en:%d, smart_sdn_en:%d\n",
-		__func__, smart_en, smart_sdn_en);
 }
 
 int vcore_pmic_set_mode(unsigned char mode)

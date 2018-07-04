@@ -28,7 +28,7 @@
 
 #include "phy-mtk.h"
 #include "phy-mtk-ssusb-reg.h"
-#include <mtk-ssusb-hal.h>
+#include "mtk-phy-hal.h"
 
 static DEFINE_SPINLOCK(mu3phy_clock_lock);
 
@@ -43,6 +43,10 @@ static DEFINE_SPINLOCK(mu3phy_clock_lock);
  *#define U3D_SSUSB_IP_PW_CTRL3		(MTK_USB_IPPC_BASE + 0x000C)
  *#define U3D_SSUSB_U3_CTRL_0P		(MTK_USB_IPPC_BASE + 0x0030)
  */
+
+#ifdef CONFIG_MTK_UART_USB_SWITCH
+#define AP_UART0_COMPATIBLE_NAME "mediatek,gpio"
+#endif
 
 static bool usb_enable_clock(struct mtk_phy_drv *u3phy, bool enable)
 {
@@ -89,7 +93,7 @@ int u3phyread32(void __iomem *addr)
 }
 
 #ifdef CONFIG_U3_PHY_SMT_LOOP_BACK_SUPPORT
-bool phy_u3_loop_back_test(struct mtk_phy_instance *instance)
+bool usb_phy_u3_loop_back_test(struct mtk_phy_instance *instance)
 {
 	int reg;
 	bool loop_back_ret = false;
@@ -191,7 +195,7 @@ bool phy_u3_loop_back_test(struct mtk_phy_instance *instance)
 #endif
 
 #ifdef CONFIG_MTK_SIB_USB_SWITCH
-static void phy_sib_enable(struct mtk_phy_instance *instance, bool enable)
+static void usb_phy_sib_enable(struct mtk_phy_instance *instance, bool enable)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
@@ -242,7 +246,7 @@ static void phy_sib_enable(struct mtk_phy_instance *instance, bool enable)
 
 #endif
 
-static int phy_slew_rate_calibration(struct mtk_phy_instance *instance)
+static int usb_phy_slew_rate_calibration(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 	int i = 0;
@@ -297,17 +301,10 @@ static int phy_slew_rate_calibration(struct mtk_phy_instance *instance)
 	return fgRet;
 }
 
-static int phy_init_soc(struct mtk_phy_instance *instance)
+static int usb_phy_init_soc(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 	struct device_node *of_node = instance->phy->dev.of_node;
-	int usb_port_mode;
-
-	usb_port_mode = u3phyread32(U3D_U2PHYDTM0) >> RG_UART_MODE_OFST;
-	if (usb_port_mode)
-		instance->uart_mode = true;
-	else
-		instance->uart_mode = false;
 
 	phy_printk(K_DEBUG, "%s\n", __func__);
 	usb_enable_clock(phy_drv, true);
@@ -364,8 +361,9 @@ static int phy_init_soc(struct mtk_phy_instance *instance)
 	}
 
 /* EFUSE related sequence */
-	if (of_device_is_compatible(of_node, "mediatek,mt6758-phy") ||
-		of_device_is_compatible(of_node, "mediatek,mt6799-phy")) {
+	if (of_device_is_compatible(of_node, "mediatek,mt6758-phy")) {
+		;
+	} else if (of_device_is_compatible(of_node, "mediatek,mt6799-phy")) {
 		u32 evalue;
 
 		evalue = (get_devinfo_with_index(108) & (0x1f<<0)) >> 0;
@@ -393,11 +391,8 @@ static int phy_init_soc(struct mtk_phy_instance *instance)
 					RG_SSUSB_TX_IMPSEL, evalue);
 		}
 	}
-#ifdef CONFIG_MTK_UART_USB_SWITCH
-	u3phywrite32(U3D_U2PHYDTM1, RG_VBUSVALID_OFST, RG_VBUSVALID, 1);
-	u3phywrite32(U3D_U2PHYDTM1, RG_AVALID_OFST, RG_AVALID, 1);
-	u3phywrite32(U3D_U2PHYDTM1, RG_SESSEND_OFST, RG_SESSEND, 0);
 
+#ifdef CONFIG_MTK_UART_USB_SWITCH
 reg_done:
 #endif
 	usb_enable_clock(phy_drv, false);
@@ -406,7 +401,7 @@ reg_done:
 }
 
 
-static void phy_savecurrent(struct mtk_phy_instance *instance)
+static void usb_phy_savecurrent(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
@@ -459,52 +454,7 @@ reg_done:
 	usb_enable_clock(phy_drv, false);
 }
 
-#define VAL_MAX_WIDTH_2	0x3
-#define VAL_MAX_WIDTH_3	0x7
-void usb_phy_tuning(struct mtk_phy_instance *instance)
-{
-	s32 u2_vrt_ref, u2_term_ref, u2_enhance;
-	struct device_node *of_node;
-
-	if (!instance->phy_tuning.inited) {
-		instance->phy_tuning.u2_vrt_ref = -1;
-		instance->phy_tuning.u2_term_ref = -1;
-		instance->phy_tuning.u2_enhance = -1;
-		of_node = of_find_compatible_node(NULL, NULL, instance->phycfg->tuning_node_name);
-		if (of_node) {
-			/* value won't be updated if property not being found */
-			of_property_read_u32(of_node, "u2_vrt_ref", (u32 *) &instance->phy_tuning.u2_vrt_ref);
-			of_property_read_u32(of_node, "u2_term_ref", (u32 *) &instance->phy_tuning.u2_term_ref);
-			of_property_read_u32(of_node, "u2_enhance", (u32 *) &instance->phy_tuning.u2_enhance);
-		}
-		instance->phy_tuning.inited = true;
-	}
-	u2_vrt_ref = instance->phy_tuning.u2_vrt_ref;
-	u2_term_ref = instance->phy_tuning.u2_term_ref;
-	u2_enhance = instance->phy_tuning.u2_enhance;
-
-	if (u2_vrt_ref != -1) {
-		if (u2_vrt_ref <= VAL_MAX_WIDTH_3) {
-			u3phywrite32(U3D_USBPHYACR1, RG_USB20_VRT_VREF_SEL_OFST,
-				RG_USB20_VRT_VREF_SEL, u2_vrt_ref);
-		}
-	}
-	if (u2_term_ref != -1) {
-		if (u2_term_ref <= VAL_MAX_WIDTH_3) {
-			u3phywrite32(U3D_USBPHYACR1, RG_USB20_TERM_VREF_SEL_OFST,
-				RG_USB20_TERM_VREF_SEL, u2_term_ref);
-		}
-	}
-	if (u2_enhance != -1) {
-		if (u2_enhance <= VAL_MAX_WIDTH_2) {
-			u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST,
-				RG_USB20_PHY_REV_6, u2_enhance);
-		}
-	}
-}
-
-
-static void phy_recover(struct mtk_phy_instance *instance)
+static void usb_phy_recover(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
@@ -544,8 +494,8 @@ static void phy_recover(struct mtk_phy_instance *instance)
 	u3phywrite32(U3D_U2PHYDTM1, RG_AVALID_OFST, RG_AVALID, 1);
 	u3phywrite32(U3D_U2PHYDTM1, RG_SESSEND_OFST, RG_SESSEND, 0);
 
-	phy_slew_rate_calibration(instance);
-	usb_phy_tuning(instance);
+	usb_phy_slew_rate_calibration(instance);
+
 }
 
 
@@ -580,7 +530,7 @@ static int charger_detect_release(struct mtk_phy_instance *instance)
 	return 0;
 }
 
-static void phy_charger_switch_bc11(struct mtk_phy_instance *instance, bool on)
+static void usb_phy_charger_switch_bc11(struct mtk_phy_instance *instance, bool on)
 {
 	if (on)
 		charger_detect_init(instance);
@@ -588,7 +538,7 @@ static void phy_charger_switch_bc11(struct mtk_phy_instance *instance, bool on)
 		charger_detect_release(instance);
 }
 
-static int phy_lpm_enable(struct mtk_phy_instance  *instance, bool on)
+static int usb_phy_lpm_enable(struct mtk_phy_instance  *instance, bool on)
 {
 	phy_printk(K_DEBUG, "%s+ = %d\n", __func__, on);
 
@@ -600,45 +550,22 @@ static int phy_lpm_enable(struct mtk_phy_instance  *instance, bool on)
 	return 0;
 }
 
-static int phy_host_mode(struct mtk_phy_instance  *instance, bool on)
+static int usb_phy_host_mode(struct mtk_phy_instance  *instance, bool on)
 {
-	struct mtk_phy_drv *phy_drv = instance->phy_drv;
-
 	phy_printk(K_DEBUG, "%s+ = %d\n", __func__, on);
 
 	if (on) {
-		if (!IS_ERR_OR_NULL(phy_drv->ssusb_clk_refpll)) {
-			if (clk_enable(phy_drv->ssusb_clk_refpll))
-				phy_printk(K_ERR, "ssusb_clk_refpll enable  fail\n");
-		}
-		if (!IS_ERR_OR_NULL(phy_drv->ssusb_clk_mux)) {
-			if (clk_enable(phy_drv->ssusb_clk_mux))
-				phy_printk(K_ERR, "ssusb_clk_mux enable fail\n");
-			else {
-				if (clk_set_parent(phy_drv->ssusb_clk_mux, phy_drv->ssusb_clk_mux_host))
-					phy_printk(K_ERR, "ssusb_clk_mux switch fail\n");
-			}
-		}
-
 		u3phywrite32(U3D_U2PHYACR4, RG_USB20_TX_BIAS_EN_OFST, RG_USB20_TX_BIAS_EN, 0x1);
 		u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST, RG_USB20_PHY_REV_6, 0x1);
 	} else {
 		u3phywrite32(U3D_U2PHYACR4, RG_USB20_TX_BIAS_EN_OFST, RG_USB20_TX_BIAS_EN, 0x0);
 		u3phywrite32(U3D_USBPHYACR6, RG_USB20_PHY_REV_6_OFST, RG_USB20_PHY_REV_6, 0x0);
-		if (!IS_ERR_OR_NULL(phy_drv->ssusb_clk_mux)) {
-			if (clk_set_parent(phy_drv->ssusb_clk_mux, phy_drv->ssusb_clk_mux_default))
-				phy_printk(K_ERR, "ssusb_clk_mux switch fail\n");
-			clk_disable(phy_drv->ssusb_clk_mux);
-		}
-		if (!IS_ERR_OR_NULL(phy_drv->ssusb_clk_refpll))
-			clk_disable(phy_drv->ssusb_clk_refpll);
-
 	}
 
 	return 0;
 }
 
-static int phy_ioread(struct mtk_phy_instance  *instance, int mode, u32 reg)
+static int usb_phy_ioread(struct mtk_phy_instance  *instance, int mode, u32 reg)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
@@ -650,7 +577,7 @@ static int phy_ioread(struct mtk_phy_instance  *instance, int mode, u32 reg)
 		return 0;
 }
 
-static int phy_iowrite(struct mtk_phy_instance  *instance, int mode, u32 val, u32 reg)
+static int usb_phy_iowrite(struct mtk_phy_instance  *instance, int mode, u32 val, u32 reg)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
@@ -663,7 +590,7 @@ static int phy_iowrite(struct mtk_phy_instance  *instance, int mode, u32 val, u3
 }
 
 #ifdef CONFIG_MTK_UART_USB_SWITCH
-static bool phy_check_in_uart_mode(struct mtk_phy_instance *instance)
+static bool usb_phy_check_in_uart_mode(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 	int usb_port_mode;
@@ -682,11 +609,11 @@ static bool phy_check_in_uart_mode(struct mtk_phy_instance *instance)
 		return false;
 }
 
-static void phy_switch_to_uart(struct mtk_phy_instance *instance)
+static void usb_phy_switch_to_uart(struct mtk_phy_instance *instance)
 {
 	struct mtk_phy_drv *phy_drv = instance->phy_drv;
 
-	if (phy_check_in_uart_mode(instance)) {
+	if (usb_phy_check_in_uart_mode(instance)) {
 		phy_printk(K_DEBUG, "%s+ UART_MODE\n", __func__);
 		return;
 	}
@@ -696,9 +623,6 @@ static void phy_switch_to_uart(struct mtk_phy_instance *instance)
 	usb_enable_clock(phy_drv, true);
 	udelay(250);
 
-
-	u3phywrite32(U3D_USBPHYACR2, RG_SIFSLV_MAC_BANDGAP_EN_OFST, RG_SIFSLV_MAC_BANDGAP_EN, 0);
-	u3phywrite32(U3D_USBPHYACR0, RG_SIFSLV_BGR_EN_OFST, RG_SIFSLV_BGR_EN, 1);
 	u3phywrite32(U3D_USBPHYACR6, RG_USB20_BC11_SW_EN_OFST, RG_USB20_BC11_SW_EN, 0);
 	u3phywrite32(U3D_U2PHYDTM0, RG_SUSPENDM_OFST, RG_SUSPENDM, 1);
 	u3phywrite32(U3D_U2PHYDTM0, FORCE_SUSPENDM_OFST, FORCE_SUSPENDM, 1);
@@ -707,7 +631,6 @@ static void phy_switch_to_uart(struct mtk_phy_instance *instance)
 	u3phywrite32(U3D_U2PHYDTM0, FORCE_UART_EN_OFST, FORCE_UART_EN, 1);
 	u3phywrite32(U3D_U2PHYDTM0, FORCE_UART_TX_OE_OFST, FORCE_UART_TX_OE, 1);
 	u3phywrite32(U3D_U2PHYDTM0, FORCE_UART_BIAS_EN_OFST, FORCE_UART_BIAS_EN, 1);
-	u3phywrite32(U3D_U2PHYDTM0, FORCE_USB_CLKEN_OFST, FORCE_USB_CLKEN, 0);
 	u3phywrite32(U3D_U2PHYDTM1, RG_UART_EN_OFST, RG_UART_EN, 1);
 	u3phywrite32(U3D_U2PHYDTM1, RG_UART_TX_OE_OFST, RG_UART_TX_OE, 1);
 	u3phywrite32(U3D_U2PHYDTM1, RG_UART_BIAS_EN_OFST, RG_UART_BIAS_EN, 1);
@@ -719,18 +642,13 @@ static void phy_switch_to_uart(struct mtk_phy_instance *instance)
 }
 
 
-static void phy_switch_to_usb(struct mtk_phy_instance *instance)
+static void usb_phy_switch_to_usb(struct mtk_phy_instance *instance)
 {
 	instance->uart_mode = false;
 
 	u3phywrite32(U3D_U2PHYDTM0, FORCE_UART_EN_OFST, FORCE_UART_EN, 0);
-	u3phywrite32(U3D_U2PHYDTM0, RG_UART_MODE_OFST, RG_UART_MODE, 0);
-	u3phywrite32(U3D_USBPHYACR2, RG_SIFSLV_MAC_BANDGAP_EN_OFST, RG_SIFSLV_MAC_BANDGAP_EN, 1);
-	u3phywrite32(U3D_USBPHYACR0, RG_SIFSLV_BGR_EN_OFST, RG_SIFSLV_BGR_EN, 0);
-	u3phywrite32(U3D_U2PHYDTM0, FORCE_USB_CLKEN_OFST, FORCE_USB_CLKEN, 1);
 
-
-	phy_init_soc(instance);
+	usb_phy_init_soc(instance);
 }
 #endif
 
@@ -763,31 +681,12 @@ int mtk_phy_drv_init(struct platform_device *pdev, struct mtk_phy_drv *mtkphy)
 #endif
 
 	mtkphy->clk = devm_clk_get(dev, "ssusb_clk");
-	if (IS_ERR_OR_NULL(mtkphy->clk)) {
+	if (IS_ERR(mtkphy->clk)) {
 		dev_err(dev, "failed to get usb_hs_clk\n");
 		return PTR_ERR(mtkphy->clk);
 	}
+
 	clk_prepare(mtkphy->clk);
-
-	mtkphy->ssusb_clk_mux = devm_clk_get(dev, "ssusb_clk_mux");
-	if (!IS_ERR_OR_NULL(mtkphy->ssusb_clk_mux)) {
-		mtkphy->ssusb_clk_mux_default = devm_clk_get(dev, "ssusb_clk_mux_default");
-		if (IS_ERR_OR_NULL(mtkphy->ssusb_clk_mux_default)) {
-			pr_info("failed to get ssusb_clk_mux_default\n");
-			return PTR_ERR(mtkphy->ssusb_clk_mux_default);
-		}
-		mtkphy->ssusb_clk_mux_host = devm_clk_get(dev, "ssusb_clk_mux_host");
-		if (IS_ERR_OR_NULL(mtkphy->ssusb_clk_mux_host)) {
-			pr_info("failed to get ssusb_clk_mux_host\n");
-			return PTR_ERR(mtkphy->ssusb_clk_mux_host);
-		}
-		clk_prepare(mtkphy->ssusb_clk_mux);
-	}
-
-	mtkphy->ssusb_clk_refpll = devm_clk_get(dev, "ssusb_clk_refpll");
-	if (!IS_ERR_OR_NULL(mtkphy->ssusb_clk_refpll))
-		clk_prepare(mtkphy->ssusb_clk_refpll);
-
 
 	mtkphy->vusb33 = devm_regulator_get(dev, "vusb33");
 	if (IS_ERR(mtkphy->vusb33)) {
@@ -827,13 +726,6 @@ int mtk_phy_drv_exit(struct platform_device *pdev, struct mtk_phy_drv *mtkphy)
 	if (!IS_ERR_OR_NULL(mtkphy->clk))
 		clk_unprepare(mtkphy->clk);
 
-	if (!IS_ERR_OR_NULL(mtkphy->ssusb_clk_mux))
-		clk_unprepare(mtkphy->ssusb_clk_mux);
-
-
-	if (!IS_ERR_OR_NULL(mtkphy->ssusb_clk_refpll))
-		clk_unprepare(mtkphy->ssusb_clk_refpll);
-
 	return 0;
 }
 
@@ -841,27 +733,26 @@ int mtk_phy_drv_exit(struct platform_device *pdev, struct mtk_phy_drv *mtkphy)
 static const struct mtk_phy_interface ssusb_phys[] = {
 {
 	.name		= "port0",
-	.tuning_node_name = "mediatek,phy_tuning",
 	.port_num	= 0,
 	.reg_offset = 0x800,
-	.usb_phy_init = phy_init_soc,
-	.usb_phy_savecurrent = phy_savecurrent,
-	.usb_phy_recover  = phy_recover,
-	.usb_phy_switch_to_bc11 = phy_charger_switch_bc11,
-	.usb_phy_lpm_enable = phy_lpm_enable,
-	.usb_phy_host_mode = phy_host_mode,
-	.usb_phy_io_read = phy_ioread,
-	.usb_phy_io_write = phy_iowrite,
+	.usb_phy_init = usb_phy_init_soc,
+	.usb_phy_savecurrent = usb_phy_savecurrent,
+	.usb_phy_recover  = usb_phy_recover,
+	.usb_phy_switch_to_bc11 = usb_phy_charger_switch_bc11,
+	.usb_phy_lpm_enable = usb_phy_lpm_enable,
+	.usb_phy_host_mode = usb_phy_host_mode,
+	.usb_phy_io_read = usb_phy_ioread,
+	.usb_phy_io_write = usb_phy_iowrite,
 #ifdef CONFIG_MTK_UART_USB_SWITCH
-	.usb_phy_switch_to_usb = phy_switch_to_usb,
-	.usb_phy_switch_to_uart = phy_switch_to_uart,
-	.usb_phy_check_in_uart_mode = phy_check_in_uart_mode,
+	.usb_phy_switch_to_usb = usb_phy_switch_to_usb,
+	.usb_phy_switch_to_uart = usb_phy_switch_to_uart,
+	.usb_phy_check_in_uart_mode = usb_phy_check_in_uart_mode,
 #endif
 #ifdef CONFIG_MTK_SIB_USB_SWITCH
-	.usb_phy_sib_enable_switch = phy_sib_enable,
+	.usb_phy_sib_enable_switch = usb_phy_sib_enable,
 #endif
 #ifdef CONFIG_U3_PHY_SMT_LOOP_BACK_SUPPORT
-	.usb_phy_u3_loop_back_test = phy_u3_loop_back_test,
+	.usb_phy_u3_loop_back_test = usb_phy_u3_loop_back_test,
 #endif
 	},
 };

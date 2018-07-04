@@ -19,9 +19,9 @@
 static mmdvfs_state_change_cb quick_mmdvfs_state_change_cbs[MMDVFS_SCEN_COUNT];
 static mmdvfs_prepare_action_cb quick_mmdvfs_prepare_action_cbs[MMDVFS_SCEN_COUNT];
 
-enum mmdvfs_lcd_size_enum mmdvfs_get_lcd_resolution(void)
+mmdvfs_lcd_size_enum mmdvfs_get_lcd_resolution(void)
 {
-	enum mmdvfs_lcd_size_enum result = MMDVFS_LCD_SIZE_HD;
+	mmdvfs_lcd_size_enum result = MMDVFS_LCD_SIZE_HD;
 	long lcd_resolution = 0;
 	long lcd_w = 0;
 	long lcd_h = 0;
@@ -34,7 +34,7 @@ enum mmdvfs_lcd_size_enum mmdvfs_get_lcd_resolution(void)
 #endif	/* CONFIG_LCM_WIDTH, CONFIG_LCM_HEIGHT */
 
 	if (convert_err) {
-#if !defined(CONFIG_FPGA_EARLY_PORTING) && defined(CONFIG_MTK_FB)
+#if !defined(CONFIG_FPGA_EARLY_PORTING)
 		lcd_w = DISP_GetScreenWidth();
 		lcd_h = DISP_GetScreenHeight();
 #else

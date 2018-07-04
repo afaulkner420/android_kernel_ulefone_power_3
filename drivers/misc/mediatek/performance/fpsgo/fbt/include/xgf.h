@@ -52,7 +52,7 @@ struct xgf_proc {
 struct xgf_timer {
 	struct hlist_node hlist;
 	struct rb_node rb_node;
-	const void *hrtimer;
+	const struct hrtimer *hrtimer;
 	struct xgf_tick fire;
 	struct xgf_tick expire;
 	union {

@@ -320,7 +320,8 @@ static inline int map_buffer(struct task_struct *task, const void *data,
 			u64 *pte = &mmu_table->l2_tables[chunk].ptes_64[0];
 
 			for (i = 0; i < pages_nr; i++, page_ptr++, pte++) {
-				*pte = page_to_phys(*page_ptr);
+				unsigned long phys = page_to_phys(*page_ptr);
+				*pte = phys;
 				*pte |= pte_flags_64;
 			}
 		} else {

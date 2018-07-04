@@ -321,4 +321,3 @@ config PM_GENERIC_DOMAINS_OF
 
 config CPU_PM
 	bool
-

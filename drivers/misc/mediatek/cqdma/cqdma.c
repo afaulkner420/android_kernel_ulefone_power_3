@@ -25,7 +25,6 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
-#include <linux/slab.h>
 #ifdef CONFIG_MTK_GIC
 #include <linux/irqchip/mt-gic.h>
 #endif
@@ -43,10 +42,16 @@ struct cqdma_env_info {
 	void __iomem *base;
 	u32 irq;
 };
-static struct cqdma_env_info *env_info;
-static u32 keep_clock_ao;
+
+#if defined(CONFIG_MACH_MT6799) || defined(CONFIG_MACH_MT6763)
+#define MAX_CQDMA_CHANNELS 3
+#else
+#define MAX_CQDMA_CHANNELS 2
+#endif
+
+static struct cqdma_env_info env_info[MAX_CQDMA_CHANNELS];
 static u32 nr_cqdma_channel;
-struct wake_lock *wk_lock;
+struct wake_lock wk_lock[MAX_CQDMA_CHANNELS];
 
 /*
  * DMA information
@@ -179,12 +184,12 @@ volatile unsigned int DMA_INT_DONE;
  * @chan: specify a channel or not
  * Return channel number for success; return negative errot code for failure.
  */
-int mt_req_gdma(int chan)
+int mt_req_gdma(DMA_CHAN chan)
 {
 	unsigned long flags;
 	int i;
 
-	if (clk_cqdma && !keep_clock_ao) {
+	if (clk_cqdma) {
 		if (clk_prepare_enable(clk_cqdma)) {
 			pr_err("enable CQDMA clk fail!\n");
 			return -DMA_ERR_NO_FREE_CH;
@@ -221,7 +226,7 @@ int mt_req_gdma(int chan)
 	}
 
 	/* disable cqdma clock */
-	if (clk_cqdma && !keep_clock_ao)
+	if (clk_cqdma)
 		clk_disable_unprepare(clk_cqdma);
 
 	return -DMA_ERR_NO_FREE_CH;
@@ -314,7 +319,7 @@ EXPORT_SYMBOL(mt_stop_gdma);
  * @flag: ALL, SRC, DST, or SRC_AND_DST.
  * Return 0 for success; return negative errot code for failure.
  */
-int mt_config_gdma(int channel, struct mt_gdma_conf *config, int flag)
+int mt_config_gdma(int channel, struct mt_gdma_conf *config, DMA_CONF_FLAG flag)
 {
 	unsigned int dma_con = 0x0, limiter = 0;
 
@@ -398,11 +403,9 @@ int mt_config_gdma(int channel, struct mt_gdma_conf *config, int flag)
 					readl(DMA_DST_4G_SUPPORT(channel)),
 					readl(DMA_JUMP_4G_SUPPORT(channel)));
 		} else {
-#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
 			mt_reg_sync_writel((u32)((u64)(config->src) >> 32), DMA_SRC_4G_SUPPORT(channel));
 			mt_reg_sync_writel((u32)((u64)(config->dst) >> 32), DMA_DST_4G_SUPPORT(channel));
 			mt_reg_sync_writel((u32)((u64)(config->jump) >> 32), DMA_JUMP_4G_SUPPORT(channel));
-#endif
 
 			pr_debug("2:ADDR2_cfg(4GB):SRC=0x%x  DST=0x%x JUMP=0x%x\n",
 					readl(DMA_SRC_4G_SUPPORT(channel)),
@@ -494,7 +497,7 @@ int mt_free_gdma(int channel)
 	mt_stop_gdma(channel);
 
 	/* disable cqdma clock */
-	if (clk_cqdma && !keep_clock_ao)
+	if (clk_cqdma)
 		clk_disable_unprepare(clk_cqdma);
 
 	wake_unlock(&wk_lock[channel]);
@@ -664,7 +667,6 @@ static int cqdma_probe(struct platform_device *pdev)
 	int ret = 0, irq = 0;
 	unsigned int i;
 	struct resource *res;
-	const char *keep_clk_ao_str = NULL;
 
 	pr_debug("[MTK CQDMA] module probe.\n");
 
@@ -673,15 +675,7 @@ static int cqdma_probe(struct platform_device *pdev)
 		pr_err("[CQDMA] no channel found\n");
 		return -ENODEV;
 	}
-	pr_debug("[CQDMA] DMA channel = %d\n", nr_cqdma_channel);
-
-	env_info = kmalloc(sizeof(struct cqdma_env_info)*(nr_cqdma_channel), GFP_KERNEL);
-	if (!env_info)
-		return -ENOMEM;
-
-	wk_lock = kmalloc(sizeof(struct wake_lock)*(nr_cqdma_channel), GFP_KERNEL);
-	if (!wk_lock)
-		return -ENOMEM;
+	pr_err("[CQDMA] DMA channel = %d\n", nr_cqdma_channel);
 
 	for (i = 0; i < nr_cqdma_channel; i++) {
 		res = platform_get_resource(pdev, IORESOURCE_MEM, i);
@@ -709,16 +703,6 @@ static int cqdma_probe(struct platform_device *pdev)
 	if (IS_ERR(clk_cqdma)) {
 		pr_err("can not get CQDMA clock fail!\n");
 		return PTR_ERR(clk_cqdma);
-	}
-
-	if (!of_property_read_string(pdev->dev.of_node, "keep_clock_ao", &keep_clk_ao_str)) {
-		if (keep_clk_ao_str && !strncmp(keep_clk_ao_str, "yes", 3)) {
-			ret = clk_prepare_enable(clk_cqdma);
-			if (ret)
-				pr_info("enable CQDMA clk fail!\n");
-			else
-				keep_clock_ao = 1;
-		}
 	}
 
 	return ret;

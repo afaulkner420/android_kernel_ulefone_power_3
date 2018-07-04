@@ -13,7 +13,6 @@
  *
  */
 
-#include <linux/ftrace.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/printk.h>
@@ -24,7 +23,6 @@
 #include <linux/types.h>
 #include <linux/kasan.h>
 #include <linux/module.h>
-#include <mt-plat/aee.h>
 
 #include <asm/sections.h>
 
@@ -254,8 +252,6 @@ void kasan_report(unsigned long addr, size_t size,
 
 	if (likely(!kasan_report_enabled()))
 		return;
-
-	disable_trace_on_warning();
 
 	info.access_addr = (void *)addr;
 	info.access_size = size;

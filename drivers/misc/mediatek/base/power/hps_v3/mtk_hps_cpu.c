@@ -17,6 +17,9 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/random.h>
+#ifdef CONFIG_ARM64
+#include <asm/cpu_ops.h>
+#endif
 
 #include "mtk_hps_internal.h"
 
@@ -134,6 +137,15 @@ int hps_cpu_init(void)
 	i = j = 0;
 	hps_warn("hps_cpu_init\n");
 
+	for (i = setup_max_cpus; i < num_possible_cpus(); i++) {
+#ifdef CONFIG_ARM64
+		if (!cpu_ops[i])
+			WARN_ON(1);
+		if (cpu_ops[i]->cpu_prepare(i))
+			WARN_ON(1);
+#endif
+		set_cpu_present(i, true);
+	}
 
 	/* =======================================New algo. definition ========================================== */
 	hps_sys.cluster_num = (unsigned int)arch_get_nr_clusters();
@@ -190,7 +202,7 @@ int hps_cpu_init(void)
 		hps_sys.cluster_info[2].pwr_seq = 1;
 	}
 #endif
-#if 0
+
 	/*
 	 * For EAS evaluation
 	 */
@@ -206,7 +218,6 @@ int hps_cpu_init(void)
 		hps_sys.cluster_info[2].up_threshold = DEF_EAS_UP_THRESHOLD_2;
 		hps_sys.cluster_info[2].down_threshold = DEF_EAS_DOWN_THRESHOLD_2;
 	}
-#endif
 	hps_ops_init();
 
 	return r;

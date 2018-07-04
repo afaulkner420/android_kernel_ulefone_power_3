@@ -114,14 +114,6 @@ struct compat_ion_mm_buf_debug_info {
 	compat_uint_t value4;
 };
 
-struct compat_ion_mm_cache_pool_info {
-	compat_size_t len;
-	compat_size_t align;
-	compat_uint_t heap_id_mask;
-	compat_uint_t flags;
-	compat_int_t ret;
-};
-
 struct compat_ion_mm_sf_buf_info {
 	union {
 		compat_int_t handle;
@@ -135,7 +127,7 @@ struct compat_ion_mm_data {
 	union {
 		struct compat_ion_mm_config_buffer_param config_buffer_param;
 		struct compat_ion_mm_buf_debug_info  buf_debug_info_param;
-		struct compat_ion_mm_cache_pool_info  cache_pool_info_param;
+		struct compat_ion_mm_sf_buf_info sf_buf_info_param;
 	};
 };
 
@@ -279,52 +271,6 @@ static int compat_get_ion_mm_buf_debug_info(
 	return err;
 }
 
-static int compat_get_ion_mm_cache_pool_info(
-			struct compat_ion_mm_cache_pool_info __user *data32,
-			struct ion_mm_cache_pool_info __user *data)
-{
-	compat_size_t s;
-	compat_uint_t u;
-	compat_int_t i;
-	int err;
-
-	err = get_user(s, &data32->len);
-	err |= put_user(s, &data->len);
-	err |= get_user(s, &data32->align);
-	err |= put_user(s, &data->align);
-	err |= get_user(u, &data32->heap_id_mask);
-	err |= put_user(u, &data->heap_id_mask);
-	err |= get_user(u, &data32->flags);
-	err |= put_user(u, &data->flags);
-	err |= get_user(i, &data32->ret);
-	err |= put_user(i, &data->ret);
-
-	return err;
-}
-
-static int compat_put_ion_mm_cache_pool_info(
-			struct compat_ion_mm_cache_pool_info __user *data32,
-			struct ion_mm_cache_pool_info __user *data)
-{
-	compat_size_t s;
-	compat_uint_t u;
-	compat_int_t i;
-	int err;
-
-	err = get_user(s, &data->len);
-	err |= put_user(s, &data32->len);
-	err |= get_user(s, &data->align);
-	err |= put_user(s, &data32->align);
-	err |= get_user(u, &data->heap_id_mask);
-	err |= put_user(u, &data32->heap_id_mask);
-	err |= get_user(u, &data->flags);
-	err |= put_user(u, &data32->flags);
-	err |= get_user(i, &data->ret);
-	err |= put_user(i, &data32->ret);
-
-	return err;
-}
-
 static int compat_put_ion_mm_buf_debug_info(
 			struct compat_ion_mm_buf_debug_info __user *data32,
 			struct ion_mm_buf_debug_info __user *data)
@@ -356,6 +302,59 @@ static int compat_put_ion_mm_buf_debug_info(
 	return err;
 }
 
+static int compat_get_ion_mm_sf_buf_info_set(
+			struct compat_ion_mm_sf_buf_info __user *data32,
+			struct ion_mm_sf_buf_info __user *data)
+{
+	compat_ulong_t handle;
+	compat_uint_t info;
+
+	int i, err;
+
+	err = get_user(handle, &data32->handle);
+	err |= put_user(handle, &data->handle);
+	for (i = 0; i < ION_MM_SF_BUF_INFO_LEN; i++) {
+		err |= get_user(info, &data32->info[i]);
+		err |= put_user(info, &data->info[i]);
+	}
+
+	return err;
+}
+
+static int compat_get_ion_mm_sf_buf_info(
+			struct compat_ion_mm_sf_buf_info __user *data32,
+			struct ion_mm_sf_buf_info __user *data)
+{
+	compat_ulong_t handle;
+
+	int err;
+
+	err = get_user(handle, &data32->handle);
+	err |= put_user(handle, &data->handle);
+
+	return err;
+}
+
+static int compat_put_ion_mm_sf_buf_info(
+			struct compat_ion_mm_sf_buf_info __user *data32,
+			struct ion_mm_sf_buf_info __user *data)
+{
+	compat_ulong_t handle;
+	compat_uint_t info;
+
+	int i, err;
+
+	err = get_user(handle, &data->handle);
+	err |= put_user(handle, &data32->handle);
+
+	for (i = 0; i < ION_MM_SF_BUF_INFO_LEN; i++) {
+		err |= get_user(info, &data->info[i]);
+		err |= put_user(info, &data32->info[i]);
+	}
+
+	return err;
+}
+
 static int compat_get_ion_mm_data(struct compat_ion_mm_data *data32, struct ion_mm_data *data)
 {
 	compat_uint_t mm_cmd;
@@ -382,10 +381,14 @@ static int compat_get_ion_mm_data(struct compat_ion_mm_data *data32, struct ion_
 		err |= compat_get_ion_mm_buf_debug_info(&data32->buf_debug_info_param, &data->buf_debug_info_param);
 		break;
 	}
-	case ION_MM_ACQ_CACHE_POOL:
-	case ION_MM_QRY_CACHE_POOL:
+	case ION_MM_SET_SF_BUF_INFO:
 	{
-		err |= compat_get_ion_mm_cache_pool_info(&data32->cache_pool_info_param, &data->cache_pool_info_param);
+		err |= compat_get_ion_mm_sf_buf_info_set(&data32->sf_buf_info_param, &data->sf_buf_info_param);
+		break;
+	}
+	case ION_MM_GET_SF_BUF_INFO:
+	{
+		err |= compat_get_ion_mm_sf_buf_info(&data32->sf_buf_info_param, &data->sf_buf_info_param);
 		break;
 	}
 	}
@@ -408,10 +411,8 @@ static int compat_put_ion_mm_data(struct compat_ion_mm_data *data32, struct ion_
 		err |= compat_put_ion_mm_buf_debug_info(&data32->buf_debug_info_param, &data->buf_debug_info_param);
 		break;
 	}
-	case ION_MM_ACQ_CACHE_POOL:
-	case ION_MM_QRY_CACHE_POOL:
-	{
-		err |= compat_put_ion_mm_cache_pool_info(&data32->cache_pool_info_param, &data->cache_pool_info_param);
+	case ION_MM_GET_SF_BUF_INFO: {
+		err |= compat_put_ion_mm_sf_buf_info(&data32->sf_buf_info_param, &data->sf_buf_info_param);
 		break;
 	}
 	default:

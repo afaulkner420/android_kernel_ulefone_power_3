@@ -1,14 +1,12 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  include header file for MediaTek MT6370 PMU
  *
- * This program is free software: you can redistribute it and/or modify
+ *  Copyright (C) 2016 MediaTek Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  */
 
 #ifndef __LINUX_MFD_MT6370_PMU_CHARGER_H

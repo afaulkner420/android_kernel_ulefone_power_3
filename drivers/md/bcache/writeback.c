@@ -21,8 +21,7 @@
 static void __update_writeback_rate(struct cached_dev *dc)
 {
 	struct cache_set *c = dc->disk.c;
-	uint64_t cache_sectors = c->nbuckets * c->sb.bucket_size -
-				bcache_flash_devs_sectors_dirty(c);
+	uint64_t cache_sectors = c->nbuckets * c->sb.bucket_size;
 	uint64_t cache_dirty_target =
 		div_u64(cache_sectors * dc->writeback_percent, 100);
 
@@ -191,7 +190,7 @@ static void write_dirty(struct closure *cl)
 
 	closure_bio_submit(&io->bio, cl);
 
-	continue_at(cl, write_dirty_finish, io->dc->writeback_write_wq);
+	continue_at(cl, write_dirty_finish, system_wq);
 }
 
 static void read_dirty_endio(struct bio *bio)
@@ -211,7 +210,7 @@ static void read_dirty_submit(struct closure *cl)
 
 	closure_bio_submit(&io->bio, cl);
 
-	continue_at(cl, write_dirty, io->dc->writeback_write_wq);
+	continue_at(cl, write_dirty, system_wq);
 }
 
 static void read_dirty(struct cached_dev *dc)
@@ -489,17 +488,17 @@ static int sectors_dirty_init_fn(struct btree_op *_op, struct btree *b,
 	return MAP_CONTINUE;
 }
 
-void bch_sectors_dirty_init(struct bcache_device *d)
+void bch_sectors_dirty_init(struct cached_dev *dc)
 {
 	struct sectors_dirty_init op;
 
 	bch_btree_op_init(&op.op, -1);
-	op.inode = d->id;
+	op.inode = dc->disk.id;
 
-	bch_btree_map_keys(&op.op, d->c, &KEY(op.inode, 0, 0),
+	bch_btree_map_keys(&op.op, dc->disk.c, &KEY(op.inode, 0, 0),
 			   sectors_dirty_init_fn, 0);
 
-	d->sectors_dirty_last = bcache_dev_sectors_dirty(d);
+	dc->disk.sectors_dirty_last = bcache_dev_sectors_dirty(&dc->disk);
 }
 
 void bch_cached_dev_writeback_init(struct cached_dev *dc)
@@ -523,11 +522,6 @@ void bch_cached_dev_writeback_init(struct cached_dev *dc)
 
 int bch_cached_dev_writeback_start(struct cached_dev *dc)
 {
-	dc->writeback_write_wq = alloc_workqueue("bcache_writeback_wq",
-						WQ_MEM_RECLAIM, 0);
-	if (!dc->writeback_write_wq)
-		return -ENOMEM;
-
 	dc->writeback_thread = kthread_create(bch_writeback_thread, dc,
 					      "bcache_writeback");
 	if (IS_ERR(dc->writeback_thread))

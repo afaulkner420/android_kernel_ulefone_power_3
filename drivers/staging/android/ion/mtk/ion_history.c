@@ -454,12 +454,14 @@ static const struct file_operations string_hash_debug_fops = {
 /* ===== ion client history  ======= */
 
 struct ion_client_record {
-	struct {
-		struct string_struct *client_name;
-		struct string_struct *dbg_name;
-	};
+	union {
+		struct {
+			struct string_struct *client_name;
+			struct string_struct *dbg_name;
+		};
 
-	unsigned long long time;
+		unsigned long long time;
+	};
 	size_t size;
 
 #define CLIENT_ADDRESS_TOTAL	((void *)1)
@@ -473,7 +475,7 @@ static int ion_client_record_show(struct seq_file *seq, void *record,
 	struct ion_client_record *client_record = record;
 
 	if (client_record->address > CLIENT_ADDRESS_FLAG_MAX) {
-		char *client_name = "none", *dbg_name = "none";
+		char *client_name = NULL, *dbg_name = NULL;
 
 		if (client_record->client_name)
 			client_name = client_record->client_name->str;

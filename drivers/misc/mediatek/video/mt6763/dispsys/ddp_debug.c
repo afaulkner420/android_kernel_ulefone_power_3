@@ -57,7 +57,6 @@ static struct dentry *debugDir;
 
 
 static struct dentry *debugfs_dump;
-static struct dentry *debug_cmd_help;
 
 static const long int DEFAULT_LOG_FPS_WND_SIZE = 30;
 static int debug_init;
@@ -91,27 +90,6 @@ static char STR_HELP[] =
 	"       dump_aal:arg\n"
 	"       mmp\n"
 	"       dump_reg:moduleID\n dump_path:mutexID\n  dpfd_ut1:channel\n";
-
-/*display info cmd help*/
-static char cmd_help_analysis[] =
-	"\n"
-	"1. function on/off\n"
-	"Ex: adb shell \"echo disp_info:0x0100 > /d/mtkfb\"\n"
-	"every bit represent one parameter: 1: open; 0: close.\n"
-	"Any one bit is 1,the disp information will show.\n"
-	"\n"
-	"bit0~bit7: layer0 ~ layer7 fps\n"
-	"bit8:  total fps\n"
-	"bit9:  hrt(overlap layer num)\n"
-	"bit10: enable layer num\n"
-	"bit11: all enable layer size(divided one full RGBA layer size)\n"
-	"bit12: path mode\n"
-	"bit13: dsi mode\n"
-	"\n"
-	"2. Set font size and location\n"
-	"Ex: adb shell \"echo bg_set:4,1 > /d/mtkfb\"\n"
-	"4: font size(default 4)\n"
-	"1: the location of lcm(default 1)\n";
 
 
 /* --------------------------------------------------------------------------- */
@@ -320,7 +298,7 @@ static void process_dbg_opt(const char *opt)
 		}
 
 		if (level) {
-			enum disp_pwm_id_t pwm_id = DISP_PWM0;
+			disp_pwm_id_t pwm_id = DISP_PWM0;
 
 			if (opt[3] == '1')
 				pwm_id = DISP_PWM1;
@@ -364,6 +342,7 @@ static void process_dbg_opt(const char *opt)
 		}
 
 		sprintf(buf, "aal_dbg_en = 0x%x\n", aal_dbg_en);
+#if 1
 	} else if (strncmp(opt, "color_dbg:", 10) == 0) {
 		char *p = (char *)opt + 10;
 		unsigned int debug_level;
@@ -387,6 +366,7 @@ static void process_dbg_opt(const char *opt)
 		}
 
 		sprintf(buf, "corr_dbg_en = 0x%x\n", corr_dbg_en);
+#endif
 	} else if (strncmp(opt, "aal_test:", 9) == 0) {
 		aal_test(opt + 9, buf);
 	} else if (strncmp(opt, "pwm_test:", 9) == 0) {
@@ -659,16 +639,6 @@ static const struct file_operations debug_fops_dump = {
 	.read = debug_dump_read,
 };
 
-static ssize_t cmd_help_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
-{
-	return simple_read_from_buffer(ubuf, count, ppos, cmd_help_analysis, sizeof(cmd_help_analysis));
-};
-
-static const struct file_operations cmd_help_fops = {
-	.read = cmd_help_read,
-};
-
-
 void ddp_debug_init(void)
 {
 	struct dentry *d;
@@ -685,9 +655,6 @@ void ddp_debug_init(void)
 			debugfs_dump = debugfs_create_file("dump",
 							   S_IFREG | S_IRUGO, debugDir, NULL,
 							   &debug_fops_dump);
-			debug_cmd_help = debugfs_create_file("cmd_help",
-							   S_IFREG | S_IRUGO, debugDir, NULL,
-							   &cmd_help_fops);
 			d = debugfs_create_file("lowpowermode", S_IFREG | S_IRUGO, debugDir, NULL,
 						&low_power_cust_fops);
 			/*if (!d)*/
@@ -746,7 +713,6 @@ void ddp_debug_exit(void)
 {
 	debugfs_remove(debugfs);
 	debugfs_remove(debugfs_dump);
-	debugfs_remove(debug_cmd_help);
 	debug_init = 0;
 }
 

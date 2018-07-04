@@ -16,8 +16,6 @@
 #ifndef __ASM_PGTABLE_H
 #define __ASM_PGTABLE_H
 
-
-
 #include <asm/bug.h>
 #include <asm/proc-fns.h>
 
@@ -55,7 +53,6 @@
 
 #ifndef __ASSEMBLY__
 
-#include <asm/alternative.h>
 #include <asm/fixmap.h>
 #include <linux/mmdebug.h>
 
@@ -624,7 +621,6 @@ static inline int ptep_test_and_clear_young(struct vm_area_struct *vma,
 	unsigned int tmp, res;
 
 	asm volatile("//	ptep_test_and_clear_young\n"
-	ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_855872)
 	"	prfm	pstl1strm, %2\n"
 	"1:	ldxr	%0, %2\n"
 	"	ubfx	%w3, %w0, %5, #1	// extract PTE_AF (young)\n"
@@ -655,7 +651,6 @@ static inline pte_t ptep_get_and_clear(struct mm_struct *mm,
 	unsigned int tmp;
 
 	asm volatile("//	ptep_get_and_clear\n"
-	ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_855872)
 	"	prfm	pstl1strm, %2\n"
 	"1:	ldxr	%0, %2\n"
 	"	stxr	%w1, xzr, %2\n"
@@ -685,7 +680,6 @@ static inline void ptep_set_wrprotect(struct mm_struct *mm, unsigned long addres
 	unsigned long tmp;
 
 	asm volatile("//	ptep_set_wrprotect\n"
-	ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_855872)
 	"	prfm	pstl1strm, %2\n"
 	"1:	ldxr	%0, %2\n"
 	"	tst	%0, %4			// check for hw dirty (!PTE_RDONLY)\n"

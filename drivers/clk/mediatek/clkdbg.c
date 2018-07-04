@@ -2129,9 +2129,6 @@ static ssize_t clkdbg_write(
 {
 	int len = 0;
 
-	if (count == 0)
-		return 0;
-
 	len = (count < (sizeof(last_cmd) - 1)) ? count : (sizeof(last_cmd) - 1);
 	if (copy_from_user(last_cmd, buffer, len))
 		return 0;

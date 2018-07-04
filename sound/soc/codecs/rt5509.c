@@ -5,14 +5,10 @@
  *  Copyright (C) 2015 Richtek Technology Corp.
  *  cy_huang <cy_huang@richtek.com>
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- *  See http://www.gnu.org/licenses/gpl-2.0.html for more details.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -497,50 +493,6 @@ bypass_tcsense_overflow:
 	return snd_soc_write(codec, RT5509_REG_TCOEFF, tc_sense);
 }
 
-static int rt5509_adap_coefficent_fix(struct snd_soc_codec *codec)
-{
-	int i, ret = 0;
-	int64_t x = 0, y = 0, z = 0, w = 0;
-
-	dev_dbg(codec->dev, "%s\n", __func__);
-	ret = snd_soc_read(codec, RT5509_REG_ISENSEGAIN);
-	ret &= 0xffffff;
-	dev_info(codec->dev, "gsense otp -> 0x%08x\n", ret);
-	/* gsense otp value */
-	x = ret;
-	ret = snd_soc_read(codec, RT5509_REG_CALIB_DCR);
-	ret &= 0xffffff;
-	dev_info(codec->dev, "dcr otp -> 0x%08x\n", ret);
-	if (ret == 0xffffff)
-		ret = 0x800000;
-	/* rspk otp value */
-	w = ret;
-	for (i = 0; i < 6; i++) {
-		ret = snd_soc_read(codec, RT5509_REG_ADAPTB0 + i);
-		ret &= 0xffffff;
-		dev_info(codec->dev, "b factor before 0x%08x\n", ret);
-		/* y = phi factor */
-		y = ret;
-		if (ret < 0x800000) {
-			z = div64_s64(x * 1000000, w) * y;
-			z = div_s64(z, 1000000);
-		} else {
-			y = ((int64_t)0xffffff - y) * div64_s64(x * 1000000, w);
-			z = (int64_t)0xffffff * (int64_t)1000000;
-			z = z - y;
-			z = div_s64(z, 1000000);
-		}
-		ret = z & 0xffffff;
-		dev_info(codec->dev, "b factor after 0x%08x\n", ret);
-		ret = snd_soc_write(codec, RT5509_REG_ADAPTB0 + i, ret);
-		if (ret < 0) {
-			dev_err(codec->dev, "fix b factor fail %d\n", i);
-			return ret;
-		}
-	}
-	return 0;
-}
-
 static int rt5509_init_proprietary_setting(struct snd_soc_codec *codec)
 {
 	struct rt5509_chip *chip = snd_soc_codec_get_drvdata(codec);
@@ -574,9 +526,6 @@ static int rt5509_init_proprietary_setting(struct snd_soc_codec *codec)
 		}
 		dev_dbg(chip->dev, "%s end\n", prop_str[i]);
 	}
-	ret = rt5509_adap_coefficent_fix(codec);
-	if (ret < 0)
-		dev_err(chip->dev, "fix adap coefficient fail\n");
 	if (p_param->cfg_size[RT5509_CFG_SPEAKERPROT]) {
 		ret = snd_soc_update_bits(codec, RT5509_REG_CHIPEN,
 			RT5509_SPKPROT_ENMASK, RT5509_SPKPROT_ENMASK);
@@ -1947,6 +1896,50 @@ static inline int rt5509_codec_unregister(struct rt5509_chip *chip)
 	return 0;
 }
 
+static const struct snd_soc_codec_driver rt5509_dummy_codec_drv;
+
+static struct snd_soc_dai_driver rt5509_dummy_i2s_dais[] = {
+	{
+		.name = "rt5509-aif1",
+		.playback = {
+			.stream_name = "AIF1 Playback",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = RT5509_RATES,
+			.formats = RT5509_FORMATS,
+		},
+		.capture = {
+			.stream_name = "AIF1 Capture",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = RT5509_RATES,
+			.formats = RT5509_FORMATS,
+		},
+	},
+	{
+		.name = "rt5509-aif2",
+		.playback = {
+			.stream_name = "AIF2 Playback",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = RT5509_RATES,
+			.formats = RT5509_FORMATS,
+		},
+	},
+};
+
+static inline int rt5509_dummy_codec_register(struct device *dev)
+{
+	return snd_soc_register_codec(dev, &rt5509_dummy_codec_drv,
+		rt5509_dummy_i2s_dais, ARRAY_SIZE(rt5509_dummy_i2s_dais));
+}
+
+static inline int rt5509_dummy_codec_unregister(struct device *dev)
+{
+	snd_soc_unregister_codec(dev);
+	return 0;
+}
+
 static int rt5509_handle_pdata(struct rt5509_chip *chip)
 {
 	return 0;
@@ -2046,15 +2039,13 @@ static inline int rt5509_parse_dt(struct device *dev,
 }
 #endif /* #ifdef CONFIG_OF */
 
-int rt5509_i2c_probe(struct i2c_client *client,
-		     const struct i2c_device_id *id)
+static int rt5509_i2c_probe(struct i2c_client *client,
+			    const struct i2c_device_id *id)
 {
 	struct rt5509_pdata *pdata = client->dev.platform_data;
 	struct rt5509_chip *chip;
 	static int dev_cnt;
 	int ret = 0;
-
-	pr_info("+%s\n", __func__);
 
 	if (client->dev.of_node) {
 		pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
@@ -2065,7 +2056,6 @@ int rt5509_i2c_probe(struct i2c_client *client,
 		ret = rt5509_parse_dt(&client->dev, pdata);
 		if (ret < 0)
 			goto err_parse_dt;
-
 		client->dev.platform_data = pdata;
 	} else {
 		if (!pdata) {
@@ -2181,14 +2171,17 @@ err_parse_dt:
 		devm_kfree(&client->dev, pdata);
 	dev_err(&client->dev, "error %d\n", ret);
 	i2c_set_clientdata(client, NULL);
-	return ret;
+	dev_set_name(&client->dev, "%s",
+		     kasprintf(GFP_KERNEL, "RT5509_MT_%d", dev_cnt++));
+	return rt5509_dummy_codec_register(&client->dev);
 }
-EXPORT_SYMBOL(rt5509_i2c_probe);
 
-int rt5509_i2c_remove(struct i2c_client *client)
+static int rt5509_i2c_remove(struct i2c_client *client)
 {
 	struct rt5509_chip *chip = i2c_get_clientdata(client);
 
+	if (!chip)
+		goto out_remove_dummy;
 	rt5509_codec_unregister(chip);
 #ifdef CONFIG_RT_REGMAP
 	rt_regmap_device_unregister(chip->rd);
@@ -2207,37 +2200,83 @@ int rt5509_i2c_remove(struct i2c_client *client)
 	chip->pdata = client->dev.platform_data = NULL;
 	dev_dbg(&client->dev, "driver removed\n");
 	return 0;
+out_remove_dummy:
+	return rt5509_dummy_codec_unregister(&client->dev);
 }
-EXPORT_SYMBOL(rt5509_i2c_remove);
 
-void rt5509_i2c_shutdown(struct i2c_client *client)
+#ifdef CONFIG_PM
+static int rt5509_i2c_suspend(struct device *dev)
 {
-	struct rt5509_chip *chip = i2c_get_clientdata(client);
-	struct snd_soc_dapm_context *dapm = NULL;
-
-	dev_dbg(&client->dev, "%s\n", __func__);
-	if (chip && chip->codec) {
-		dapm = snd_soc_codec_get_dapm(chip->codec);
-		snd_soc_dapm_disable_pin(dapm, "Speaker");
-		snd_soc_dapm_sync(dapm);
-	}
-}
-EXPORT_SYMBOL(rt5509_i2c_shutdown);
-
-static int __init rt5509_driver_init(void)
-{
-	pr_info("%s\n", __func__);
 	return 0;
 }
-module_init(rt5509_driver_init);
 
-static void __exit rt5509_driver_exit(void)
+static int rt5509_i2c_resume(struct device *dev)
 {
-	pr_info("%s\n", __func__);
+	return 0;
 }
-module_exit(rt5509_driver_exit);
+
+#ifdef CONFIG_PM_RUNTIME
+static int rt5509_i2c_runtime_suspend(struct device *dev)
+{
+	dev_dbg(dev, "%s\n", __func__);
+	return 0;
+}
+
+static int rt5509_i2c_runtime_resume(struct device *dev)
+{
+	dev_dbg(dev, "%s\n", __func__);
+	return 0;
+}
+
+static int rt5509_i2c_runtime_idle(struct device *dev)
+{
+	/* dummy function */
+	return 0;
+}
+#endif /* #ifdef CONFIG_PM_RUNTIME */
+
+static const struct dev_pm_ops rt5509_i2c_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(rt5509_i2c_suspend, rt5509_i2c_resume)
+#ifdef CONFIG_PM_RUNTIME
+	SET_RUNTIME_PM_OPS(rt5509_i2c_runtime_suspend,
+			   rt5509_i2c_runtime_resume,
+			   rt5509_i2c_runtime_idle)
+#endif /* #ifdef CONFIG_PM_RUNTIME */
+};
+#define prt5509_i2c_pm_ops (&rt5509_i2c_pm_ops)
+#else
+#define prt5509_i2c_pm_ops (NULL)
+#endif /* #ifdef CONFIG_PM */
+
+static const struct i2c_device_id rt5509_i2c_id[] = {
+	{ "speaker_amp", 0},
+	{}
+};
+MODULE_DEVICE_TABLE(i2c, rt5509_i2c_id);
+
+#ifdef CONFIG_OF
+static const struct of_device_id rt5509_match_table[] = {
+	{.compatible = "mediatek,speaker_amp",},
+	{},
+};
+MODULE_DEVICE_TABLE(of, rt5509_match_table);
+#endif /* #ifdef CONFIG_OF */
+
+static struct i2c_driver rt5509_i2c_driver = {
+	.driver = {
+		.name = RT5509_DEVICE_NAME,
+		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(rt5509_match_table),
+		.pm = prt5509_i2c_pm_ops,
+	},
+	.probe = rt5509_i2c_probe,
+	.remove = rt5509_i2c_remove,
+	.id_table = rt5509_i2c_id,
+};
+
+module_i2c_driver(rt5509_i2c_driver);
 
 MODULE_AUTHOR("CY_Huang <cy_huang@richtek.com>");
 MODULE_DESCRIPTION("RT5509 SPKAMP Driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.0.13_M");
+MODULE_VERSION(RT5509_DRV_VER);

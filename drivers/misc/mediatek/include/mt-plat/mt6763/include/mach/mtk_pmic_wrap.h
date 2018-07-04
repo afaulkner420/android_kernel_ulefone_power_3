@@ -27,9 +27,10 @@ struct mt_pmic_wrap_driver {
 	s32 (*suspend)(void);
 	void (*resume)(void);
 };
-
-#define PWRAP_READ     0
-#define PWRAP_WRITE	   1
+typedef enum {
+	PWRAP_READ	= 0,
+	PWRAP_WRITE	= 1,
+} PWRAP_OPS;
 
 /* ------external API for pmic_wrap user-------------------------------------------------- */
 s32 pwrap_read(u32 adr, u32 *rdata);

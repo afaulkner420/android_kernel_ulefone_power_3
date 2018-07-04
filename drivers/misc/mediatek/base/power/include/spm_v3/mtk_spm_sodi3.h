@@ -23,21 +23,19 @@
 
 enum spm_sodi3_step {
 	SPM_SODI3_ENTER = 0,
+	SPM_SODI3_ENTER_UART_SLEEP,
 	SPM_SODI3_ENTER_SPM_FLOW,
 	SPM_SODI3_ENTER_SSPM_ASYNC_IPI_BEFORE_WFI,
-	SPM_SODI3_ENTER_UART_SLEEP,
 	SPM_SODI3_B4,
 	SPM_SODI3_B5,
 	SPM_SODI3_B6,
 	SPM_SODI3_ENTER_WFI,
 	SPM_SODI3_LEAVE_WFI,
-	SPM_SODI3_ENTER_UART_AWAKE,
 	SPM_SODI3_LEAVE_SSPM_ASYNC_IPI_AFTER_WFI,
 	SPM_SODI3_LEAVE_SPM_FLOW,
+	SPM_SODI3_ENTER_UART_AWAKE,
 	SPM_SODI3_LEAVE,
 };
-
-#define CPU_FOOTPRINT_SHIFT 24
 
 #if SPM_AEE_RR_REC
 void __attribute__((weak)) aee_rr_rec_sodi3_val(u32 val)
@@ -54,14 +52,14 @@ u32 __attribute__((weak)) aee_rr_curr_sodi3_val(void)
 static inline void spm_sodi3_footprint(enum spm_sodi3_step step)
 {
 #if SPM_AEE_RR_REC
-	aee_rr_rec_sodi3_val(aee_rr_curr_sodi3_val() | (1 << step) | (smp_processor_id() << CPU_FOOTPRINT_SHIFT));
+	aee_rr_rec_sodi3_val(aee_rr_curr_sodi3_val() | (1 << step));
 #endif
 }
 
 static inline void spm_sodi3_footprint_val(u32 val)
 {
 #if SPM_AEE_RR_REC
-	aee_rr_rec_sodi3_val(aee_rr_curr_sodi3_val() | val | (smp_processor_id() << CPU_FOOTPRINT_SHIFT));
+		aee_rr_rec_sodi3_val(aee_rr_curr_sodi3_val() | val);
 #endif
 }
 

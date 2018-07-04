@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2017 MediaTek Inc.
+ *  Copyright (C) 2016 MediaTek Inc.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -21,11 +21,6 @@
 
 #include "inc/mt6370_pmu.h"
 
-//add af_VDD by ming.liao 20171204 start
-#if defined (TRAN_X604) || defined (TRAN_X605) 
-struct mt6370_pmu_chip *chip_custom = NULL;
-#endif
-//add af_VDD by ming.liao 20171204 end
 static bool dbg_log_en; /* module param to enable/disable debug log */
 module_param(dbg_log_en, bool, S_IRUGO | S_IWUSR);
 
@@ -219,9 +214,8 @@ static inline int mt6370_pmu_chip_id_check(struct i2c_client *i2c)
 	if (ret < 0)
 		return ret;
 
-	if ((ret & 0xF0) == 0x80 || (ret & 0xF0) == 0xE0 ||
-		(ret & 0xF0) == 0xF0)
-		return (ret & 0xff);
+	if ((ret & 0xF0) == 0x80 || (ret & 0xF0) == 0xE0)
+		return (ret & 0x0F);
 	return -ENODEV;
 }
 
@@ -252,13 +246,13 @@ static int mt6370_pmu_probe(struct i2c_client *i2c,
 	struct mt6370_pmu_chip *chip;
 	struct mt6370_pmu_platform_data *pdata = dev_get_platdata(&i2c->dev);
 	bool use_dt = i2c->dev.of_node;
-	uint8_t chip_id = 0;
+	uint8_t chip_rev = 0;
 	int ret = 0;
 
 	ret = mt6370_pmu_chip_id_check(i2c);
 	if (ret < 0)
 		return ret;
-	chip_id = ret;
+	chip_rev = ret;
 	if (use_dt) {
 		rt_config_of_node(&i2c->dev);
 		pdata = devm_kzalloc(&i2c->dev, sizeof(*pdata), GFP_KERNEL);
@@ -280,15 +274,10 @@ static int mt6370_pmu_probe(struct i2c_client *i2c,
 		return -ENOMEM;
 	chip->i2c = i2c;
 	chip->dev = &i2c->dev;
-	chip->chip_rev = chip_id & 0x0f;
-	chip->chip_vid = chip_id & 0xf0;
+	chip->chip_rev = chip_rev;
 	rt_mutex_init(&chip->io_lock);
 	i2c_set_clientdata(i2c, chip);
-//modify XLLWHLSE-4 bring up af in x605 by luyan.ye 20180123 start
-#if defined (TRAN_X604) || defined (TRAN_X605)
-	chip_custom = chip;
-#endif
-//modify XLLWHLSE-4 bring up af in x605 by luyan.ye 20180123 end
+
 	pm_runtime_set_active(&i2c->dev);
 	ret = mt6370_pmu_regmap_register(chip, &mt6370_regmap_fops);
 	if (ret < 0)
@@ -327,29 +316,6 @@ static int mt6370_pmu_remove(struct i2c_client *i2c)
 	return 0;
 }
 
-//modify XLLWHLSE-4 bring up af in x605 by luyan.ye 20180123 start
-#if defined (TRAN_X604) || defined (TRAN_X605)
-int rt5081_pmu_reg_write_custom(bool on)
-{
-	int ret = 0;
-	u8 data_enable = 0x86;//enable + 2.8v
-	u8 data_disable = 0x06;//disable
-	struct rt_reg_data rrd = {0};
-
-	if(on)
-	{
-		ret = rt_regmap_reg_write(chip_custom->rd, &rrd, MT6370_PMU_REG_LDOVOUT, data_enable);
-		printk("Lens AF_VDD power on \n");
-	}else{
-		ret = rt_regmap_reg_write(chip_custom->rd, &rrd, MT6370_PMU_REG_LDOVOUT, data_disable);
-		printk("Lens AF_VDD power off \n");
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(rt5081_pmu_reg_write_custom);
-#endif
-//modify XLLWHLSE-4 bring up af in x605 by luyan.ye 20180123 end
 static const struct i2c_device_id mt6370_pmu_id_table[] = {
 	{"mt6370_pmu", 0},
 	{}
@@ -358,7 +324,6 @@ MODULE_DEVICE_TABLE(i2c, mt6370_pmu_id_table);
 
 static const struct of_device_id mt6370_pmu_ofid_table[] = {
 	{.compatible = "mediatek,mt6370_pmu",},
-	{.compatible = "mediatek,subpmic_pmu",},
 	{},
 };
 MODULE_DEVICE_TABLE(of, mt6370_pmu_ofid_table);

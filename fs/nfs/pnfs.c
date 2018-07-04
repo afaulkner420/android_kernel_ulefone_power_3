@@ -1185,11 +1185,13 @@ bool pnfs_wait_on_layoutreturn(struct inode *ino, struct rpc_task *task)
 	 * i_lock */
         spin_lock(&ino->i_lock);
         lo = nfsi->layout;
-        if (lo && test_bit(NFS_LAYOUT_RETURN, &lo->plh_flags)) {
-                rpc_sleep_on(&NFS_SERVER(ino)->roc_rpcwaitq, task, NULL);
+        if (lo && test_bit(NFS_LAYOUT_RETURN, &lo->plh_flags))
                 sleep = true;
-	}
         spin_unlock(&ino->i_lock);
+
+        if (sleep)
+                rpc_sleep_on(&NFS_SERVER(ino)->roc_rpcwaitq, task, NULL);
+
         return sleep;
 }
 
@@ -1943,6 +1945,7 @@ pnfs_write_through_mds(struct nfs_pageio_descriptor *desc,
 		nfs_pageio_reset_write_mds(desc);
 		mirror->pg_recoalesce = 1;
 	}
+	nfs_pgio_data_destroy(hdr);
 	hdr->release(hdr);
 }
 
@@ -2058,6 +2061,7 @@ pnfs_read_through_mds(struct nfs_pageio_descriptor *desc,
 		nfs_pageio_reset_read_mds(desc);
 		mirror->pg_recoalesce = 1;
 	}
+	nfs_pgio_data_destroy(hdr);
 	hdr->release(hdr);
 }
 

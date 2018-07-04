@@ -81,8 +81,6 @@ extern u32 aee_rr_curr_deepidle_val(void);
 extern void aee_rr_rec_spm_suspend_val(u32 val);
 extern u32 aee_rr_curr_spm_suspend_val(void);
 #endif
-extern int sleep_ddr_status;
-extern int sleep_vcore_status;
 
 /* Vcore DVFS */
 #if SPM_AEE_RR_REC
@@ -104,8 +102,6 @@ extern bool is_already_snap_shot;
 
 /* power golden setting */
 extern void mt_power_gs_dump_suspend(void);
-extern void mt_power_gs_dump_dpidle(void);
-extern void mt_power_gs_dump_sodi3(void);
 extern bool slp_dump_golden_setting;
 extern int slp_dump_golden_setting_type;
 
@@ -119,10 +115,8 @@ extern int pasr_enter(u32 *sr, u32 *dpd);
 extern int pasr_exit(void);
 extern unsigned long mtkpasr_enable_sr;
 
-#if defined(CONFIG_MTK_EIC) || defined(CONFIG_PINCTRL_MTK_COMMON)
 /* eint */
 extern void mt_eint_print_status(void);
-#endif
 
 #ifdef CONFIG_FPGA_EARLY_PORTING
 __attribute__ ((weak))

@@ -27,10 +27,10 @@ struct IMGSENSOR {
 	atomic_t imgsensor_open_cnt;
 };
 
-MINT32
+MUINT32
 imgsensor_sensor_open(struct IMGSENSOR_SENSOR *psensor);
 
-MINT32
+MUINT32
 imgsensor_sensor_close(struct IMGSENSOR_SENSOR *psensor);
 
 MUINT32

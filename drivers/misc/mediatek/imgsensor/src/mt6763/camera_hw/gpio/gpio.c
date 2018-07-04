@@ -32,8 +32,8 @@ struct GPIO_PINCTRL gpio_pinctrl_list[GPIO_CTRL_STATE_MAX_NUM] = {
 	{"cam1_pnd0"},
 	{"cam1_rst1"},
 	{"cam1_rst0"},
-	{NULL},
-	{NULL},
+	{"cam_ldo_sub_vcama_1"},
+	{"cam_ldo_sub_vcama_0"},
 	{"cam_ldo_sub_vcamd_1"},
 	{"cam_ldo_sub_vcamd_0"},
 	/* Main2 */
@@ -43,8 +43,8 @@ struct GPIO_PINCTRL gpio_pinctrl_list[GPIO_CTRL_STATE_MAX_NUM] = {
 	{"cam2_rst0"},
 	{NULL},
 	{NULL},
-	{"cam_ldo_main2_vcamd_1"},
-	{"cam_ldo_main2_vcamd_0"},
+	{NULL},
+	{NULL},
 	/* Sub2 */
 	{"cam3_pnd1"},
 	{"cam3_pnd0"},
@@ -139,13 +139,10 @@ static enum IMGSENSOR_RETURN gpio_set(
 		ppinctrl_state = pgpio->ppinctrl_state[ctrl_state_offset +
 					((pin - IMGSENSOR_HW_PIN_PDN) << 1) + gpio_state];
 	}
-
-	mutex_lock(&pinctrl_mutex);
 	if (!IS_ERR(ppinctrl_state))
 		pinctrl_select_state(pgpio->ppinctrl, ppinctrl_state);
 	else
 		PK_PR_ERR("%s : pinctrl err, PinIdx %d, Val %d\n", __func__, pin, pin_state);
-	mutex_unlock(&pinctrl_mutex);
 
 	return IMGSENSOR_RETURN_SUCCESS;
 }

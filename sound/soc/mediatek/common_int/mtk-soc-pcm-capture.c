@@ -67,15 +67,15 @@
 /* #define CAPTURE_FORCE_USE_DRAM //foruse DRAM for record */
 
 /* information about */
-struct afe_mem_control_t  *VUL_Control_context;
+AFE_MEM_CONTROL_T  *VUL_Control_context;
 static struct snd_dma_buffer *Capture_dma_buf;
-static struct audio_digital_i2s *mAudioDigitalI2S;
+static AudioDigtalI2S *mAudioDigitalI2S;
 static bool mCaptureUseSram;
 
 static bool vcore_dvfs_enable;
 static int capture_hdinput_control;
 static const void *irq_user_id;
-static unsigned int irq2_cnt;
+static uint32 irq2_cnt;
 static bool mPrepareDone;
 static int use_adc2_for_ch1_ch2;
 static bool is_adc1_closed_before;
@@ -180,7 +180,7 @@ static int capture_use_adc2_for_ch1_ch2_set(struct snd_kcontrol *kcontrol,
 	AudDrv_Clk_On();
 
 	if (use_adc2_for_ch1_ch2) {
-		unsigned int eSamplingRate = get_dai_rate(Soc_Aud_Digital_Block_ADDA_UL);
+		uint32 eSamplingRate = get_dai_rate(Soc_Aud_Digital_Block_ADDA_UL);
 
 		/* turn off adc1 */
 		is_adc1_closed_before = true;
@@ -232,8 +232,7 @@ static struct snd_pcm_hardware mtk_capture_hardware = {
 	.info = (SNDRV_PCM_INFO_MMAP |
 	SNDRV_PCM_INFO_INTERLEAVED |
 	SNDRV_PCM_INFO_RESUME |
-	SNDRV_PCM_INFO_MMAP_VALID |
-	SNDRV_PCM_INFO_NO_PERIOD_WAKEUP),
+	SNDRV_PCM_INFO_MMAP_VALID),
 	.formats =      SND_SOC_ADV_MT_FMTS,
 	.rates =        SOC_HIGH_USE_RATE,
 	.rate_min =     SOC_HIGH_USE_RATE_MIN,
@@ -307,8 +306,7 @@ static int mtk_capture_alsa_stop(struct snd_pcm_substream *substream)
 	pr_warn("%s\n", __func__);
 
 	irq_user_id = NULL;
-
-	irq_remove_substream_user(substream, irq_request_number(cap_mem_blk));
+	irq_remove_user(substream, irq_request_number(cap_mem_blk));
 
 	SetMemoryPathEnable(cap_mem_blk, false);
 
@@ -464,10 +462,10 @@ static int mtk_capture_alsa_start(struct snd_pcm_substream *substream)
 	pr_warn("%s\n", __func__);
 
 	/* here to set interrupt */
-	irq_add_substream_user(substream,
-			       irq_request_number(cap_mem_blk),
-			       substream->runtime->rate,
-			       substream->runtime->period_size);
+	irq_add_user(substream,
+		     irq_request_number(cap_mem_blk),
+		     substream->runtime->rate,
+		     substream->runtime->period_size);
 	irq_user_id = substream;
 	/* set memory */
 	SetSampleRate(cap_mem_blk, substream->runtime->rate);
@@ -533,7 +531,6 @@ static struct snd_pcm_ops mtk_afe_capture_ops = {
 	.copy =     mtk_capture_pcm_copy,
 	.silence =  mtk_capture_pcm_silence,
 	.page =     mtk_capture_pcm_page,
-	.mmap =     mtk_pcm_mmap,
 };
 
 static struct snd_soc_platform_driver mtk_soc_platform = {
@@ -576,7 +573,7 @@ static int mtk_afe_capture_probe(struct snd_soc_platform *platform)
 					 ARRAY_SIZE(Audio_snd_capture_controls));
 	AudDrv_Allocate_mem_Buffer(platform->dev, cap_mem_blk, UL1_MAX_BUFFER_SIZE);
 	Capture_dma_buf = Get_Mem_Buffer(cap_mem_blk);
-	mAudioDigitalI2S = kzalloc(sizeof(struct audio_digital_i2s), GFP_KERNEL);
+	mAudioDigitalI2S = kzalloc(sizeof(AudioDigtalI2S), GFP_KERNEL);
 	return 0;
 }
 

@@ -50,8 +50,6 @@
 #include <asm/uaccess.h>
 #include <asm/page.h>
 
-#include <mt-plat/mtk_io_boost.h>
-
 #ifdef CONFIG_JBD2_DEBUG
 ushort jbd2_journal_enable_debug __read_mostly;
 EXPORT_SYMBOL(jbd2_journal_enable_debug);
@@ -187,11 +185,11 @@ static void commit_timeout(unsigned long __data)
  *    the disk.  Flushing these old buffers to reclaim space in the log is
  *    known as checkpointing, and this thread is responsible for that job.
  */
+
 static int kjournald2(void *arg)
 {
 	journal_t *journal = arg;
 	transaction_t *transaction;
-	bool io_boost_done = false;
 
 	/*
 	 * Set up an interval timer which can be used to trigger a commit wakeup
@@ -206,15 +204,12 @@ static int kjournald2(void *arg)
 	journal->j_task = current;
 	wake_up(&journal->j_wait_done_commit);
 
-	mtk_io_boost_test_and_add_tid(current->pid, &io_boost_done);
-
 	/*
 	 * And now, wait forever for commit wakeup events.
 	 */
 	write_lock(&journal->j_state_lock);
 
 loop:
-
 	if (journal->j_flags & JBD2_UNMOUNT)
 		goto end_loop;
 
@@ -225,9 +220,6 @@ loop:
 		jbd_debug(1, "OK, requests differ\n");
 		write_unlock(&journal->j_state_lock);
 		del_timer_sync(&journal->j_commit_timer);
-
-		mtk_io_boost_test_and_add_tid(current->pid, &io_boost_done);
-
 		jbd2_journal_commit_transaction(journal);
 		write_lock(&journal->j_state_lock);
 		goto loop;
@@ -342,7 +334,7 @@ static void journal_kill_thread(journal_t *journal)
  * IO is in progress. do_get_write_access() handles this.
  *
  * The function returns a pointer to the buffer_head to be used for IO.
- *
+ * 
  *
  * Return value:
  *  <0: Error
@@ -531,7 +523,7 @@ int __jbd2_log_start_commit(journal_t *journal, tid_t target)
 		WARN_ONCE(1, "JBD2: bad log_start_commit: %u %u %u %u\n",
 			  journal->j_commit_request,
 			  journal->j_commit_sequence,
-			  target, journal->j_running_transaction ?
+			  target, journal->j_running_transaction ? 
 			  journal->j_running_transaction->t_tid : 0);
 	return 0;
 }
@@ -698,6 +690,7 @@ int jbd2_log_wait_commit(journal_t *journal, tid_t tid)
 {
 	int err = 0;
 
+	jbd2_might_wait_for_commit(journal);
 	read_lock(&journal->j_state_lock);
 #ifdef CONFIG_JBD2_DEBUG
 	if (!tid_geq(journal->j_commit_request, tid)) {
@@ -1076,6 +1069,7 @@ static void jbd2_stats_proc_exit(journal_t *journal)
 
 static journal_t * journal_init_common (void)
 {
+	static struct lock_class_key jbd2_trans_commit_key;
 	journal_t *journal;
 	int err;
 
@@ -1110,6 +1104,9 @@ static journal_t * journal_init_common (void)
 	}
 
 	spin_lock_init(&journal->j_history_lock);
+
+	lockdep_init_map(&journal->j_trans_commit_map, "jbd2_handle",
+			 &jbd2_trans_commit_key, 0);
 
 	return journal;
 }

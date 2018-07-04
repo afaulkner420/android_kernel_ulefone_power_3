@@ -15,6 +15,9 @@
 #ifndef __MTK_GIC_EXTEND_H
 #define __MTK_GIC_EXTEND_H
 
+#include <linux/irqnr.h>
+#include <linux/irq.h>
+
 #define MT_EDGE_SENSITIVE	0
 #define MT_LEVEL_SENSITIVE	1
 #define MT_POLARITY_LOW		0
@@ -24,8 +27,6 @@
 #define FIQ_SMP_CALL_SGI	13
 #endif
 
-
-#include <linux/irq.h>
 typedef void (*fiq_isr_handler) (void *arg, void *regs, void *svc_sp);
 
 enum {
@@ -71,11 +72,6 @@ void mt_gic_set_priority(unsigned int irq);
 void mt_set_irq_priority(unsigned int irq, unsigned int priority);
 unsigned int mt_get_irq_priority(unsigned int irq);
 
-#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
-extern void __iomem *get_dist_base(void);
-extern u32 mt_irq_get_en_hw(unsigned int hwirq);
-#endif
-
 #if defined(CONFIG_FIQ_GLUE)
 int request_fiq(int irq, fiq_isr_handler handler, unsigned long irq_flags, void *arg);
 void irq_raise_softirq(const struct cpumask *mask, unsigned int irq);
@@ -84,37 +80,9 @@ void irq_raise_softirq(const struct cpumask *mask, unsigned int irq);
 void gic_set_primask(void);
 /* restore the priority mask value */
 void gic_clear_primask(void);
-int add_cpu_to_prefer_schedule_domain(unsigned long cpu);
-int remove_cpu_from_prefer_schedule_domain(unsigned long cpu);
-
-#ifdef CONFIG_MTK_SYSIRQ
-static inline struct irq_data *get_gic_irq_data(struct irq_data *d)
-{
-	return d->parent_data;
-}
+extern u32 mt_irq_get_en_hw(unsigned int hwirq);
 #endif
-
-
-static inline unsigned int gic_irq(struct irq_data *d)
-{
-#ifdef CONFIG_MTK_SYSIRQ
-	d = get_gic_irq_data(d);
-#endif
-	return d->hwirq;
-}
-
-static inline unsigned int virq_to_hwirq(unsigned int virq)
-{
-	struct irq_desc *desc;
-	unsigned int hwirq;
-
-	desc = irq_to_desc(virq);
-
-	WARN_ON(!desc);
-
-	hwirq = gic_irq(&desc->irq_data);
-
-	return hwirq;
-}
+#ifdef CONFIG_FAST_CIRQ_CLONE_FLUSH
+extern void __iomem *get_dist_base(void);
 #endif
 

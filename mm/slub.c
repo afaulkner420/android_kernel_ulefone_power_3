@@ -3746,6 +3746,13 @@ const char *__check_heap_object(const void *ptr, unsigned long n,
 	/* Find offset within object. */
 	offset = (ptr - page_address(page)) % s->size;
 
+	/* Adjust for redzone and reject if within the redzone. */
+	if (kmem_cache_debug(s) && s->flags & SLAB_RED_ZONE) {
+		if (offset < s->red_left_pad)
+			return s->name;
+		offset -= s->red_left_pad;
+	}
+
 	/* Allow address range falling entirely within object size. */
 	if (offset <= object_size && n <= object_size - offset)
 		return NULL;
@@ -5447,7 +5454,6 @@ static void memcg_propagate_slab_attrs(struct kmem_cache *s)
 		char mbuf[64];
 		char *buf;
 		struct slab_attribute *attr = to_slab_attr(slab_attrs[i]);
-		ssize_t len;
 
 		if (!attr || !attr->store || !attr->show)
 			continue;
@@ -5472,9 +5478,8 @@ static void memcg_propagate_slab_attrs(struct kmem_cache *s)
 			buf = buffer;
 		}
 
-		len = attr->show(root_cache, buf);
-		if (len > 0)
-			attr->store(s, buf, len);
+		attr->show(root_cache, buf);
+		attr->store(s, buf, strlen(buf));
 	}
 
 	if (buffer)
@@ -5563,10 +5568,6 @@ static int sysfs_slab_add(struct kmem_cache *s)
 	int err;
 	const char *name;
 	int unmergeable = slab_unmergeable(s);
-
-	if (!unmergeable && disable_higher_order_debug &&
-			(slub_debug & DEBUG_METADATA_FLAGS))
-		unmergeable = 1;
 
 	if (unmergeable) {
 		/*
@@ -5773,9 +5774,6 @@ static int mtk_memcfg_add_location(struct loc_track *t, struct kmem_cache *s,
 #endif
 			break;
 	}
-	/* copy all addrs if we cannot match track->addr */
-	if (i == TRACK_ADDRS_COUNT)
-		i = 0;
 	cnt = min(MTK_MEMCFG_SLABTRACE_CNT, TRACK_ADDRS_COUNT - i);
 #ifdef MTK_COMPACT_SLUB_TRACK
 	{
@@ -5941,12 +5939,6 @@ static int mtk_memcfg_slabtrace_show(struct seq_file *m, void *p)
 
 	mutex_lock(&slab_mutex);
 	list_for_each_entry(s, &slab_caches, list) {
-		/* We only want to know the backtraces of kmalloc-*
-		 * Backtraces of other kmem_cache can be find easily
-		 */
-		if (!strstr(s->name, "kmalloc-"))
-			continue;
-
 		seq_printf(m, "========== kmem_cache: %s alloc_calls ==========\n", s->name);
 		if (!(s->flags & SLAB_STORE_USER))
 			continue;

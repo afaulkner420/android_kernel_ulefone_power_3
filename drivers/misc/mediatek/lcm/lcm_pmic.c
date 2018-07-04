@@ -10,12 +10,132 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
+#ifdef BUILD_LK
+#include <platform/upmu_common.h>
+#include <platform/mt_gpio.h>
+#include <platform/mt_i2c.h>
+#include <platform/mt_pmic.h>
+#include <string.h>
+
+#define LOG_TAG "LCM"
+#define LCM_LOGI(string, args...)  dprintf(0, "[LK/"LOG_TAG"]"string, ##args)
+#define LCM_LOGD(string, args...)  dprintf(1, "[LK/"LOG_TAG"]"string, ##args)
+
+#define I2C_MT6370_PMU_CHANNEL      5
+#define I2C_MT6370_PMU_SLAVE_7_BIT_ADDR 0x34
+
+static int RT5081_read_byte (kal_uint8 addr, kal_uint8 *dataBuffer)
+{
+    kal_uint32 ret = I2C_OK;
+    kal_uint16 len;
+    struct mt_i2c_t RT5081_i2c;
+    *dataBuffer = addr;
+
+    RT5081_i2c.id = I2C_MT6370_PMU_CHANNEL;
+    RT5081_i2c.addr = I2C_MT6370_PMU_SLAVE_7_BIT_ADDR;
+    RT5081_i2c.mode = ST_MODE;
+    RT5081_i2c.speed = 100;
+    len = 1;
+
+    ret = i2c_write_read(&RT5081_i2c, dataBuffer, len, len);
+    if (I2C_OK != ret)
+        LCM_LOGI("%s: i2c_read  failed! ret: %d\n", __func__, ret);
+
+    return ret;
+}
+
+static int RT5081_write_byte(kal_uint8 addr, kal_uint8 value)
+{
+    kal_uint32 ret_code = I2C_OK;
+    kal_uint8 write_data[2];
+    kal_uint16 len;
+    struct mt_i2c_t RT5081_i2c;
+
+    write_data[0] = addr;
+    write_data[1] = value;
+
+    RT5081_i2c.id = I2C_MT6370_PMU_CHANNEL;
+    RT5081_i2c.addr = I2C_MT6370_PMU_SLAVE_7_BIT_ADDR;
+    RT5081_i2c.mode = ST_MODE;
+    RT5081_i2c.speed = 100;
+    len = 2;
+
+    ret_code = i2c_write(&RT5081_i2c, write_data, len);
+
+    return ret_code;
+}
+
+static int RT5081_REG_MASK (kal_uint8 addr, kal_uint8 val, kal_uint8 mask)
+{
+    kal_uint8 RT5081_reg = 0;
+    kal_uint32 ret = 0;
+
+    ret = RT5081_read_byte(addr, &RT5081_reg);
+
+    RT5081_reg &= ~mask;
+    RT5081_reg |= val;
+
+    ret = RT5081_write_byte(addr, RT5081_reg);
+
+    return ret;
+}
+
+int display_bias_enable(void)
+{
+	int ret = 0;
+    /*config rt5081 register 0xB2[7:6]=0x3, that is set db_delay=4ms.*/
+    ret = RT5081_REG_MASK(0xB2, (0x3 << 6), (0x3 << 6));
+
+    /* set AVDD 5.4v, (4v+28*0.05v) */
+    /*ret = RT5081_write_byte(0xB3, (1 << 6) | 28);*/
+    ret = RT5081_REG_MASK(0xB3, 28, (0x3F << 0));
+    if (ret < 0)
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write error----\n", 0xB3);
+    else
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write success----\n", 0xB3);
+
+    /* set AVEE */
+    /*ret = RT5081_write_byte(0xB4, (1 << 6) | 28);*/
+    ret = RT5081_REG_MASK(0xB4, 28, (0x3F << 0));
+    if (ret < 0)
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write error----\n", 0xB4);
+    else
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write success----\n", 0xB4);
+
+    /* enable AVDD & AVEE */
+    /* 0x12--default value; bit3--Vneg; bit6--Vpos; */
+    /*ret = RT5081_write_byte(0xB1, 0x12 | (1<<3) | (1<<6));*/
+    ret = RT5081_REG_MASK(0xB1, (1<<3) | (1<<6), (1<<3) | (1<<6));
+    if (ret < 0)
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write error----\n", 0xB1);
+    else
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write success----\n", 0xB1);
+
+    return ret;
+}
+
+int display_bias_disable(void)
+{
+	int ret = 0;
+    /* enable AVDD & AVEE */
+    /* 0x12--default value; bit3--Vneg; bit6--Vpos; */
+    /*ret = RT5081_write_byte(0xB1, 0x12);*/
+    ret = RT5081_REG_MASK(0xB1, (0<<3) | (0<<6), (1<<3) | (1<<6));
+    if (ret < 0)
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write error----\n", 0xB1);
+    else
+        LCM_LOGI("nt35695----tps6132----cmd=%0x--i2c write success----\n", 0xB1);
+
+    return ret;
+}
+
+#else
 
 #include <linux/regulator/consumer.h>
 #include <linux/string.h>
 #include <linux/kernel.h>
 
-#if defined(CONFIG_RT5081_PMU_DSV) || defined(CONFIG_MT6370_PMU_DSV)
+#ifdef CONFIG_MT6370_PMU_DSV
 static struct regulator *disp_bias_pos;
 static struct regulator *disp_bias_neg;
 static int regulator_inited;
@@ -53,7 +173,8 @@ int display_bias_enable(void)
 	int ret = 0;
 	int retval = 0;
 
-	display_bias_regulator_init();
+	if (!regulator_inited)
+		return ret;
 
 	/* set voltage with min & max*/
 	ret = regulator_set_voltage(disp_bias_pos, 5400000, 5400000);
@@ -93,55 +214,13 @@ int display_bias_enable(void)
 }
 EXPORT_SYMBOL(display_bias_enable);
 
-/*add by zhangkun for set avdd && avee voltage value --begin--*/
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-int tran_display_bias_enable(int vol)
-{
-	int ret = 0;
-	int retval = 0;
-#if defined(CONFIG_TRAN_LCM_TIME_OPT_ENABLE)
-	printk("%s winston_tran_display_bias_enable start\n",__func__);
-#endif
-	display_bias_regulator_init();
-
-	/* set voltage with min & max*/
-	ret = regulator_set_voltage(disp_bias_pos, vol, vol);
-	if (ret < 0)
-		pr_err("set voltage disp_bias_pos fail, ret = %d\n", ret);
-	retval |= ret;
-
-	ret = regulator_set_voltage(disp_bias_neg, vol, vol);
-	if (ret < 0)
-		pr_err("set voltage disp_bias_neg fail, ret = %d\n", ret);
-	retval |= ret;
-
-	/* enable regulator */
-	ret = regulator_enable(disp_bias_pos);
-	if (ret < 0)
-		pr_err("enable regulator disp_bias_pos fail, ret = %d\n", ret);
-	retval |= ret;
-
-	ret = regulator_enable(disp_bias_neg);
-	if (ret < 0)
-		pr_err("enable regulator disp_bias_neg fail, ret = %d\n", ret);
-	retval |= ret;
-#if defined(CONFIG_TRAN_LCM_TIME_OPT_ENABLE)
-	printk("%s winston_tran_display_bias_enable end\n",__func__);
-#endif
-	return retval;
-}
-EXPORT_SYMBOL(tran_display_bias_enable);
-#endif
-/*add by zhangkun for set avdd && avee voltage value --end--*/
-
 int display_bias_disable(void)
 {
 	int ret = 0;
 	int retval = 0;
-#if defined(CONFIG_TRAN_LCM_TIME_OPT_ENABLE)
-	printk("%s winston_display_bias_disable start\n",__func__);
-#endif
-	display_bias_regulator_init();
+
+	if (!regulator_inited)
+		return ret;
 
 	ret = regulator_disable(disp_bias_neg);
 	if (ret < 0)
@@ -152,9 +231,7 @@ int display_bias_disable(void)
 	if (ret < 0)
 		pr_err("disable regulator disp_bias_pos fail, ret = %d\n", ret);
 	retval |= ret;
-#if defined(CONFIG_TRAN_LCM_TIME_OPT_ENABLE)
-	printk("%s winston_display_bias_disable end\n",__func__);
-#endif
+
 	return retval;
 }
 EXPORT_SYMBOL(display_bias_disable);
@@ -172,20 +249,10 @@ int display_bias_enable(void)
 }
 EXPORT_SYMBOL(display_bias_enable);
 
-/*add by zhangkun for set avdd && avee voltage value --begin--*/
-#ifdef CONFIG_TRAN_LCM_SET_VOLTAGE
-int tran_display_bias_enable(int vol)
-{
-	return 0;
-}
-EXPORT_SYMBOL(tran_display_bias_enable);
-#endif
-/*add by zhangkun for set avdd && avee voltage value --end--*/
-
 int display_bias_disable(void)
 {
 	return 0;
 }
 EXPORT_SYMBOL(display_bias_disable);
 #endif
-
+#endif

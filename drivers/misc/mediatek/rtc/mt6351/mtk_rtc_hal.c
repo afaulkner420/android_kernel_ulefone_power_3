@@ -33,7 +33,9 @@
 #include <mtk_rtc_hal_common.h>
 #include "mtk_rtc_hw.h"
 #include <mtk_pmic_wrap.h>
+#if defined CONFIG_MTK_KERNEL_POWER_OFF_CHARGING
 #include <mtk_boot.h>
+#endif
 
 #include <mtk_gpio.h>
 #ifdef CONFIG_MTK_SMART_BATTERY
@@ -108,7 +110,7 @@
  *     bit 7 - 15: reserved bits
  */
 
-u16 rtc_spare_reg[RTC_SPAR_NUM][3] = {
+u16 rtc_spare_reg[][3] = {
 	{RTC_AL_HOU, 0x7f, 8},
 	{RTC_PDN1, 0xf, 0},
 	{RTC_PDN1, 0x3, 4},

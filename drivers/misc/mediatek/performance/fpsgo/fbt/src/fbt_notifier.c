@@ -50,14 +50,14 @@ static struct workqueue_struct *g_psNotifyWorkQueue;
 static struct mutex notify_lock;
 static int game_mode, benchmark_mode;
 
-enum FBT_NOTIFIER_PUSH_TYPE {
+typedef enum {
 	FBT_NOTIFIER_PUSH_TYPE_FRAMETIME	= 0x01,
 	FBT_NOTIFIER_PUSH_DFRC_FPS_LIMIT	= 0x02,
 	FBT_NOTIFIER_PUSH_GAME_MODE		= 0x03,
-};
+} FBT_NOTIFIER_PUSH_TYPE;
 
-struct FBT_NOTIFIER_PUSH_TAG {
-	enum FBT_NOTIFIER_PUSH_TYPE ePushType;
+typedef struct FBT_NOTIFIER_PUSH_TAG {
+	FBT_NOTIFIER_PUSH_TYPE ePushType;
 
 	unsigned long long Q2Q_time;
 	unsigned long long Running_time;
@@ -69,7 +69,7 @@ struct FBT_NOTIFIER_PUSH_TAG {
 
 	struct work_struct sWork;
 
-};
+} FBT_NOTIFIER_PUSH;
 
 static unsigned int gLast_Q2Q;
 static unsigned int gLast_Running;
@@ -85,7 +85,7 @@ EXPORT_SYMBOL(fbt_notifier_cpu_frame_time_fps_stabilizer);
 int (*fbt_notifier_dfrc_fp_fbt_cpu)(unsigned int DFRC_fpt_limit);
 EXPORT_SYMBOL(fbt_notifier_dfrc_fp_fbt_cpu);
 
-static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_TYPE_FRAMETIME(struct FBT_NOTIFIER_PUSH_TAG *pPush)
+static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_TYPE_FRAMETIME(FBT_NOTIFIER_PUSH *pPush)
 {
 #ifdef FBT_NOTIFIER_DEBUG
 	FBT_LOGE("[FBT_NTF_PTF] Q2Q %llu, Running %llu, Curr_cap %u,Max_cap %u, Target_fps %d\n",
@@ -106,7 +106,7 @@ static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_TYPE_FRAMETIME(struct FBT_NOTIF
 
 }
 
-static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_DFRC_FPS_LIMIT(struct FBT_NOTIFIER_PUSH_TAG *pPush)
+static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_DFRC_FPS_LIMIT(FBT_NOTIFIER_PUSH *pPush)
 {
 	if (fbt_notifier_dfrc_fp_fbt_cpu)
 		fbt_notifier_dfrc_fp_fbt_cpu(pPush->DFRC_fps_limit);
@@ -136,7 +136,7 @@ void fbt_notifier_push_benchmark_hint(int is_benchmark)
 	mutex_unlock(&notify_lock);
 }
 
-static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_GAME_MODE(struct FBT_NOTIFIER_PUSH_TAG *pPush)
+static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_GAME_MODE(FBT_NOTIFIER_PUSH *pPush)
 {
 	mutex_lock(&notify_lock);
 	game_mode = pPush->game;
@@ -162,7 +162,7 @@ static void fbt_notifier_wq_cb_FBT_NOTIFIER_PUSH_GAME_MODE(struct FBT_NOTIFIER_P
 
 static void fbt_notifier_wq_cb(struct work_struct *psWork)
 {
-	struct FBT_NOTIFIER_PUSH_TAG *vpPush = FBT_CONTAINER_OF(psWork, struct FBT_NOTIFIER_PUSH_TAG, sWork);
+	FBT_NOTIFIER_PUSH *vpPush = FBT_CONTAINER_OF(psWork, FBT_NOTIFIER_PUSH, sWork);
 
 #ifdef FBT_NOTIFIER_DEBUG
 	FBT_LOGE("[FBT_NOTIFIER] push type = %d\n", vpPush->ePushType);
@@ -184,7 +184,7 @@ static void fbt_notifier_wq_cb(struct work_struct *psWork)
 		break;
 	}
 
-	fbt_free(vpPush, sizeof(struct FBT_NOTIFIER_PUSH_TAG));
+	fbt_free(vpPush, sizeof(FBT_NOTIFIER_PUSH));
 }
 
 int fbt_notifier_push_cpu_frame_time(
@@ -209,8 +209,7 @@ int fbt_notifier_push_cpu_capability(
 	fpsgo_systrace_c_ntfr(-100, max_cap, "max_cap");
 
 	if (g_psNotifyWorkQueue) {
-		struct FBT_NOTIFIER_PUSH_TAG *vpPush =
-			(struct FBT_NOTIFIER_PUSH_TAG *) fbt_alloc_atomic(sizeof(struct FBT_NOTIFIER_PUSH_TAG));
+		FBT_NOTIFIER_PUSH *vpPush = (FBT_NOTIFIER_PUSH *) fbt_alloc_atomic(sizeof(FBT_NOTIFIER_PUSH));
 
 		if (!vpPush)
 			return FBT_ERROR_OOM;
@@ -232,8 +231,7 @@ int fbt_notifier_push_cpu_capability(
 int fbt_notifier_push_game_mode(int is_game_mode)
 {
 	if (g_psNotifyWorkQueue) {
-		struct FBT_NOTIFIER_PUSH_TAG *vpPush =
-			(struct FBT_NOTIFIER_PUSH_TAG *) fbt_alloc_atomic(sizeof(struct FBT_NOTIFIER_PUSH_TAG));
+		FBT_NOTIFIER_PUSH *vpPush = (FBT_NOTIFIER_PUSH *) fbt_alloc_atomic(sizeof(FBT_NOTIFIER_PUSH));
 
 		if (!vpPush)
 			return FBT_ERROR_OOM;
@@ -253,8 +251,7 @@ int fbt_notifier_push_dfrc_fps_limit(unsigned int fps_limit)
 	fpsgo_systrace_c_ntfr(-200, fps_limit, "dfrc_fps_limit");
 
 	if (g_psNotifyWorkQueue) {
-		struct FBT_NOTIFIER_PUSH_TAG *vpPush =
-			(struct FBT_NOTIFIER_PUSH_TAG *) fbt_alloc_atomic(sizeof(struct FBT_NOTIFIER_PUSH_TAG));
+		FBT_NOTIFIER_PUSH *vpPush = (FBT_NOTIFIER_PUSH *) fbt_alloc_atomic(sizeof(FBT_NOTIFIER_PUSH));
 
 		if (!vpPush)
 			return FBT_ERROR_OOM;

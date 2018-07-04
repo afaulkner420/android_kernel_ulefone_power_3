@@ -747,7 +747,7 @@ const struct sched_group_energy *cpu_cluster_energy(int cpu)
 	addr_ptr_tbl_info = upower_get_tbl();
 	ptr_tbl_info = *addr_ptr_tbl_info;
 
-	ptr_tbl = ptr_tbl_info[UPOWER_BANK_CLS_BASE+cluster_id].p_upower_tbl;
+	ptr_tbl = ptr_tbl_info[UPOWER_BANK_CLS_LL+cluster_id].p_upower_tbl;
 
 	cpu_cluster_ptr->nr_cap_states = ptr_tbl->row_num;
 	cpu_cluster_ptr->cap_states = ptr_tbl->row;
@@ -1055,11 +1055,9 @@ void __init arch_get_hmp_domains(struct list_head *hmp_domains_list)
 		arch_get_cluster_cpus(&cpu_mask, id);
 		domain = (struct hmp_domain *)
 			kmalloc(sizeof(struct hmp_domain), GFP_KERNEL);
-		if (domain) {
-			cpumask_copy(&domain->possible_cpus, &cpu_mask);
-			cpumask_and(&domain->cpus, cpu_online_mask, &domain->possible_cpus);
-			list_add(&domain->hmp_domains, hmp_domains_list);
-		}
+		cpumask_copy(&domain->possible_cpus, &cpu_mask);
+		cpumask_and(&domain->cpus, cpu_online_mask, &domain->possible_cpus);
+		list_add(&domain->hmp_domains, hmp_domains_list);
 	}
 }
 #else

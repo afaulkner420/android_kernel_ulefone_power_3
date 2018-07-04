@@ -44,14 +44,6 @@
 #include "mtk_common_static_power.h"
 #endif
 
-#ifdef UPOWER_USE_QOS_IPI
-#if UPOWER_ENABLE_TINYSYS_SSPM
-#include <mtk_spm_vcore_dvfs_ipi.h>
-#include <mtk_vcorefs_governor.h>
-#endif
-#endif
-
-
 #if UPOWER_ENABLE
 unsigned char upower_enable = 1;
 #else
@@ -73,7 +65,7 @@ static void print_tbl(void)
 {
 	int i, j;
 /* --------------------print static orig table -------------------------*/
-#if 0
+	#if 0
 	struct upower_tbl *tbl;
 
 	for (i = 0; i < NR_UPOWER_BANK; i++) {
@@ -91,7 +83,7 @@ static void print_tbl(void)
 		upower_debug(" lkg_idx, num_row: %d, %d\n", tbl->lkg_idx, tbl->row_num);
 		upower_debug("-----------------------------------------------------------------\n");
 	}
-#else
+	#else
 /* --------------------print sram table -------------------------*/
 	for (i = 0; i < NR_UPOWER_BANK; i++) {
 		/* table size must be 512 bytes */
@@ -107,7 +99,7 @@ static void print_tbl(void)
 					upower_tbl_ref[i].lkg_idx, upower_tbl_ref[i].row_num);
 		upower_debug("-------------------------------------------------\n");
 	}
-#endif
+	#endif
 }
 #endif
 
@@ -125,10 +117,10 @@ void upower_ut(void)
 	/* get ptr which points to upower_tbl_infos[] */
 	ptr_tbl_info = *addr_ptr_tbl_info;
 	upower_debug("get upower tbl location = %p\n", ptr_tbl_info[0].p_upower_tbl);
-#if 0
+	#if 0
 	upower_debug("ptr_tbl_info --> %p --> tbl %p (p_upower_tbl_infos --> %p)\n",
 				ptr_tbl_info, ptr_tbl_info[0].p_upower_tbl, p_upower_tbl_infos);
-#endif
+	#endif
 
 	/* print all the tables that record in upower_tbl_infos[]*/
 	for (i = 0; i < NR_UPOWER_BANK; i++) {
@@ -221,7 +213,7 @@ static void upower_update_lkg_pwr(void)
 	for (i = 0; i < NR_UPOWER_BANK; i++) {
 		tbl = upower_tbl_infos[i].p_upower_tbl;
 
-#ifdef EARLY_PORTING_SPOWER
+		#ifdef EARLY_PORTING_SPOWER
 		/* get p-state lkg */
 		for (j = 0; j < UPOWER_OPP_NUM; j++) {
 			for (k = 0; k < NR_UPOWER_DEGREE; k++)
@@ -233,14 +225,14 @@ static void upower_update_lkg_pwr(void)
 			for (k = 0; k < NR_UPOWER_CSTATES; k++)
 				upower_tbl_ref[i].idle_states[j][k].power = tbl->idle_states[j][k].power;
 		}
-#else
+		#else
 		spower_bank_id = upower_bank_to_spower_bank(i);
 
-#if 0
+		#if 0
 		upower_debug("upower bank, spower bank= %d, %d\n", i, spower_bank_id);
 		upower_debug("deg = %d, %d, %d, %d, %d, %d\n", degree_set[0], degree_set[1],
 							degree_set[2], degree_set[3], degree_set[4], degree_set[5]);
-#endif
+		#endif
 
 		/* wrong bank */
 		if (spower_bank_id == -1)
@@ -254,12 +246,12 @@ static void upower_update_lkg_pwr(void)
 				/* get leakage from spower driver and transfer mw to uw */
 				temp = mt_spower_get_leakage(spower_bank_id, (volt/100), degree);
 				upower_tbl_ref[i].row[j].lkg_pwr[k] = temp * 1000;
-#if 0
+				#if 0
 				upower_debug("deg[%d] temp[%u] lkg_pwr[%u]\n", degree, temp,
 							upower_tbl_ref[i].row[j].lkg_pwr[k]);
-#endif
+				#endif
 			}
-#if 0
+			#if 0
 			upower_debug("volt[%u] lkg_pwr[%u, %u, %u, %u, %u, %u]\n", volt,
 							upower_tbl_ref[i].row[j].lkg_pwr[0],
 							upower_tbl_ref[i].row[j].lkg_pwr[1],
@@ -267,7 +259,7 @@ static void upower_update_lkg_pwr(void)
 							upower_tbl_ref[i].row[j].lkg_pwr[3],
 							upower_tbl_ref[i].row[j].lkg_pwr[4],
 							upower_tbl_ref[i].row[j].lkg_pwr[5]);
-#endif
+			#endif
 		}
 
 		/* get c-state lkg */
@@ -321,7 +313,6 @@ static unsigned int eem_is_enabled(void)
 
 static void upower_wait_for_eem_volt_done(void)
 {
-#ifndef EEM_NOT_SET_VOLT
 	unsigned char eem_volt_not_ready = 0;
 	int i;
 
@@ -337,7 +328,6 @@ static void upower_wait_for_eem_volt_done(void)
 		/* if eem volt not ready, wait 100us */
 		udelay(100);
 	}
-#endif
 }
 
 static void upower_init_lkgidx(void)
@@ -365,15 +355,9 @@ static int upower_update_tbl_ref(void)
 	int i;
 	int ret = 0;
 
-	/* To disable upower, do not update upower ptr*/
-	if (!upower_enable) {
-		upower_error("upower is disabled\n");
-		return 0;
-	}
-
-#ifdef UPOWER_PROFILE_API_TIME
+	#ifdef UPOWER_PROFILE_API_TIME
 	upower_get_start_time_us(UPDATE_TBL_PTR);
-#endif
+	#endif
 
 	new_p_tbl_infos = kzalloc(sizeof(*new_p_tbl_infos) * NR_UPOWER_BANK, GFP_KERNEL);
 	if (!new_p_tbl_infos) {
@@ -388,53 +372,23 @@ static int upower_update_tbl_ref(void)
 		/* upower_debug("new_p_tbl_infos[%d].name = %s\n", i, new_p_tbl_infos[i].name);*/
 	}
 
-#ifdef UPOWER_RCU_LOCK
+	#ifdef UPOWER_RCU_LOCK
 	rcu_assign_pointer(p_upower_tbl_infos, new_p_tbl_infos);
 	/* synchronize_rcu();*/
-#else
+	#else
 	p_upower_tbl_infos = new_p_tbl_infos;
-#endif
+	#endif
 
-#ifdef UPOWER_PROFILE_API_TIME
+	#ifdef UPOWER_PROFILE_API_TIME
 	upower_get_diff_time_us(UPDATE_TBL_PTR);
 	print_diff_results(UPDATE_TBL_PTR);
-#endif
+	#endif
 
 	return ret;
 }
 
-#ifdef UPOWER_USE_QOS_IPI
-#if UPOWER_ENABLE_TINYSYS_SSPM
-void upower_send_data_ipi(phys_addr_t phy_addr, unsigned long long size)
-{
-	struct qos_data qos_d;
-
-	qos_d.cmd = QOS_IPI_UPOWER_DATA_TRANSFER;
-	qos_d.u.upower_data.arg[0] = phy_addr;
-	qos_d.u.upower_data.arg[1] = size;
-	qos_ipi_to_sspm_command(&qos_d, 3);
-}
-
-void upower_dump_data_ipi(void)
-{
-	struct qos_data qos_d;
-
-	qos_d.cmd = QOS_IPI_UPOWER_DUMP_TABLE;
-	qos_ipi_to_sspm_command(&qos_d, 1);
-}
-#endif
-#endif
-
 static int __init upower_get_tbl_ref(void)
 {
-#if UPOWER_ENABLE_TINYSYS_SSPM
-	int i;
-	unsigned char *ptr;
-#endif
-
-#ifdef UPOWER_NOT_READY
-	return 0;
-#endif
 	/* get raw upower table and target upower table location */
 	get_original_table();
 
@@ -448,19 +402,9 @@ static int __init upower_get_tbl_ref(void)
 				(unsigned long long)upower_data_phy_addr,
 				(unsigned long long)upower_data_virt_addr);
 
-	/* clear */
-	ptr = (unsigned char *)(uintptr_t)upower_data_virt_addr;
-	for (i = 0; i < upower_data_size; i++)
-		ptr[i] = 0x0;
-
-	upower_tbl_ref = (struct upower_tbl *)(uintptr_t)upower_data_virt_addr;
-
-#ifdef UPOWER_USE_QOS_IPI
-	upower_send_data_ipi(upower_data_phy_addr, upower_data_size);
-#else
+	upower_tbl_ref = (struct upower_tbl *)upower_data_virt_addr;
 	/* send sspm reserved mem into sspm through eem's ipi */
 	mt_eem_send_upower_table_ref(upower_data_phy_addr, upower_data_size);
-#endif
 #endif
 	/* upower_tbl_ref has been assigned in get_original_table() if no sspm */
 	upower_debug("upower tbl orig location([0](%p)= %p\n",
@@ -503,9 +447,6 @@ static int upower_debug_proc_show(struct seq_file *m, void *v)
 	ptr_tbl_info = *addr_ptr_tbl_info;
 	/* upower_debug("get upower tbl location = %p\n", ptr_tbl_info[0].p_upower_tbl); */
 
-	seq_printf(m, "ptr_tbl_info --> %p --> tbl %p (p_upower_tbl_infos --> %p)\n",
-		ptr_tbl_info, ptr_tbl_info[0].p_upower_tbl, p_upower_tbl_infos);
-
 	/* print all the tables that record in upower_tbl_infos[]*/
 	for (i = 0; i < NR_UPOWER_BANK; i++) {
 		seq_printf(m, "%s\n", upower_tbl_infos[i].name);
@@ -522,11 +463,6 @@ static int upower_debug_proc_show(struct seq_file *m, void *v)
 					ptr_tbl->lkg_idx, ptr_tbl->row_num);
 	}
 
-#ifdef UPOWER_USE_QOS_IPI
-#if UPOWER_ENABLE_TINYSYS_SSPM
-	upower_dump_data_ipi();
-#endif
-#endif
 	return 0;
 }
 
@@ -580,10 +516,6 @@ static int create_procfs(void)
 		PROC_ENTRY(upower_debug),
 	};
 
-	/* To disable upower, do not create procfs*/
-	if (!upower_enable)
-		return 0;
-
 	/* create proc/upower node */
 	upower_dir = proc_mkdir("upower", NULL);
 	if (!upower_dir) {
@@ -606,10 +538,10 @@ static int create_procfs(void)
 
 static int __init upower_init(void)
 {
-#ifdef UPOWER_NOT_READY
-	return 0;
-#endif
-
+	if (upower_enable == 0) {
+		upower_error("upower is disabled\n");
+		return 0;
+	}
 	/* PTP has no efuse, so volt will be set to orig data */
 	/* before upower_init_volt(), PTP has called upower_update_volt_by_eem() */
 #if 0
@@ -618,10 +550,10 @@ static int __init upower_init(void)
 					upower_tbl_infos, upower_tbl_infos[0].p_upower_tbl);
 #endif
 
-#ifdef UPOWER_UT
+	#ifdef UPOWER_UT
 	upower_debug("--------- (UT)before tbl ready--------------\n");
 	upower_ut();
-#endif
+	#endif
 
 	/* init rownum to UPOWER_OPP_NUM*/
 	upower_init_rownum();
@@ -645,14 +577,14 @@ static int __init upower_init(void)
 #endif
 	upower_update_tbl_ref();
 
-#ifdef UPOWER_UT
+	#ifdef UPOWER_UT
 	upower_debug("--------- (UT)tbl ready--------------\n");
 	upower_ut();
-#endif
+	#endif
 
-#ifdef UPOWER_PROFILE_API_TIME
+	#ifdef UPOWER_PROFILE_API_TIME
 	profile_api();
-#endif
+	#endif
 
 	create_procfs();
 

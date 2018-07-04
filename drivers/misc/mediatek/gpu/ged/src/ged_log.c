@@ -284,7 +284,7 @@ static int __ged_log_buf_write(GED_LOG_BUF *psGEDLogBuf, const char __user *pszB
 
 	buf[cnt] = 0;
 
-	__ged_log_buf_print(psGEDLogBuf, "%s", buf);
+	__ged_log_buf_print(psGEDLogBuf, buf);
 
 	return cnt;
 }
@@ -395,11 +395,6 @@ static int ged_log_buf_seq_show(struct seq_file *psSeqFile, void *pvData)
 	if (psGEDLogBuf != NULL)
 	{
 		int i;
-
-#if defined(CONFIG_MACH_MT8167) || defined(CONFIG_MACH_MT8173) || defined(CONFIG_MACH_MT6739)
-		if (strncmp(psGEDLogBuf->acName, "fw_trace", 8) == 0)
-			ged_dump_fw();
-#endif
 
 		spin_lock_irqsave(&psGEDLogBuf->sSpinLock, psGEDLogBuf->ulIRQFlags);
 
@@ -554,9 +549,9 @@ GED_LOG_BUF_HANDLE ged_log_buf_alloc(
 
 	GED_LOGI("ged_log_buf_alloc OK\n");
 
-	if (pszName)
-		while (__ged_log_buf_check_get_early_list(psGEDLogBuf->ulHashNodeID, pszName))
-			;
+	while (__ged_log_buf_check_get_early_list(psGEDLogBuf->ulHashNodeID, pszName)) {
+		continue;
+	};
 
 	return (GED_LOG_BUF_HANDLE)psGEDLogBuf->ulHashNodeID;
 }
@@ -696,54 +691,61 @@ GED_LOG_BUF_HANDLE ged_log_buf_get(const char* pszName)
 
 int ged_log_buf_get_early(const char* pszName, GED_LOG_BUF_HANDLE *callback_set_handle)
 {
-	GED_LOG_LISTEN *psGEDLogListen;
-	struct list_head *psListEntry, *psListEntryTemp, *psList;
-	GED_LOG_BUF *psFound = NULL, *psLogBuf;
+	int err = 0;
 
 	if (NULL == pszName)
+	{
 		return GED_ERROR_INVALID_PARAMS;
+	}
 
 	*callback_set_handle = ged_log_buf_get(pszName);
 
-	/* return if found */
-	if (*callback_set_handle)
-		return 0;
+	if (0 == *callback_set_handle)
+	{
+		GED_LOG_LISTEN *psGEDLogListen;
 
-	/* add to listen list */
-	psGEDLogListen = (GED_LOG_LISTEN *) ged_alloc(sizeof(*psGEDLogListen));
-	if (!psGEDLogListen)
-		return GED_ERROR_OOM;
+		write_lock_bh(&gsGEDLogBufList.sLock);
 
-	write_lock_bh(&gsGEDLogBufList.sLock);
+		/* search again */
+		{
+			struct list_head *psListEntry, *psListEntryTemp, *psList;
+			GED_LOG_BUF *psFound = NULL, *psLogBuf;
 
-	/* search again with write_lock again */
-	psList = &gsGEDLogBufList.sList_buf;
-	list_for_each_safe(psListEntry, psListEntryTemp, psList) {
-		psLogBuf = list_entry(psListEntry, GED_LOG_BUF, sList);
-		if (strcmp(psLogBuf->acName, pszName) == 0) {
-			psFound = psLogBuf;
-			break;
+			psList = &gsGEDLogBufList.sList_buf;
+			list_for_each_safe(psListEntry, psListEntryTemp, psList)
+			{
+				psLogBuf = list_entry(psListEntry, GED_LOG_BUF, sList);
+				if (0 == strcmp(psLogBuf->acName, pszName))
+				{
+					psFound = psLogBuf;
+					break;
+				}
+			}
+
+			if (psFound)
+			{
+				*callback_set_handle = (GED_LOG_BUF_HANDLE)psFound->ulHashNodeID;
+				goto exit_unlock;
+			}
 		}
-	}
 
-	/* return if found */
-	if (psFound) {
-		*callback_set_handle = (GED_LOG_BUF_HANDLE)psFound->ulHashNodeID;
-		ged_free(psGEDLogListen, sizeof(*psGEDLogListen));
-		goto exit_unlock;
-	}
-
-	/* add to listner list */
-	psGEDLogListen->pCBHnd = callback_set_handle;
-	snprintf(psGEDLogListen->acName, GED_LOG_BUF_NAME_LENGTH, "%s", pszName);
-
-	INIT_LIST_HEAD(&psGEDLogListen->sList);
-	list_add(&psGEDLogListen->sList, &gsGEDLogBufList.sList_listen);
+		/* add to listen list */
+		psGEDLogListen = (GED_LOG_LISTEN*)ged_alloc(sizeof(GED_LOG_LISTEN));
+		if (NULL == psGEDLogListen)
+		{
+			err = GED_ERROR_OOM;
+			goto exit_unlock;
+		}
+		psGEDLogListen->pCBHnd = callback_set_handle;
+		snprintf(psGEDLogListen->acName, GED_LOG_BUF_NAME_LENGTH, "%s", pszName);
+		INIT_LIST_HEAD(&psGEDLogListen->sList);
+		list_add(&psGEDLogListen->sList, &gsGEDLogBufList.sList_listen);
 
 exit_unlock:
-	write_unlock_bh(&gsGEDLogBufList.sLock);
+		write_unlock_bh(&gsGEDLogBufList.sLock);
+	}
 
-	return 0;
+	return err;
 }
 
 //-----------------------------------------------------------------------------
@@ -774,10 +776,12 @@ GED_ERROR ged_log_buf_print(GED_LOG_BUF_HANDLE hLogBuf, const char *fmt, ...)
 {
 	va_list args;
 	GED_ERROR err;
-	GED_LOG_BUF *psGEDLogBuf = ged_log_buf_from_handle(hLogBuf);
+	GED_LOG_BUF *psGEDLogBuf;
 
-	if (psGEDLogBuf)
+	if (hLogBuf)
 	{
+		psGEDLogBuf = ged_log_buf_from_handle(hLogBuf);
+
 		va_start(args, fmt);
 		err = __ged_log_buf_vprint(psGEDLogBuf, fmt, args, psGEDLogBuf->attrs);
 		va_end(args);
@@ -789,10 +793,12 @@ GED_ERROR ged_log_buf_print2(GED_LOG_BUF_HANDLE hLogBuf, int i32LogAttrs, const 
 {
 	va_list args;
 	GED_ERROR err;
-	GED_LOG_BUF *psGEDLogBuf = ged_log_buf_from_handle(hLogBuf);
+	GED_LOG_BUF *psGEDLogBuf;
 
-	if (psGEDLogBuf)
+	if (hLogBuf)
 	{
+		psGEDLogBuf = ged_log_buf_from_handle(hLogBuf);
+
 		/* clear reserved attrs */
 		i32LogAttrs &= ~0xff;
 
@@ -983,7 +989,7 @@ GED_ERROR ged_log_system_init(void)
 	}
 
 	ged_log_trace_enable = 0;
-	ged_log_perf_trace_enable = 0;
+	ged_log_perf_trace_enable = 1;
 
 	return err;
 
@@ -1118,13 +1124,15 @@ void ged_log_trace_counter(char *name, int count)
 	}
 }
 EXPORT_SYMBOL(ged_log_trace_counter);
-void ged_log_perf_trace_counter(char *name, long long count, int pid, unsigned long frameID)
+void ged_log_perf_trace_counter(char *name, int count)
 {
-	if (ged_log_perf_trace_enable) {
+	if (ged_log_perf_trace_enable == 1) {
 		__mt_update_tracing_mark_write_addr();
+#ifdef ENABLE_GED_SYSTRACE_UTIL
 		preempt_disable();
-		event_trace_printk(tracing_mark_write_addr, "C|%d|%lu|%s|%lld\n", pid, frameID, name, count);
+		event_trace_printk(tracing_mark_write_addr, "C|5566|%s|%d\n", name, count);
 		preempt_enable();
+#endif
 	}
 }
 EXPORT_SYMBOL(ged_log_perf_trace_counter);
@@ -1138,4 +1146,3 @@ EXPORT_SYMBOL(ged_log_buf_print);
 EXPORT_SYMBOL(ged_log_buf_print2);
 
 module_param(ged_log_trace_enable, uint, 0644);
-module_param(ged_log_perf_trace_enable, uint, 0644);

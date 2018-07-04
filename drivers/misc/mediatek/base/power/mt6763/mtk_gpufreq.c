@@ -99,7 +99,6 @@ static void __iomem *g_apmixed_base;
 
 #ifdef STATIC_PWR_READY2USE
 #include "mtk_static_power.h"
-#include "mtk_static_power_mt6763.h"
 #endif
 
 /*
@@ -733,7 +732,7 @@ static void mt_gpufreq_power_calculation(unsigned int idx, unsigned int freq,
 
 #ifdef STATIC_PWR_READY2USE
 	p_leakage =
-		mt_spower_get_leakage(MTK_SPOWER_GPU, (volt / 100), temp);
+		mt_spower_get_leakage(MT_SPOWER_GPU, (volt / 100), temp);
 	if (!mt_gpufreq_volt_enable_state || p_leakage < 0)
 		p_leakage = 0;
 #else
@@ -2587,7 +2586,7 @@ unsigned int mt_gpufreq_get_leakage_mw(void)
 #endif
 
 #ifdef STATIC_PWR_READY2USE
-	leak_power = mt_spower_get_leakage(MTK_SPOWER_GPU, cur_vcore, temp);
+	leak_power = mt_spower_get_leakage(MT_SPOWER_GPU, cur_vcore, temp);
 	if (mt_gpufreq_volt_enable_state && leak_power > 0)
 		return leak_power;
 	else

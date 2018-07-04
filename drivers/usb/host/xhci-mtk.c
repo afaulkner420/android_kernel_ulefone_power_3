@@ -33,14 +33,8 @@
 #include "xhci-mtk.h"
 
 #ifdef CONFIG_MTK_UAC_POWER_SAVING
-#ifdef CONFIG_PHY_MTK_SSUSB
-#include <mtk-ssusb-hal.h>
-#else
 #include "mtk-phy.h"
 #endif
-#endif
-
-#include <linux/phy/mediatek/mtk_usb_phy.h>
 
 /* ip_pw_ctrl0 register */
 #define CTRL0_IP_SW_RST	BIT(0)
@@ -243,6 +237,7 @@ static int xhci_mtk_ssusb_config(struct xhci_hcd_mtk *mtk)
 	return xhci_mtk_host_enable(mtk);
 }
 
+#ifdef CONFIG_USB_XHCI_MTK_SUSPEND_SUPPORT
 static void xhci_mtk_ssusb_ip_sleep(struct xhci_hcd_mtk *mtk)
 {
 	struct device_node *of_node = mtk->dev->of_node;
@@ -259,6 +254,7 @@ static void xhci_mtk_ssusb_ip_sleep(struct xhci_hcd_mtk *mtk)
 		writel(value, &ippc->ip_pw_ctr0);
 	}
 }
+#endif
 
 static int xhci_mtk_clks_enable(struct xhci_hcd_mtk *mtk)
 {
@@ -489,11 +485,16 @@ static int xhci_mtk_phy_init(struct xhci_hcd_mtk *mtk)
 {
 	int i;
 	int ret;
+	struct device_node *of_node = mtk->dev->of_node;
 
-	for (i = 0; i < mtk->num_phys; i++) {
-		ret = phy_init(mtk->phys[i]);
-		if (ret)
-			goto exit_phy;
+	if (of_device_is_compatible(of_node, "mediatek,mt67xx-xhci")) {
+		;	/* TODO THIS */
+	} else {
+		for (i = 0; i < mtk->num_phys; i++) {
+			ret = phy_init(mtk->phys[i]);
+			if (ret)
+				goto exit_phy;
+		}
 	}
 	return 0;
 
@@ -526,12 +527,7 @@ static int xhci_mtk_phy_power_on(struct xhci_hcd_mtk *mtk)
 	struct device_node *of_node = mtk->dev->of_node;
 
 	if (of_device_is_compatible(of_node, "mediatek,mt67xx-xhci")) {
-		for (i = 0; i < mtk->num_phys; i++) {
-			ret = phy_power_on(mtk->phys[i]);
-			if (ret)
-				goto power_off_phy;
-			usb_mtkphy_host_mode(mtk->phys[i], true);
-		}
+		;	/* TODO THIS */
 	} else {
 		for (i = 0; i < mtk->num_phys; i++) {
 			ret = phy_power_on(mtk->phys[i]);
@@ -554,10 +550,7 @@ static void xhci_mtk_phy_power_off(struct xhci_hcd_mtk *mtk)
 	struct device_node *of_node = mtk->dev->of_node;
 
 	if (of_device_is_compatible(of_node, "mediatek,mt67xx-xhci")) {
-		for (i = 0; i < mtk->num_phys; i++) {
-			usb_mtkphy_host_mode(mtk->phys[i], false);
-			phy_power_off(mtk->phys[i]);
-		}
+		;	/* TODO THIS */
 	} else {
 		for (i = 0; i < mtk->num_phys; i++)
 			phy_power_off(mtk->phys[i]);
@@ -795,7 +788,7 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, mtk);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	hcd->regs = devm_ioremap(dev, res->start, resource_size(res));
+	hcd->regs = devm_ioremap_resource(dev, res);
 	if (IS_ERR(hcd->regs)) {
 		ret = PTR_ERR(hcd->regs);
 		goto put_usb2_hcd;
@@ -806,7 +799,7 @@ static int xhci_mtk_probe(struct platform_device *pdev)
 	mtk->ippc_regs = NULL;
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (res) {	/* ippc register is optional */
-		mtk->ippc_regs = devm_ioremap(dev, res->start, resource_size(res));
+		mtk->ippc_regs = devm_ioremap_resource(dev, res);
 		if (IS_ERR(mtk->ippc_regs)) {
 			ret = PTR_ERR(mtk->ippc_regs);
 			goto put_usb2_hcd;
@@ -903,15 +896,17 @@ static int xhci_mtk_remove(struct platform_device *dev)
 	xhci_mtk_host_enable(mtk);
 #endif
 	usb_remove_hcd(xhci->shared_hcd);
+	xhci_mtk_phy_power_off(mtk);
+	xhci_mtk_phy_exit(mtk);
 	device_init_wakeup(&dev->dev, false);
 
 	usb_remove_hcd(hcd);
 	usb_put_hcd(xhci->shared_hcd);
 	usb_put_hcd(hcd);
 	xhci_mtk_sch_exit(mtk);
-
-	xhci_mtk_ssusb_ip_sleep(mtk);
-
+#ifndef CONFIG_USB_XHCI_MTK_SUSPEND_SUPPORT
+	xhci_mtk_host_power_down(mtk);
+#endif
 	xhci_mtk_clks_disable(mtk);
 	xhci_mtk_ldos_disable(mtk);
 #ifdef CONFIG_USB_XHCI_MTK_SUSPEND_SUPPORT
@@ -920,10 +915,9 @@ static int xhci_mtk_remove(struct platform_device *dev)
 	pm_runtime_put_noidle(&dev->dev);
 #endif
 	pm_runtime_disable(&dev->dev);
-
-	xhci_mtk_phy_power_off(mtk);
-	xhci_mtk_phy_exit(mtk);
-
+#ifdef CONFIG_USB_XHCI_MTK_SUSPEND_SUPPORT
+	xhci_mtk_ssusb_ip_sleep(mtk);
+#endif
 	return 0;
 }
 
@@ -1208,9 +1202,7 @@ static int __maybe_unused xhci_mtk_suspend(struct device *dev)
 #ifndef CONFIG_USB_XHCI_MTK_SUSPEND_SUPPORT
 	xhci_mtk_host_disable(mtk);
 #endif
-	if (!of_device_is_compatible(dev->of_node, "mediatek,mt67xx-xhci"))
-		xhci_mtk_phy_power_off(mtk);
-
+	xhci_mtk_phy_power_off(mtk);
 	xhci_mtk_clks_disable(mtk);
 	usb_wakeup_enable(mtk);
 	return 0;
@@ -1225,8 +1217,7 @@ static int __maybe_unused xhci_mtk_resume(struct device *dev)
 	xhci_info(xhci, "xhci_plat_resume\n");
 	usb_wakeup_disable(mtk);
 	xhci_mtk_clks_enable(mtk);
-	if (!of_device_is_compatible(dev->of_node, "mediatek,mt67xx-xhci"))
-		xhci_mtk_phy_power_on(mtk);
+	xhci_mtk_phy_power_on(mtk);
 	xhci_mtk_host_enable(mtk);
 
 	xhci_dbg(xhci, "%s: restart port polling\n", __func__);

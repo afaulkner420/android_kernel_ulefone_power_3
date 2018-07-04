@@ -27,6 +27,13 @@
 #define spm_idle_info(fmt, args...)		pr_debug(TAG fmt, ##args)
 #define spm_idle_ver(fmt, args...)		pr_debug(TAG fmt, ##args)	/* pr_debug show nothing */
 
+#ifdef SPM_SODI_PROFILE_TIME
+#define SPM_SODI_PROFILE_APXGPT     GPT2
+#endif
+#ifdef SPM_SODI3_PROFILE_TIME
+#define SPM_SODI3_PROFILE_APXGPT    GPT2
+#endif
+
 /*
  * for SPM common part
  */
@@ -62,7 +69,6 @@ bool spm_set_dpidle_pcm_init_flag(void);
 #define DEEPIDLE_OPT_DUMP_LP_GOLDEN      (1 << 1)
 #define DEEPIDLE_OPT_XO_UFS_ON_OFF       (1 << 2)
 #define DEEPIDLE_OPT_CLKBUF_BBLPM        (1 << 3)
-#define DEEPIDLE_OPT_VCORE_LOW_VOLT      (1 << 4)
 
 /*
  * for Screen On Deep Idle 3.0

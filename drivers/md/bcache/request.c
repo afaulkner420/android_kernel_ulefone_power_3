@@ -196,11 +196,13 @@ static void bch_data_insert_start(struct closure *cl)
 	struct data_insert_op *op = container_of(cl, struct data_insert_op, cl);
 	struct bio *bio = op->bio, *n;
 
+	if (atomic_sub_return(bio_sectors(bio), &op->c->sectors_to_gc) < 0) {
+		set_gc_sectors(op->c);
+		wake_up_gc(op->c);
+	}
+
 	if (op->bypass)
 		return bch_data_invalidate(cl);
-
-	if (atomic_sub_return(bio_sectors(bio), &op->c->sectors_to_gc) < 0)
-		wake_up_gc(op->c);
 
 	/*
 	 * Journal writes are marked REQ_FLUSH; if the original write was a
@@ -1014,7 +1016,7 @@ static int cached_dev_congested(void *data, int bits)
 	struct request_queue *q = bdev_get_queue(dc->bdev);
 	int ret = 0;
 
-	if (bdi_congested(q->backing_dev_info, bits))
+	if (bdi_congested(&q->backing_dev_info, bits))
 		return 1;
 
 	if (cached_dev_get(dc)) {
@@ -1023,7 +1025,7 @@ static int cached_dev_congested(void *data, int bits)
 
 		for_each_cache(ca, d->c, i) {
 			q = bdev_get_queue(ca->bdev);
-			ret |= bdi_congested(q->backing_dev_info, bits);
+			ret |= bdi_congested(&q->backing_dev_info, bits);
 		}
 
 		cached_dev_put(dc);
@@ -1037,7 +1039,7 @@ void bch_cached_dev_request_init(struct cached_dev *dc)
 	struct gendisk *g = dc->disk.disk;
 
 	g->queue->make_request_fn		= cached_dev_make_request;
-	g->queue->backing_dev_info->congested_fn = cached_dev_congested;
+	g->queue->backing_dev_info.congested_fn = cached_dev_congested;
 	dc->disk.cache_miss			= cached_dev_cache_miss;
 	dc->disk.ioctl				= cached_dev_ioctl;
 }
@@ -1130,7 +1132,7 @@ static int flash_dev_congested(void *data, int bits)
 
 	for_each_cache(ca, d->c, i) {
 		q = bdev_get_queue(ca->bdev);
-		ret |= bdi_congested(q->backing_dev_info, bits);
+		ret |= bdi_congested(&q->backing_dev_info, bits);
 	}
 
 	return ret;
@@ -1141,7 +1143,7 @@ void bch_flash_dev_request_init(struct bcache_device *d)
 	struct gendisk *g = d->disk;
 
 	g->queue->make_request_fn		= flash_dev_make_request;
-	g->queue->backing_dev_info->congested_fn = flash_dev_congested;
+	g->queue->backing_dev_info.congested_fn = flash_dev_congested;
 	d->cache_miss				= flash_dev_cache_miss;
 	d->ioctl				= flash_dev_ioctl;
 }

@@ -50,7 +50,7 @@
 #define AFDRV_WV511AAF "WV511AAF"
 
 /* Structures */
-struct stAF_MotorInfo {
+typedef struct {
 /* current position */
 	u32 u4CurrentPosition;
 /* macro position */
@@ -63,45 +63,35 @@ struct stAF_MotorInfo {
 	bool bIsMotorOpen;
 /* Support SR? */
 	bool bIsSupportSR;
-};
+} stAF_MotorInfo;
 
 /* Structures */
-struct stAF_MotorCalPos {
+typedef struct {
 /* macro position */
 	u32 u4MacroPos;
 /* Infinity position */
 	u32 u4InfPos;
-};
+} stAF_MotorCalPos;
 
 /* Structures */
-struct stAF_MotorName {
+typedef struct {
 	u8 uMotorName[32];
-};
+} stAF_MotorName;
 
 /* Structures */
-struct stAF_MotorCmd {
+typedef struct {
 	u32 u4CmdID;
 	u32 u4Param;
-};
+} stAF_MotorCmd;
 
 /* Structures */
-#define OIS_DATA_NUM 8
-#define OIS_DATA_MASK (OIS_DATA_NUM - 1)
-struct stAF_OisPosInfo {
-	int64_t TimeStamp[OIS_DATA_NUM];
-	int i4OISHallPosX[OIS_DATA_NUM];
-	int i4OISHallPosY[OIS_DATA_NUM];
-};
-
-/* Structures */
-struct stAF_DrvList {
+typedef struct {
 	u8 uEnable;
 	u8 uDrvName[32];
 	int (*pAF_SetI2Cclient)(struct i2c_client *pstAF_I2Cclient, spinlock_t *pAF_SpinLock, int *pAF_Opened);
 	long (*pAF_Ioctl)(struct file *a_pstFile, unsigned int a_u4Command, unsigned long a_u4Param);
 	int (*pAF_Release)(struct inode *a_pstInode, struct file *a_pstFile);
-	int (*pAF_OisGetHallPos)(int *PosX, int *PosY);
-};
+} stAF_DrvList;
 
 
 /* Control commnad */
@@ -111,7 +101,7 @@ struct stAF_DrvList {
 /* Q means "get by return a value" */
 /* X means "switch G and S atomically" */
 /* H means "switch T and Q atomically" */
-#define AFIOC_G_MOTORINFO _IOR(AF_MAGIC, 0, struct stAF_MotorInfo)
+#define AFIOC_G_MOTORINFO _IOR(AF_MAGIC, 0, stAF_MotorInfo)
 
 #define AFIOC_T_MOVETO _IOW(AF_MAGIC, 1, u32)
 
@@ -119,20 +109,18 @@ struct stAF_DrvList {
 
 #define AFIOC_T_SETMACROPOS _IOW(AF_MAGIC, 3, u32)
 
-#define AFIOC_G_MOTORCALPOS _IOR(AF_MAGIC, 4, struct stAF_MotorCalPos)
+#define AFIOC_G_MOTORCALPOS _IOR(AF_MAGIC, 4, stAF_MotorCalPos)
 
-#define AFIOC_S_SETPARA _IOW(AF_MAGIC, 5, struct stAF_MotorCmd)
+#define AFIOC_S_SETPARA _IOW(AF_MAGIC, 5, stAF_MotorCmd)
 
-#define AFIOC_S_SETDRVNAME _IOW(AF_MAGIC, 10, struct stAF_MotorName)
+#define AFIOC_S_SETDRVNAME _IOW(AF_MAGIC, 10, stAF_MotorName)
 
 #define AFIOC_S_SETPOWERDOWN _IOW(AF_MAGIC, 11, u32)
 
-#define AFIOC_G_MOTOROISINFO _IOR(AF_MAGIC, 12, struct stAF_MotorOisInfo)
+#define AFIOC_G_MOTOROISINFO _IOR(AF_MAGIC, 12, stAF_MotorOisInfo)
 
 #define AFIOC_S_SETPOWERCTRL _IOW(AF_MAGIC, 13, u32)
 
 #define AFIOC_S_SETLENSTEST  _IOW(AF_MAGIC, 14, u32)
-
-#define AFIOC_G_OISPOSINFO _IOR(AF_MAGIC, 15, struct stAF_OisPosInfo)
 
 #endif

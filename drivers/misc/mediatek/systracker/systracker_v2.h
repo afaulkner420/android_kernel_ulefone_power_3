@@ -32,11 +32,7 @@
 #define BUS_DBG_AW_TRACK_H(__n)		(BUS_DBG_BASE + 0x0204 + 8 * (__n))
 #define BUS_DBG_AW_TRANS_TID(__n)	(BUS_DBG_BASE + 0x0280 + 4 * (__n))
 
-#ifndef CONFIG_MACH_MT6758
-	#define BUS_DBG_BUS_MHZ             (266)
-#else
-	#define BUS_DBG_BUS_MHZ             (135)
-#endif
+#define BUS_DBG_BUS_MHZ             (266)
 #define BUS_DBG_NUM_TRACKER         (8)
 
 #define BUS_DBG_CON_BUS_DBG_EN      (0x00000001)
@@ -141,7 +137,6 @@ extern void dump_regs(const char *fmt, const char v1, const unsigned int reg, co
 extern struct mt_systracker_driver *get_mt_systracker_drv(void);
 
 extern void __iomem *BUS_DBG_BASE;
-extern void __iomem *BUS_DBG_INFRA_BASE;
 extern void __iomem *BUS_DBG_CON_REG;
 extern int systracker_irq;
 extern struct systracker_config_t track_config;
@@ -166,6 +161,6 @@ extern void systracker_enable(void);
 extern void systracker_test_cleanup(void);
 
 
-/* #define SYSTRACKER_TEST_SUIT */ /* enable for driver poring test suit */
+/* #define SYSTRACKER_TEST_SUIT*/ /* enable for driver poring test suit */
 /* #define TRACKER_DEBUG 0 */
 #endif

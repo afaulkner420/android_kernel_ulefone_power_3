@@ -42,7 +42,7 @@ __weak void aee_trigger_kdb(void)
 {
 }
 
-__weak struct aee_oops *aee_oops_create(enum AE_DEFECT_ATTR attr, enum AE_EXP_CLASS clazz, const char *module)
+__weak struct aee_oops *aee_oops_create(AE_DEFECT_ATTR attr, AE_EXP_CLASS clazz, const char *module)
 {
 	return NULL;
 }
@@ -122,11 +122,6 @@ __weak void aee_stop_nested_panic(struct pt_regs *regs)
 {
 }
 
-__weak int aee_nested_printf(const char *fmt, ...)
-{
-	return 0;
-}
-
 __weak int aee_in_nested_panic(void)
 {
 	return 0;
@@ -140,7 +135,7 @@ __weak void aee_wdt_printf(const char *fmt, ...)
 {
 }
 
-__weak void aee_kdump_reboot(enum AEE_REBOOT_MODE reboot_mode, const char *msg, ...)
+__weak void aee_kdump_reboot(AEE_REBOOT_MODE reboot_mode, const char *msg, ...)
 {
 	char str[80];
 	va_list ap;

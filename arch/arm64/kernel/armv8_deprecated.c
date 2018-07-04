@@ -284,7 +284,6 @@ static void __init register_insn_emulation_sysctl(struct ctl_table *table)
 do {								\
 	uaccess_enable();					\
 	__asm__ __volatile__(					\
-	ALTERNATIVE("nop", "dmb sy", ARM64_WORKAROUND_855872)	\
 	"0:	ldxr"B"		%w2, [%3]\n"			\
 	"1:	stxr"B"		%w0, %w1, [%3]\n"		\
 	"	cbz		%w0, 2f\n"			\
@@ -301,8 +300,7 @@ do {								\
 	_ASM_EXTABLE(0b, 4b)					\
 	_ASM_EXTABLE(1b, 4b)					\
 	: "=&r" (res), "+r" (data), "=&r" (temp)		\
-	: "r" ((unsigned long)addr), "i" (-EAGAIN),		\
-	  "i" (-EFAULT)						\
+	: "r" (addr), "i" (-EAGAIN), "i" (-EFAULT)		\
 	: "memory");						\
 	uaccess_disable();					\
 } while (0)

@@ -1,31 +1,27 @@
 #
-# Makefile for the kernel flashlight device drivers.
+# Copyright (C) 2015 MediaTek Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
 #
 
-flashlight-y := flashlight-core.o
-flashlight-y += flashlight-device.o
+flashlight-y	:= flashlight-core.o
+flashlight-y	+= flashlight-device.o
 
-obj-$(CONFIG_MTK_FLASHLIGHT)             += flashlight.o
-obj-$(CONFIG_MTK_FLASHLIGHT_LED191)      += flashlights-led191.o
+obj-$(CONFIG_MTK_FLASHLIGHT)		     += flashlight.o
 obj-$(CONFIG_MTK_FLASHLIGHT_LM3642)      += flashlights-lm3642.o
 obj-$(CONFIG_MTK_FLASHLIGHT_LM3643)      += flashlights-lm3643.o
-obj-$(CONFIG_MTK_FLASHLIGHT_LM3644)      += flashlights-lm3644.o
 obj-$(CONFIG_MTK_FLASHLIGHT_RT4505)      += flashlights-rt4505.o
 obj-$(CONFIG_MTK_FLASHLIGHT_RT5081)      += flashlights-rt5081.o
 obj-$(CONFIG_MTK_FLASHLIGHT_MT6336)      += flashlights-mt6336.o
-# delete by ming.liao@reallytek.com for X604 20171127 start
-#obj-$(CONFIG_MTK_FLASHLIGHT_MT6370)      += flashlights-mt6370.o
-# delete by ming.liao@reallytek.com for X604 20171127 end
 obj-$(CONFIG_MTK_FLASHLIGHT_DUMMY)       += flashlights-dummy.o
 obj-$(CONFIG_MTK_FLASHLIGHT_DUMMY_GPIO)  += flashlights-dummy-gpio.o
-# add by ming.liao@reallytek.com for X604 20171127 start
-ARCH_MTK_PROJECT := $(subst ",,$(CONFIG_CUSTOM_TRAN_PROJECT))
-ARCH_MTK_PROJECT := $(word 1, $(ARCH_MTK_PROJECT))
-$(info in flashlight ARCH_MTK_PROJECT is $(ARCH_MTK_PROJECT))
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/flashlight/$(ARCH_MTK_PROJECT)/constant_flashlight),)
-obj-y				+= $(ARCH_MTK_PROJECT)/constant_flashlight/
-endif
-# add by ming.liao@reallytek.com for X604 20171127 end
 
 ccflags-$(CONFIG_MTK_FLASHLIGHT_DEBUG)     := -DDEBUG
 ccflags-$(CONFIG_MTK_FLASHLIGHT_PT)        += -DCONFIG_MTK_FLASHLIGHT_PT

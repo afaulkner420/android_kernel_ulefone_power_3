@@ -38,7 +38,6 @@
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
 #include <linux/mmc/slot-gpio.h>
-#include <mt-plat/mtk_io_boost.h>
 
 #include "core.h"
 #include "bus.h"
@@ -233,8 +232,6 @@ static void mmc_discard_cmdq(struct mmc_host *host)
 }
 
 static void mmc_post_req(struct mmc_host *host, struct mmc_request *mrq, int err);
-static int mmc_reset_for_cmdq(struct mmc_host *host);
-
 /*
  *	check CMDQ QSR
  */
@@ -256,24 +253,6 @@ void mmc_do_check(struct mmc_host *host)
 
 	while (1) {
 		host->ops->request(host, &host->que_mrq);
-
-		/* add for reset emmc when error happen */
-		if ((host->que_mrq.cmd->error == (unsigned int)-ETIMEDOUT)
-		 && !host->que_mrq.cmd->retries) {
-			/* wait for 2 seconds
-			 * and hope that data irq handle done;
-			 * otherwise timing issue will occur
-			 */
-			msleep(2000);
-			while (mmc_reset_for_cmdq(host)) {
-				pr_notice("[CQ] reinit fail\n");
-				WARN_ON(1);
-			}
-			mmc_clr_dat_list(host);
-			mmc_restore_tasks(host);
-			atomic_set(&host->cq_wait_rdy, 0);
-			atomic_set(&host->cq_rdy_cnt, 0);
-		}
 
 		if (!host->que_mrq.cmd->error ||
 			!host->que_mrq.cmd->retries)
@@ -420,26 +399,21 @@ static int mmc_check_write(struct mmc_host *host, struct mmc_request *mrq)
 	return ret;
 }
 
+
 int mmc_run_queue_thread(void *data)
 {
 	struct mmc_host *host = data;
 	struct mmc_request *cmd_mrq = NULL;
 	struct mmc_request *dat_mrq = NULL;
 	struct mmc_request *done_mrq = NULL;
-	unsigned int task_id, areq_cnt_chk, tmo;
+	unsigned int task_id;
 	bool is_err = false;
 	bool is_done = false;
-	bool io_boost_done = false;
-
 	int err;
 
 	pr_err("[CQ] start cmdq thread\n");
 	mt_bio_queue_alloc(current, NULL);
 	while (1) {
-
-		mtk_io_boost_test_and_add_tid(current->pid,
-			&io_boost_done);
-
 		set_current_state(TASK_RUNNING);
 		mt_biolog_cmdq_check();
 
@@ -524,6 +498,7 @@ int mmc_run_queue_thread(void *data)
 			mt_biolog_cmdq_isdone_end(task_id);
 			mt_biolog_cmdq_check();
 			mmc_blk_end_queued_req(host, done_mrq->areq, task_id, err);
+			wake_up_interruptible(&host->cmp_que);
 			done_mrq = NULL;
 			is_done = false;
 		}
@@ -547,27 +522,9 @@ int mmc_run_queue_thread(void *data)
 						;
 				}
 				set_bit(task_id, &host->task_id_index);
-				host->ops->request(host, cmd_mrq);
 
-				/* add for reset emmc when error happen */
-				if ((cmd_mrq->sbc &&
-				     cmd_mrq->sbc->error == (unsigned int)-ETIMEDOUT)
-				 || (cmd_mrq->cmd->error == (unsigned int)-ETIMEDOUT)) {
-					/* wait for 2 seconds
-					 * and hope that data irq handle done;
-					 * otherwise timing issue will occur
-					 */
-					msleep(2000);
-					while (mmc_reset_for_cmdq(host)) {
-						pr_notice("[CQ] reinit fail\n");
-						WARN_ON(1);
-					}
-					mmc_clr_dat_list(host);
-					mmc_restore_tasks(host);
-					atomic_set(&host->cq_wait_rdy, 0);
-					atomic_set(&host->cq_rdy_cnt, 0);
-				} else
-					atomic_inc(&host->cq_wait_rdy);
+				host->ops->request(host, cmd_mrq);
+				atomic_inc(&host->cq_wait_rdy);
 				spin_lock_irq(&host->cmd_que_lock);
 				cmd_mrq = mmc_get_cmd_que(host);
 				spin_unlock_irq(&host->cmd_que_lock);
@@ -578,27 +535,6 @@ int mmc_run_queue_thread(void *data)
 		if (atomic_read(&host->cq_wait_rdy) > 0
 			&& atomic_read(&host->cq_rdy_cnt) == 0)
 			mmc_do_check(host);
-		else if (atomic_read(&host->cq_rw)) {
-			/* wait for event to wakeup */
-			/* wake up when new request arrived and dma done */
-			areq_cnt_chk = atomic_read(&host->areq_cnt);
-			tmo = wait_event_interruptible_timeout(host->cmdq_que,
-				host->done_mrq ||
-				(atomic_read(&host->areq_cnt) > areq_cnt_chk),
-				10 * HZ);
-			if (!tmo) {
-				pr_info("%s:tmo,mrq(%p),chk(%d),cnt(%d)\n",
-					__func__,
-					host->done_mrq,
-					areq_cnt_chk,
-					atomic_read(&host->areq_cnt));
-				pr_info("%s:tmo,rw(%d),wait(%d),rdy(%d)\n",
-					__func__,
-					atomic_read(&host->cq_rw),
-					atomic_read(&host->cq_wait_rdy),
-					atomic_read(&host->cq_rdy_cnt));
-			}
-		}
 
 		/* Sleep when nothing to do */
 		mt_biolog_cmdq_check();
@@ -626,10 +562,6 @@ void mmc_wait_cmdq_done(struct mmc_request *mrq)
 
 	/* error - request done */
 	if (cmd->error) {
-		pr_notice("%s: cmd%d arg:%x error:%d\n",
-			mmc_hostname(host),
-			cmd->opcode, cmd->arg,
-			cmd->error);
 		if ((cmd->opcode == MMC_READ_REQUESTED_QUEUE) ||
 			(cmd->opcode == MMC_WRITE_REQUESTED_QUEUE)) {
 			atomic_set(&host->cq_tuning_now, 1);
@@ -668,23 +600,7 @@ void mmc_wait_cmdq_done(struct mmc_request *mrq)
 					i++;
 					continue;
 				}
-
-				if (!host->areq_que[i]) {
-					pr_notice("%s: task %d not exist!,QSR:%x\n",
-						mmc_hostname(host), i, cmd->resp[0]);
-					pr_notice("%s: task_idx:%08lx\n",
-						mmc_hostname(host),
-						host->task_id_index);
-					pr_notice("%s: cnt:%d,wait:%d,rdy:%d\n",
-						mmc_hostname(host),
-						atomic_read(&host->areq_cnt),
-						atomic_read(&host->cq_wait_rdy),
-						atomic_read(&host->cq_rdy_cnt));
-					/* reset eMMC flow */
-					cmd->error = (unsigned int)-ETIMEDOUT;
-					cmd->retries = 0;
-					goto request_end;
-				}
+				WARN_ON(!host->areq_que[i]);
 				atomic_dec(&host->cq_wait_rdy);
 				atomic_inc(&host->cq_rdy_cnt);
 				mmc_prep_areq_que(host, host->areq_que[i]);
@@ -715,11 +631,9 @@ request_end:
 		WARN_ON(cmd->opcode != 46 && cmd->opcode != 47);
 		WARN_ON(host->done_mrq);
 		host->done_mrq = mrq;
-		/*
-		 * Need to wake up cmdq thread, after done rw.
-		 */
-		wake_up_interruptible(&host->cmdq_que);
 	}
+
+	wake_up_interruptible(&host->cmp_que);
 }
 
 static void mmc_wait_for_cmdq_done(struct mmc_host *host)
@@ -743,6 +657,13 @@ int mmc_blk_cmdq_switch(struct mmc_card *card, int enable)
 
 	if (!card->ext_csd.cmdq_support)
 		return 0;
+
+	if (card->quirks & MMC_QUIRK_DISABLE_CMDQ) {
+		pr_info("%s: quirk disable cmdq\n",
+			mmc_hostname(card->host));
+		card->ext_csd.cmdq_support = 0;
+		return 0;
+	}
 
 	if (!enable)
 		mmc_wait_cmdq_empty(card->host);
@@ -1018,15 +939,8 @@ static int mmc_start_request(struct mmc_host *host, struct mmc_request *mrq)
 #ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
 		if (host->card
 			&& host->card->ext_csd.cmdq_support
-			&& mrq->cmd->opcode != MMC_SEND_STATUS) {
-			/* For reset emmc when error happen,
-			 * request for init commands cannot wait cmdq empty;
-			 * Only request form exe_cq need wait cmdq empty
-			 */
-			if (strcmp(current->comm, "exe_cq")
-			 || !emmc_resetting_when_cmdq)
-				mmc_wait_cmdq_empty(host);
-		}
+			&& mrq->cmd->opcode != MMC_SEND_STATUS)
+			mmc_wait_cmdq_empty(host);
 #endif
 
 		__mmc_start_request(host, mrq);
@@ -3245,58 +3159,6 @@ int mmc_hw_reset(struct mmc_host *host)
 	return ret;
 }
 EXPORT_SYMBOL(mmc_hw_reset);
-
-#ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
-/* add for reset emmc reset when error happen */
-int current_mmc_part_type;
-int emmc_resetting_when_cmdq;
-static int mmc_reset_for_cmdq(struct mmc_host *host)
-{
-	int err, ret;
-
-	if (!host || !host->card)
-		return -EINVAL;
-
-	if (!host->ops->hw_reset)
-		return -EOPNOTSUPP;
-
-	emmc_resetting_when_cmdq = 1;
-
-	mmc_bus_get(host);
-	mmc_set_clock(host, host->f_init);
-
-	host->ops->hw_reset(host);
-
-	/* Set initial state and call mmc_set_ios */
-	mmc_set_initial_state(host);
-
-	err = mmc_reinit_oldcard(host);
-	mmc_bus_put(host);
-	/* Ensure we switch back to the correct partition */
-	if (err != -EOPNOTSUPP) {
-		u8 part_config = host->card->ext_csd.part_config;
-
-		part_config &= ~EXT_CSD_PART_CONFIG_ACC_MASK;
-		part_config |= current_mmc_part_type;
-
-		ret = mmc_switch(host->card, EXT_CSD_CMD_SET_NORMAL,
-				EXT_CSD_PART_CONFIG, part_config,
-				host->card->ext_csd.part_time);
-		if (ret)
-			return ret;
-
-		/* enable cmdq at all partition */
-		ret = mmc_blk_cmdq_switch(host->card, 1);
-		if (ret)
-			return ret;
-
-		host->card->ext_csd.part_config = part_config;
-
-	}
-	emmc_resetting_when_cmdq = 0;
-	return err;
-}
-#endif
 
 static int mmc_rescan_try_freq(struct mmc_host *host, unsigned freq)
 {

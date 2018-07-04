@@ -83,8 +83,6 @@
 static unsigned char kick_string_buffer_analysize[kick_dump_max_length] = { 0 };
 static unsigned int kick_buf_length;
 static atomic_t idlemgr_task_wakeup = ATOMIC_INIT(1);
-unsigned int idle_test_enable;
-
 #if (CONFIG_MTK_DUAL_DISPLAY_SUPPORT == 2)
 static atomic_t ext_idlemgr_task_wakeup = ATOMIC_INIT(1);
 #endif
@@ -92,6 +90,7 @@ static atomic_t ext_idlemgr_task_wakeup = ATOMIC_INIT(1);
 /* dvfs */
 static atomic_t dvfs_ovl_req_status = ATOMIC_INIT(HRT_LEVEL_ULPM);
 #endif
+static int register_share_sram;
 
 
 /* Local API */
@@ -352,15 +351,13 @@ void _acquire_wrot_resource_nolock(enum CMDQ_EVENT_ENUM resourceEvent)
 	int32_t acquireResult;
 	struct disp_ddp_path_config *pconfig = dpmgr_path_get_last_config_notclear(primary_get_dpmgr_handle());
 
-	DISPMSG("%s\n", __func__);
-	if (use_wrot_sram()) {
-		DISPERR("already acquired sram!!!");
+	DISPINFO("[disp_lowpower]%s\n", __func__);
+	if (use_wrot_sram())
 		return;
-	}
-	if (is_mipi_enterulps()) {
-		DISPERR("ULPS mode, cannot acquire sram");
+
+	if (is_mipi_enterulps())
 		return;
-	}
+
 	/* 1.create and reset cmdq */
 	cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &handle);
 
@@ -401,6 +398,12 @@ void _acquire_wrot_resource_nolock(enum CMDQ_EVENT_ENUM resourceEvent)
 static int32_t _acquire_wrot_resource(enum CMDQ_EVENT_ENUM resourceEvent)
 {
 	primary_display_manual_lock();
+
+	if (!register_share_sram) {
+		/*DISPMSG("warning: mdp acquire wrot_resource after unregister the callback!\n");*/
+		primary_display_manual_unlock();
+		return 0;
+	}
 	_acquire_wrot_resource_nolock(resourceEvent);
 	primary_display_manual_unlock();
 
@@ -414,11 +417,11 @@ void _release_wrot_resource_nolock(enum CMDQ_EVENT_ENUM resourceEvent)
 	struct disp_ddp_path_config *pconfig = dpmgr_path_get_last_config_notclear(primary_get_dpmgr_handle());
 	unsigned int rdma0_shadow_mode = 0;
 
-	DISPMSG("%s\n", __func__);
-	if (use_wrot_sram() == 0) {
-		DISPERR("no acquired sram to release!!!\n");
+	DISPINFO("[disp_lowpower]%s\n", __func__);
+
+	if (use_wrot_sram() == 0)
 		return;
-	}
+
 	/* 1.create and reset cmdq */
 	cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &handle);
 
@@ -462,6 +465,13 @@ static int32_t _release_wrot_resource(enum CMDQ_EVENT_ENUM resourceEvent)
 {
 	/* need lock  */
 	primary_display_manual_lock();
+
+	if (!register_share_sram) {
+		/*DISPMSG("warning:mdp release wrot_resource after unregister the callback!\n");*/
+		primary_display_manual_unlock();
+		return 0;
+	}
+
 	_release_wrot_resource_nolock(resourceEvent);
 	primary_display_manual_unlock();
 
@@ -723,8 +733,9 @@ void _primary_display_enable_mmsys_clk(void)
 /* Share wrot sram end */
 void _vdo_mode_enter_idle(void)
 {
+#if 0
 	int ret = 0;
-
+#endif
 	DISPDBG("[disp_lowpower]%s\n", __func__);
 
 	/* backup for DL <-> DC */
@@ -758,7 +769,7 @@ void _vdo_mode_enter_idle(void)
 			switch (get_lp_cust_mode()) {
 			case LOW_POWER_MODE: /* 50 */
 			case JUST_MAKE_MODE: /* 55 */
-				set_fps(50);
+				set_fps(45);
 				primary_display_dsi_vfp_change(1);
 				idlemgr_pgc->cur_lp_cust_mode = 1;
 				break;
@@ -773,10 +784,11 @@ void _vdo_mode_enter_idle(void)
 				primary_get_lcm()->params->dsi.vertical_frontporch_for_low_power = get_backup_vfp();
 
 			if (primary_get_lcm()->params->dsi.vertical_frontporch_for_low_power) {
-#if 0
-				set_fps(50);
-				DISPMSG("vdo_mode_enter_idle set fps to be 50\n");
-				primary_display_dsi_vfp_change(1);
+#if 1
+				if (idle_fps_change == 1) {
+					set_fps(45);
+					primary_display_dsi_vfp_change(1);
+				}
 #else
 				ret = primary_display_get_min_refresh_rate();
 				DISPMSG("vdo_mode_enter_idle fps to be %d\n", ret);
@@ -804,8 +816,9 @@ void _vdo_mode_enter_idle(void)
 
 void _vdo_mode_leave_idle(void)
 {
+#if 0
 	int ret = 0;
-
+#endif
 	DISPDBG("[disp_lowpower]%s\n", __func__);
 
 	/* set golden setting */
@@ -825,7 +838,7 @@ void _vdo_mode_leave_idle(void)
 	if (!primary_is_sec()) {
 
 		if (idlemgr_pgc->cur_lp_cust_mode != 0) {
-#if 0
+#if 1
 			set_fps(primary_display_get_fps_nolock()/100);
 			primary_display_dsi_vfp_change(0);
 			idlemgr_pgc->cur_lp_cust_mode = 0;
@@ -957,57 +970,47 @@ static int _primary_path_idlemgr_monitor_thread(void *data)
 
 	msleep(16000);
 	while (1) {
-		if (idle_test_enable == 0) {
-			ret = wait_event_interruptible(idlemgr_pgc->idlemgr_wait_queue,
-						       atomic_read(&idlemgr_task_wakeup));
+		ret = wait_event_interruptible(idlemgr_pgc->idlemgr_wait_queue, atomic_read(&idlemgr_task_wakeup));
 
-			interval = idle_check_interval*1000*1000-(local_clock()-idlemgr_pgc->idlemgr_last_kick_time);
-			do_div(interval, 1000000);
+		interval = idle_check_interval * 1000 * 1000 - (local_clock() - idlemgr_pgc->idlemgr_last_kick_time);
+		do_div(interval, 1000000);
 
-			mmprofile_log_ex(ddp_mmp_get_events()->idle_monitor, MMPROFILE_FLAG_PULSE,
-				idle_check_interval, interval);
+		mmprofile_log_ex(ddp_mmp_get_events()->idle_monitor, MMPROFILE_FLAG_PULSE,
+			idle_check_interval, interval);
 
-			interval = interval > 1000 ? 1000 : interval;	/* error handling */
-			if (idlemgr_pgc->idlemgr_last_kick_time == 0)	/* starting up before the first time kick */
-				msleep_interruptible(idle_check_interval);
-			else if (interval > 0)
-				msleep_interruptible(interval);
+		interval = interval > 1000 ? 1000 : interval;	/* error handling */
+		if (idlemgr_pgc->idlemgr_last_kick_time == 0)	/* when starting up before the first time kick */
+			msleep_interruptible(idle_check_interval);
+		else if (interval > 0)
+			msleep_interruptible(interval);
 
-			primary_display_manual_lock();
+		primary_display_manual_lock();
 
-			if (primary_get_state() != DISP_ALIVE) {
-				primary_display_manual_unlock();
-				primary_display_wait_state(DISP_ALIVE, MAX_SCHEDULE_TIMEOUT);
-				continue;
-			}
-
-			if (primary_display_is_idle()) {
-				primary_display_manual_unlock();
-				continue;
-			}
-
-#ifdef CONFIG_MTK_DISPLAY_120HZ_SUPPORT
-			if (primary_display_get_lcm_refresh_rate() == 120) {
-				primary_display_manual_unlock();
-				continue;
-			}
-#endif
-			if ((local_clock() - idlemgr_pgc->idlemgr_last_kick_time) < idle_check_interval * 1000 * 1000) {
-				/* kicked in 100ms, it's not idle */
-				primary_display_manual_unlock();
-				continue;
-			}
-		} else if (idle_test_enable == 1) {
-			primary_display_manual_lock();
-			if (primary_display_is_idle()) {
-				primary_display_manual_unlock();
-				continue;
-			}
+		if (primary_get_state() != DISP_ALIVE) {
+			primary_display_manual_unlock();
+			primary_display_wait_state(DISP_ALIVE, MAX_SCHEDULE_TIMEOUT);
+			continue;
 		}
 
+		if (primary_display_is_idle()) {
+			primary_display_manual_unlock();
+			continue;
+		}
+
+#ifdef CONFIG_MTK_DISPLAY_120HZ_SUPPORT
+		if (primary_display_get_lcm_refresh_rate() == 120) {
+			primary_display_manual_unlock();
+			continue;
+		}
+#endif
+		if ((local_clock() - idlemgr_pgc->idlemgr_last_kick_time) < idle_check_interval * 1000 * 1000) {
+			/* kicked in 100ms, it's not idle */
+			primary_display_manual_unlock();
+			continue;
+		}
 		if (atomic_read(&idlemgr_task_wakeup)) {	/* double check if dynamic switch on/off */
 			mmprofile_log_ex(ddp_mmp_get_events()->idlemgr, MMPROFILE_FLAG_START, 0, 0);
-			DISPMSG("[disp_lowpower]primary enter idle state\n");
+			DISPINFO("[disp_lowpower]primary enter idle state\n");
 			/* enter idle state */
 			primary_display_idlemgr_enter_idle_nolock();
 			primary_display_set_idle_stat(1);
@@ -1150,15 +1153,13 @@ void primary_display_idlemgr_kick(const char *source, int need_lock)
 	/* update kick timestamp */
 	idlemgr_pgc->idlemgr_last_kick_time = sched_clock();
 
-	if (idle_test_enable == 0) {
-		if (primary_display_is_idle()) {
-			primary_display_idlemgr_leave_idle_nolock();
-			primary_display_set_idle_stat(0);
+	if (primary_display_is_idle()) {
+		primary_display_idlemgr_leave_idle_nolock();
+		primary_display_set_idle_stat(0);
 
-			mmprofile_log_ex(ddp_mmp_get_events()->idlemgr, MMPROFILE_FLAG_END, 0, 0);
-			/* wake up idlemgr process to monitor next idle stat */
-			wake_up_interruptible(&(idlemgr_pgc->idlemgr_wait_queue));
-		}
+		mmprofile_log_ex(ddp_mmp_get_events()->idlemgr, MMPROFILE_FLAG_END, 0, 0);
+		/* wake up idlemgr process to monitor next idle stat */
+		wake_up_interruptible(&(idlemgr_pgc->idlemgr_wait_queue));
 	}
 
 	if (need_lock)
@@ -1170,6 +1171,7 @@ void enter_share_sram(void)
 	/* 1. register call back first */
 	cmdqCoreSetResourceCallback(CMDQ_SYNC_RESOURCE_WROT0,
 		_acquire_wrot_resource, _release_wrot_resource);
+	register_share_sram = 1;
 	mmprofile_log_ex(ddp_mmp_get_events()->share_sram, MMPROFILE_FLAG_PULSE, 0, 1);
 
 	/* 2. try to allocate sram at the fisrt time */
@@ -1180,6 +1182,7 @@ void leave_share_sram(void)
 {
 	/* 1. unregister call back */
 	cmdqCoreSetResourceCallback(CMDQ_SYNC_RESOURCE_WROT0, NULL, NULL);
+	register_share_sram = 0;
 	mmprofile_log_ex(ddp_mmp_get_events()->share_sram, MMPROFILE_FLAG_PULSE, 0, 0);
 
 	/* 2. try to release share sram */
@@ -1341,7 +1344,7 @@ int _ext_blocking_flush(void)
 
 	cmdqRecReset(handle);
 
-	_ext_cmdq_insert_wait_frame_done_token(handle);
+	_ext_cmdq_insert_wait_frame_done_token_no_clear(handle);
 
 	cmdqRecFlush(handle);
 	cmdqRecDestroy(handle);

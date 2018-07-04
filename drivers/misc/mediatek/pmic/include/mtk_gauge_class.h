@@ -67,10 +67,14 @@ enum gauge_info {
 	GAUGE_2SEC_REBOOT,
 	GAUGE_PL_CHARGING_STATUS,
 	GAUGE_MONITER_PLCHG_STATUS,
-	GAUGE_BAT_PLUG_STATUS,
-	GAUGE_IS_NVRAM_FAIL_MODE,
-	GAUGE_CON0_SOC,
 	GAUGE_INFO_MAX
+};
+
+enum gauge_hw_version {
+	GAUGE_HW_V1000 = 1000,
+	GAUGE_HW_V2000 = 2000,
+
+	GAUGE_HW_MAX
 };
 
 struct gauge_properties {
@@ -158,10 +162,6 @@ struct gauge_hw_info_data {
 	int time;
 	int iavg_lt;
 	int iavg_ht;
-
-
-	/* boot status */
-	int pl_charger_status; /* for GM2.5 */
 };
 
 struct gauge_device {

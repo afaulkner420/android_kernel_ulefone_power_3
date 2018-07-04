@@ -47,7 +47,6 @@
 #include "mtk-auddrv-afe.h"
 #include "mtk-auddrv-kernel.h"
 #include "mtk-soc-afe-control.h"
-#include "audio_spkprotect_msg_id.h"
 
 
 #ifdef CONFIG_MTK_AUDIO_SCP_SPKPROTECT_SUPPORT
@@ -56,27 +55,39 @@
 #include <audio_dma_buf_control.h>
 #endif
 
-struct spk_dump_ops {
-	void (*spk_dump_callback)(struct ipi_msg_t *ipi_msg);
-};
 
-struct aud_spk_message {
+typedef enum {
+	SPK_PROTECT_OPEN = 0x1,
+	SPK_PROTECT_CLOSE,
+	SPK_PROTECT_PREPARE,
+	SPK_PROTECT_PLATMEMPARAM,
+	SPK_PROTECT_DLMEMPARAM,
+	SPK_PROTECT_IVMEMPARAM,
+	SPK_PROTECT_HWPARAM,
+	SPK_PROTECT_DLCOPY,
+	SPK_PROTECT_START,
+	SPK_PROTECT_STOP,
+	SPK_PROTECT_SETPRAM,
+	SPK_PROTECT_NEEDDATA,
+	SPK_PROTTCT_PCMDUMP_ON,
+	SPK_PROTTCT_PCMDUMP_OFF,
+	SPK_PROTECT_PCMDUMP_OK,
+	SPK_PROTECT_IRQDL = 0x100,
+	SPK_PROTECT_IRQUL,
+} IPI_RECEIVED_SPK_PROTECTION;
+
+typedef struct Aud_Spk_Message {
 	uint16_t msg_id;
 	uint32_t param1;
 	uint32_t param2;
 	char *payload;
-};
+} Aud_Spk_Message_t;
 
-void init_spkscp_reserved_dram(void);
-struct audio_resv_dram_t *get_reserved_dram_spkprotect(void);
-char *get_resv_dram_spkprotect_vir_addr(char *resv_dram_phy_addr);
-void spkproc_service_set_spk_dump_message(struct spk_dump_ops *ops);
-void spkproc_service_ipicmd_received(struct ipi_msg_t *ipi_msg);
-void spkproc_service_ipicmd_send(
-				 uint8_t  data_type,  /* see audio_ipi_msg_data_t */
-				 uint8_t  ack_type,   /* see audio_ipi_msg_ack_t */
-				 uint16_t msg_id,
-				 uint32_t param1,
-				 uint32_t param2,
-				 char *payload);
+
+void spkprocservice_ipicmd_received(ipi_msg_t *ipi_msg);
+void spkprocservice_ipicmd_send(audio_ipi_msg_data_t data_type,
+						audio_ipi_msg_ack_t ack_type, uint16_t msg_id, uint32_t param1,
+						uint32_t param2, char *payload);
+
+
 #endif

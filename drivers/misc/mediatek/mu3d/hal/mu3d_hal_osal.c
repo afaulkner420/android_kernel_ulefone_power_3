@@ -43,10 +43,10 @@ void os_spin_unlock(spinlock_t *lock)
 }
 #endif				/* NEVER */
 
-void os_memcpy(char *pv_to, char *pv_from, size_t z_l)
+void os_memcpy(DEV_INT8 *pv_to, DEV_INT8 *pv_from, size_t z_l)
 {
 	/*FIXME: just use memcpy(), why use this???? */
-	int i;
+	DEV_INT32 i;
 
 	if ((pv_to != NULL) || (z_l == 0)) {
 		for (i = 0; i < z_l; i++)
@@ -72,7 +72,7 @@ void *os_phys_to_virt(void *paddr)
 }
 
 #ifdef NEVER
-void *os_ioremap(void *paddr, unsigned int t_size)
+void *os_ioremap(void *paddr, DEV_UINT32 t_size)
 {
 
 	/* return ioremap(paddr,t_size); */
@@ -87,7 +87,7 @@ void os_iounmap(void *vaddr)
 #endif				/* NEVER */
 
 
-void *os_memset(void *pv_to, unsigned char ui1_c, size_t z_l)
+void *os_memset(void *pv_to, DEV_UINT8 ui1_c, size_t z_l)
 {
 
 	if ((pv_to != NULL) || (z_l == 0))
@@ -120,24 +120,24 @@ void os_mem_free(void *pv_mem)
 	pv_mem = NULL;
 }
 
-void os_disableIrq(unsigned int irq)
+void os_disableIrq(DEV_UINT32 irq)
 {
 	disable_irq(irq);
 	os_ms_delay(20);
 }
 
-void os_enableIrq(unsigned int irq)
+void os_enableIrq(DEV_UINT32 irq)
 {
 	enable_irq(irq);
 }
 
-void os_clearIrq(unsigned int irq)
+void os_clearIrq(DEV_UINT32 irq)
 {
 	os_writel(U3D_LV1IECR, os_readl(U3D_LV1ISR));
 }
 
 
-void os_get_random_bytes(void *buf, int nbytes)
+void os_get_random_bytes(void *buf, DEV_INT32 nbytes)
 {
 	get_random_bytes(buf, nbytes);
 }
@@ -171,9 +171,9 @@ void os_flushinvalidateDcache(void)
  *---------------------------------------------------------------------------
  */
 
-int os_reg_isr(unsigned int irq, irq_handler_t handler, void *isrbuffer)
+int os_reg_isr(DEV_UINT32 irq, irq_handler_t handler, void *isrbuffer)
 {
-	int i4_ret;
+	DEV_INT32 i4_ret;
 
 	i4_ret = request_irq(irq, handler,	/* our handler */
 			     IRQF_TRIGGER_LOW, "usb device handler", isrbuffer);
@@ -183,7 +183,7 @@ int os_reg_isr(unsigned int irq, irq_handler_t handler, void *isrbuffer)
 
 
 
-void os_free_isr(unsigned int irq, void *isrbuffer)
+void os_free_isr(DEV_UINT32 irq, void *isrbuffer)
 {
 
 	free_irq(irq, isrbuffer);

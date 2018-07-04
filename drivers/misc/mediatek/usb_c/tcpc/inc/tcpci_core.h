@@ -16,7 +16,6 @@
 
 #include <linux/device.h>
 #include <linux/hrtimer.h>
-#include <linux/alarmtimer.h>
 #include <linux/workqueue.h>
 #include <linux/wakelock.h>
 #include <linux/notifier.h>
@@ -37,18 +36,16 @@
 #define PE_EVENT_DBG_ENABLE	1
 #define PE_STATE_INFO_ENABLE	1
 #define TCPC_INFO_ENABLE	1
-#define TCPC_TIMER_DBG_EN	0
+#define TCPC_TIMER_DBG_EN	1
 #define TCPC_TIMER_INFO_EN	0
 #define PE_INFO_ENABLE		1
-#define TCPC_DBG_ENABLE		0
+#define TCPC_DBG_ENABLE		1
 #define TCPC_DBG2_ENABLE	0
 #define DPM_INFO_ENABLE		1
-#define DPM_INFO2_ENABLE	1
-#define DPM_DBG_ENABLE		0
+#define DPM_DBG_ENABLE		1
 #define PD_ERR_ENABLE		1
-#define PE_DBG_ENABLE		0
+#define PE_DBG_ENABLE		1
 #define TYPEC_DBG_ENABLE	0
-
 
 #define DP_INFO_ENABLE		1
 #define DP_DBG_ENABLE		1
@@ -149,13 +146,12 @@ struct tcpc_desc {
 
 /* TCPC Behavior Flags */
 #define TCPC_FLAGS_RETRY_CRC_DISCARD		(1<<0)
-#define TCPC_FLAGS_WAIT_HRESET_COMPLETE		(1<<1)	/* Always true */
+#define TCPC_FLAGS_WAIT_HRESET_COMPLETE		(1<<1)
 #define TCPC_FLAGS_CHECK_CC_STABLE		(1<<2)
 #define TCPC_FLAGS_LPM_WAKEUP_WATCHDOG		(1<<3)
 #define TCPC_FLAGS_CHECK_RA_DETACHE		(1<<4)
 #define TCPC_FLAGS_PREFER_LEGACY2		(1<<5)
-
-#define TCPC_FLAGS_PD_REV30			(1<<7)
+#define TCPC_FLAGS_PD_REV30		(1<<8)
 
 enum tcpc_cc_pull {
 	TYPEC_CC_RA = 0,
@@ -176,6 +172,17 @@ enum tcpc_cc_pull {
 #define TYPEC_CC_PULL_GET_RES(pull)		(pull & 0x07)
 #define TYPEC_CC_PULL_GET_RP_LVL(pull)	((pull & 0x18) >> 3)
 
+enum tcpm_transmit_type {
+	TCPC_TX_SOP = 0,
+	TCPC_TX_SOP_PRIME = 1,
+	TCPC_TX_SOP_PRIME_PRIME = 2,
+	TCPC_TX_SOP_DEBUG_PRIME = 3,
+	TCPC_TX_SOP_DEBUG_PRIME_PRIME = 4,
+	TCPC_TX_HARD_RESET = 5,
+	TCPC_TX_CABLE_RESET = 6,
+	TCPC_TX_BIST_MODE_2 = 7
+};
+
 enum tcpm_rx_cap_type {
 	TCPC_RX_CAP_SOP = 1 << 0,
 	TCPC_RX_CAP_SOP_PRIME = 1 << 1,
@@ -190,14 +197,12 @@ struct tcpc_ops {
 	int (*init)(struct tcpc_device *tcpc, bool sw_reset);
 	int (*alert_status_clear)(struct tcpc_device *tcpc, uint32_t mask);
 	int (*fault_status_clear)(struct tcpc_device *tcpc, uint8_t status);
-	int (*get_alert_mask)(struct tcpc_device *tcpc, uint32_t *mask);
 	int (*get_alert_status)(struct tcpc_device *tcpc, uint32_t *alert);
 	int (*get_power_status)(struct tcpc_device *tcpc, uint16_t *pwr_status);
 	int (*get_fault_status)(struct tcpc_device *tcpc, uint8_t *status);
 	int (*get_cc)(struct tcpc_device *tcpc, int *cc1, int *cc2);
 	int (*set_cc)(struct tcpc_device *tcpc, int pull);
 	int (*set_polarity)(struct tcpc_device *tcpc, int polarity);
-	int (*set_low_rp_duty)(struct tcpc_device *tcpc, bool low_rp);
 	int (*set_vconn)(struct tcpc_device *tcpc, int enable);
 	int (*deinit)(struct tcpc_device *tcpc);
 
@@ -226,11 +231,10 @@ struct tcpc_ops {
 
 #ifdef CONFIG_USB_POWER_DELIVERY
 	int (*set_msg_header)(struct tcpc_device *tcpc,
-			uint8_t power_role, uint8_t data_role);
+			int power_role, int data_role, uint8_t pd_rev);
 	int (*set_rx_enable)(struct tcpc_device *tcpc, uint8_t enable);
 	int (*get_message)(struct tcpc_device *tcpc, uint32_t *payload,
 			uint16_t *head, enum tcpm_transmit_type *type);
-	int (*protocol_reset)(struct tcpc_device *tcpc);
 	int (*transmit)(struct tcpc_device *tcpc,
 			enum tcpm_transmit_type type,
 			uint16_t header, const uint32_t *data);
@@ -257,22 +261,8 @@ struct tcpc_ops {
 #define TCPC_VBUS_SINK_5V		(5000)
 
 #define TCPC_LOW_POWER_MODE_RETRY	5
-
-/*
- * Confirm DUT is connected to legacy cable or not
- *	after suupect_counter > this threshold (0 = always check)
- */
-
-#define TCPC_LEGACY_CABLE_SUSPECT_THD	1
-
-/*
- * Try another s/w workaround after retry_counter more than this value
- * Try which soltuion first is determined by tcpc_flags
- */
-
-#define TCPC_LEGACY_CABLE_RETRY_SOLUTION	2
-
-struct tcpc_managed_res;
+#define TCPC_LEGACY_CABLE_CONFIRM	3
+#define TCPC_LEGACY_CABLE2_CONFIRM		3
 
 /*
  * tcpc device
@@ -293,11 +283,8 @@ struct tcpc_device {
 	uint32_t timer_handle_index;
 	struct hrtimer tcpc_timer[PD_TIMER_NR];
 
-	struct alarm wake_up_timer;
-	struct delayed_work wake_up_work;
-	struct wake_lock wakeup_wake_lock;
-
 	ktime_t last_expire[PD_TIMER_NR];
+	struct delayed_work timer_handle_work[2];
 	struct mutex access_lock;
 	struct mutex typec_lock;
 	struct mutex timer_lock;
@@ -312,12 +299,11 @@ struct tcpc_device {
 	struct task_struct *timer_task;
 	bool timer_thead_stop;
 	bool event_loop_thead_stop;
+	bool tcpc_event_init_done;
 
 	struct delayed_work	init_work;
 	struct delayed_work	event_init_work;
-	struct srcu_notifier_head evt_nh[TCP_NOTIFY_IDX_NR];
-	struct tcpc_managed_res *mr_head;
-	struct mutex mr_lock;
+	struct srcu_notifier_head evt_nh;
 
 	/* For TCPC TypeC */
 	uint8_t typec_state;
@@ -335,7 +321,6 @@ struct tcpc_device {
 	bool typec_cable_only;
 	bool typec_power_ctrl;
 	bool typec_watchdog;
-	bool typec_reach_vsafe0v;
 
 	int typec_usb_sink_curr;
 
@@ -346,19 +331,12 @@ struct tcpc_device {
 	uint8_t typec_lpm_pull;
 	uint8_t typec_lpm_retry;
 
-#ifdef CONFIG_TYPEC_WAKEUP_ONCE_LOW_DUTY
-	bool typec_wakeup_once;
-	bool typec_low_rp_duty_cntdown;
-#endif	/* CONFIG_TYPEC_WAKEUP_ONCE_LOW_DUTY */
-
 #ifdef CONFIG_TYPEC_CHECK_LEGACY_CABLE
 	uint8_t typec_legacy_cable;
-#if TCPC_LEGACY_CABLE_SUSPECT_THD
 	uint8_t typec_legacy_cable_suspect;
-#endif	/* TCPC_LEGACY_CABLE_SUSPECT_THD */
 
 #ifdef CONFIG_TYPEC_CHECK_LEGACY_CABLE2
-	uint8_t typec_legacy_retry_wk;
+	uint8_t typec_legacy_cable_once;
 #endif	/* CONFIG_TYPEC_CHECK_LEGACY_CABLE2 */
 #endif	/* CONFIG_TYPEC_CHECK_LEGACY_CABLE */
 
@@ -379,10 +357,6 @@ struct tcpc_device {
 #ifdef CONFIG_TCPC_VCONN_SUPPLY_MODE
 	uint8_t tcpc_vconn_supply;
 #endif	/* CONFIG_TCPC_VCONN_SUPPLY_MODE */
-
-#ifdef CONFIG_TCPC_SOURCE_VCONN
-	bool tcpc_source_vconn;
-#endif	/* CONFIG_TCPC_SOURCE_VCONN */
 
 	uint8_t tcpc_flags;
 
@@ -405,12 +379,9 @@ struct tcpc_device {
 	bool pd_pending_vdm_event;
 	bool pd_pending_vdm_reset;
 	bool pd_pending_vdm_good_crc;
-	bool pd_pending_vdm_discard;
-	bool pd_pending_vdm_attention;
 	bool pd_postpone_vdm_timeout;
 
 	struct pd_msg pd_last_vdm_msg;
-	struct pd_msg pd_attention_vdm_msg;
 	struct pd_event pd_vdm_event;
 
 	struct pd_msg pd_msg_buffer[PD_MSG_BUF_SIZE];
@@ -425,10 +396,11 @@ struct tcpc_device {
 	bool pd_hard_reset_event_pending;
 	bool pd_wait_hard_reset_complete;
 	bool pd_wait_pr_swap_complete;
+	bool pd_wait_error_recovery;
 	bool pd_ping_event_pending;
 	uint8_t pd_bist_mode;
 	uint8_t pd_transmit_state;
-	uint8_t pd_wait_vbus_once;
+	int pd_wait_vbus_once;
 
 #ifdef CONFIG_USB_PD_DIRECT_CHARGE
 	bool pd_during_direct_charge;
@@ -444,26 +416,18 @@ struct tcpc_device {
 #endif	/* CONFIG_TCPC_FORCE_DISCHARGE_IC */
 #endif	/* CONFIG_TYPEC_CAP_FORCE_DISCHARGE */
 
-#ifdef CONFIG_USB_PD_REV30
-	uint8_t pd_retry_count;
-#endif	/* CONFIG_USB_PD_REV30 */
-
-#ifdef CONFIG_USB_PD_DISABLE_PE
-	bool disable_pe; /* typec only */
-#endif	/* CONFIG_USB_PD_DISABLE_PE */
-
 	struct pd_port pd_port;
-#ifdef CONFIG_USB_PD_REV30
-	struct notifier_block bat_nb;
-	struct delayed_work bat_update_work;
-	struct power_supply *bat_psy;
-	uint8_t charging_status;
-	int bat_soc;
-#endif /* CONFIG_USB_PD_REV30 */
+	u8 uvdm_handle_flag:1;
 #endif /* CONFIG_USB_POWER_DELIVERY */
 	u8 vbus_level:2;
 	u8 irq_enabled:1;
-	u8 pd_inited_flag:1; /* MTK Only */
+	u8 boot_check_flag:1;
+	u8 ta_hw_exist:1;
+	u8 pd_dly_flag:1;
+#ifdef CONFIG_RT7207_ADAPTER
+	u8 rt7207_sup_flag:2;
+	u8 rt7207_direct_charge_flag;
+#endif /* CONFIG_RT7207_ADAPTER */
 };
 
 
@@ -482,18 +446,18 @@ struct tcpc_device {
 #define TYPEC_DBG(format, args...)
 #endif /* TYPEC_DBG_ENABLE */
 
-#if TYPEC_INFO_ENABLE
-#define TYPEC_INFO(format, args...)	\
-	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "TYPEC:" format, ##args)
-#else
-#define TYPEC_INFO(format, args...)
-#endif /* TYPEC_INFO_ENABLE */
-
 #if TYPEC_INFO2_ENABLE
 #define TYPEC_INFO2(format, args...)	\
 	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "TYPEC:" format, ##args)
 #else
 #define TYPEC_INFO2(format, args...)
+#endif /* TYPEC_INFO2_ENABLE */
+
+#if TYPEC_INFO_ENABLE
+#define TYPEC_INFO(format, args...)	\
+	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "TYPEC:" format, ##args)
+#else
+#define TYPEC_INFO(format, args...)
 #endif /* TYPEC_INFO_ENABLE */
 
 #if TCPC_INFO_ENABLE
@@ -528,14 +492,7 @@ struct tcpc_device {
 	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "DPM:" format, ##args)
 #else
 #define DPM_INFO(format, args...)
-#endif /* DPM_DBG_INFO */
-
-#if DPM_INFO2_ENABLE
-#define DPM_INFO2(format, args...)	\
-	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "DPM:" format, ##args)
-#else
-#define DPM_INFO2(format, args...)
-#endif /* DPM_DBG_INFO */
+#endif /* DPM_INFO_ENABLE */
 
 #if DPM_DBG_ENABLE
 #define DPM_DBG(format, args...)	\

@@ -53,7 +53,7 @@
 #include "mtk-soc-pcm-platform.h"
 
 /* information about */
-static struct afe_mem_control_t  *Bt_Dai_Control_context;
+static AFE_MEM_CONTROL_T  *Bt_Dai_Control_context;
 static struct snd_dma_buffer *Bt_Dai_Capture_dma_buf;
 
 static DEFINE_SPINLOCK(auddrv_BTDaiInCtl_lock);
@@ -97,7 +97,7 @@ static void StopAudioBtDaiHardware(struct snd_pcm_substream *substream)
 
 static bool SetVoipDAIBTAttribute(int sample_rate)
 {
-	struct audio_digital_dai_bt daibt_attribute;
+	AudioDigitalDAIBT daibt_attribute;
 
 	memset_io((void *)&daibt_attribute, 0, sizeof(daibt_attribute));
 
@@ -155,7 +155,7 @@ static int mtk_bt_dai_pcm_prepare(struct snd_pcm_substream *substream)
 
 static int mtk_bt_dai_alsa_stop(struct snd_pcm_substream *substream)
 {
-	/* struct afe_block_t *Dai_Block = &(Bt_Dai_Control_context->rBlock); */
+	/* AFE_BLOCK_T *Dai_Block = &(Bt_Dai_Control_context->rBlock); */
 	pr_warn("mtk_bt_dai_alsa_stop\n");
 
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_MEM_DAI, false);
@@ -171,7 +171,7 @@ static int mtk_bt_dai_alsa_stop(struct snd_pcm_substream *substream)
 
 static snd_pcm_uframes_t mtk_bt_dai_pcm_pointer(struct snd_pcm_substream *substream)
 {
-	struct afe_block_t *Dai_Block = &(Bt_Dai_Control_context->rBlock);
+	AFE_BLOCK_T *Dai_Block = &(Bt_Dai_Control_context->rBlock);
 	kal_uint32 Frameidx = 0;
 
 	PRINTK_AUD_DAI("mtk_bt_dai_pcm_pointer Dai_Block->u4DMAReadIdx;= 0x%x\n", Dai_Block->u4WriteIdx);
@@ -305,8 +305,8 @@ static int mtk_bt_dai_pcm_copy(struct snd_pcm_substream *substream,
 			       int channel, snd_pcm_uframes_t pos,
 			       void __user *dst, snd_pcm_uframes_t count)
 {
-	struct afe_mem_control_t *pDAI_MEM_ConTrol = NULL;
-	struct afe_block_t  *Dai_Block = NULL;
+	AFE_MEM_CONTROL_T *pDAI_MEM_ConTrol = NULL;
+	AFE_BLOCK_T  *Dai_Block = NULL;
 	char *Read_Data_Ptr = (char *)dst;
 	ssize_t DMA_Read_Ptr = 0, read_size = 0, read_count = 0;
 	unsigned long flags;
@@ -391,8 +391,8 @@ static int mtk_bt_dai_pcm_copy(struct snd_pcm_substream *substream,
 	}
 
 	else {
-		unsigned int size_1 = Dai_Block->u4BufferSize - DMA_Read_Ptr;
-		unsigned int size_2 = read_size - size_1;
+		uint32 size_1 = Dai_Block->u4BufferSize - DMA_Read_Ptr;
+		uint32 size_2 = read_size - size_1;
 
 		if (DMA_Read_Ptr != Dai_Block->u4DMAReadIdx) {
 

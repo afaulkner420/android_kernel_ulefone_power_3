@@ -36,17 +36,8 @@ static bool screen_on;
 static DEFINE_SPINLOCK(mtk_menu_spin_lock);
 
 
-void __attribute__((weak)) mtk_idle_dump_cnt_in_interval(void)
-{
-}
-
 void __attribute__((weak)) mcdi_heart_beat_log_dump(void)
 {
-}
-
-bool __attribute__((weak)) is_all_cpu_idle_criteria(void)
-{
-	return false;
 }
 
 static int mtk_menu_fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)

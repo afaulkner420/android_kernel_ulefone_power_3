@@ -76,7 +76,6 @@ struct idletimer_tg {
 	bool send_nl_msg;
 	bool active;
 	uid_t uid;
-	bool suspend_time_valid;
 };
 
 static LIST_HEAD(idletimer_tg_list);
@@ -246,12 +245,8 @@ static int idletimer_resume(struct notifier_block *notifier,
 	switch (pm_event) {
 	case PM_SUSPEND_PREPARE:
 		get_monotonic_boottime(&timer->last_suspend_time);
-		timer->suspend_time_valid = true;
 		break;
 	case PM_POST_SUSPEND:
-		if (!timer->suspend_time_valid)
-			break;
-		timer->suspend_time_valid = false;
 		spin_lock_bh(&timestamp_lock);
 		if (!timer->active) {
 			spin_unlock_bh(&timestamp_lock);
@@ -286,7 +281,7 @@ static int idletimer_tg_create(struct idletimer_tg_info *info)
 {
 	int ret;
 
-	info->timer = kzalloc(sizeof(*info->timer), GFP_KERNEL);
+	info->timer = kmalloc(sizeof(*info->timer), GFP_KERNEL);
 	if (!info->timer) {
 		ret = -ENOMEM;
 		goto out;
@@ -361,7 +356,7 @@ static void reset_timer(const struct idletimer_tg_info *info,
 		/* Stores the uid resposible for waking up the radio */
 		if (skb && (skb->sk)) {
 			timer->uid = from_kuid_munged(current_user_ns(),
-					sock_i_uid(skb_to_full_sk(skb)));
+						sock_i_uid(skb_to_full_sk(skb)));
 		}
 
 		/* checks if there is a pending inactive notification*/

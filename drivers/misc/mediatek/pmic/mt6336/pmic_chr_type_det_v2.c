@@ -141,7 +141,7 @@ static void hw_bc12_init(void)
 	bc12_set_register_value(MT6336_RG_A_BC12_IPD_EN, 0);
 	/* RG_A_BC12_IPD_HALF_EN = 0 */
 	bc12_set_register_value(MT6336_RG_A_BC12_IPD_HALF_EN, 0);
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#if defined(CONFIG_PROJECT_PHY)
 	Charger_Detect_Init();
 #endif
 	/* VBUS asserted, wait > 300ms (min.) */
@@ -430,7 +430,7 @@ static unsigned int hw_bc12_step_4(void)
 
 static void hw_bc12_done(void)
 {
-#if defined(CONFIG_PROJECT_PHY) || defined(CONFIG_PHY_MTK_SSUSB)
+#if defined(CONFIG_PROJECT_PHY)
 	Charger_Detect_Release();
 #endif
 	/* RG_BC12_BB_CTRL = 0 */
@@ -754,8 +754,7 @@ static enum power_supply_property mt_usb_properties[] = {
 #ifdef __SW_CHRDET_IN_PROBE_PHASE__
 static void do_charger_detection_work(struct work_struct *data)
 {
-	if (upmu_get_rgs_chrdet() == true)
-		do_charger_detect();
+	do_charger_detect();
 }
 #endif
 

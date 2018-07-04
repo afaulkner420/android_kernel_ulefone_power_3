@@ -163,17 +163,8 @@ static void ion_fb_heap_free(struct ion_buffer *buffer)
 {
 	struct ion_heap *heap = buffer->heap;
 	struct ion_fb_buffer_info *buffer_info = (struct ion_fb_buffer_info *)buffer->priv_virt;
-	struct sg_table *table = buffer->sg_table;
-
-	if (!buffer_info) {
-		IONMSG("[ion_fb_heap_free]: Error: buffer_info is NULL.\n");
-		return;
-	}
 
 	buffer->priv_virt = NULL;
-	if (buffer_info->MVA)
-		m4u_dealloc_mva_sg(buffer_info->module_id, table, buffer->size, buffer_info->MVA);
-
 	ion_fb_free(heap, buffer_info->priv_phys, buffer->size);
 
 	buffer_info->priv_phys = ION_CARVEOUT_ALLOCATE_FAIL;

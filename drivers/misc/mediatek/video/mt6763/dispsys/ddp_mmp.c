@@ -100,12 +100,12 @@ void init_ddp_mmp_events(void)
 		DDP_MMP_Events.primary_wdma_fence_release =
 		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "wdma_fence_r");
 
-		DDP_MMP_Events.primary_present_fence_release =
-		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "primary_preset_fence_release");
-		DDP_MMP_Events.primary_present_fence_get =
-		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "primary_preset_fence_get");
-		DDP_MMP_Events.primary_present_fence_set =
-		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "primary_preset_fence_set");
+		DDP_MMP_Events.present_fence_release =
+		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "preset_fence_release");
+		DDP_MMP_Events.present_fence_get =
+		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "preset_fence_get");
+		DDP_MMP_Events.present_fence_set =
+		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "preset_fence_set");
 
 		DDP_MMP_Events.idlemgr =
 		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "idlemgr");
@@ -113,8 +113,6 @@ void init_ddp_mmp_events(void)
 		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "idle_monitor");
 		DDP_MMP_Events.share_sram =
 		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "share_sram");
-		DDP_MMP_Events.draw_rc =
-		    mmprofile_register_event(DDP_MMP_Events.primary_Parent, "draw_rc");
 		DDP_MMP_Events.sec = mmprofile_register_event(DDP_MMP_Events.primary_Parent, "sec");
 		DDP_MMP_Events.svp_module[DISP_MODULE_OVL0_2L] =
 			mmprofile_register_event(DDP_MMP_Events.sec, "ovl0_2L_sec");
@@ -137,7 +135,7 @@ void init_ddp_mmp_events(void)
 			mmprofile_register_event(DDP_MMP_Events.sec, "wdma1_sec");
 #endif
 		DDP_MMP_Events.tui =  mmprofile_register_event(DDP_MMP_Events.primary_Parent, "tui");
-		DDP_MMP_Events.scen = mmprofile_register_event(DDP_MMP_Events.primary_Parent, "scenario");
+		DDP_MMP_Events.self_refresh = mmprofile_register_event(DDP_MMP_Events.primary_Parent, "self_refresh");
 		DDP_MMP_Events.fps_set =  mmprofile_register_event(DDP_MMP_Events.primary_Parent, "fps_set");
 		DDP_MMP_Events.fps_get =  mmprofile_register_event(DDP_MMP_Events.primary_Parent, "fps_get");
 		DDP_MMP_Events.fps_ext_set =  mmprofile_register_event(DDP_MMP_Events.primary_Parent, "fps_ext_set");
@@ -265,14 +263,10 @@ void init_ddp_mmp_events(void)
 		DDP_MMP_Events.dsi_te = mmprofile_register_event(DDP_MMP_Events.DDP, "dsi_te");
 
 		DDP_MMP_Events.DDP_IRQ = mmprofile_register_event(DDP_MMP_Events.DDP, "DDP_IRQ");
+
 		DDP_MMP_Events.DDP_event =
 		    mmprofile_register_event(DDP_MMP_Events.DDP_IRQ, "DDP_event");
-		DDP_MMP_Events.event_wait =
-					mmprofile_register_event(DDP_MMP_Events.DDP_event, "wait");
-		DDP_MMP_Events.event_signal =
-					mmprofile_register_event(DDP_MMP_Events.DDP_event, "signal");
-		DDP_MMP_Events.event_error =
-					mmprofile_register_event(DDP_MMP_Events.DDP_event, "error");
+
 		DDP_MMP_Events.MutexParent =
 		    mmprofile_register_event(DDP_MMP_Events.DDP_IRQ, "Mutex");
 		DDP_MMP_Events.MUTEX_IRQ[0] =

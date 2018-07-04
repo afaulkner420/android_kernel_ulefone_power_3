@@ -81,11 +81,11 @@ enum ipi_msg_type {
 	IPI_CPU_STOP,
 	IPI_IRQ_WORK,
 	IPI_COMPLETION,
-	IPI_CPU_BACKTRACE,
 #ifdef CONFIG_TRUSTY
 	IPI_CUSTOM_FIRST,
-	IPI_CUSTOM_LAST = 15,
+	IPI_CUSTOM_LAST,
 #endif
+	IPI_CPU_BACKTRACE = 15,
 };
 
 #ifdef CONFIG_TRUSTY
@@ -790,10 +790,8 @@ static void handle_custom_ipi_irq(struct irq_desc *desc)
 	unsigned int irq = irq_desc_get_irq(desc);
 
 	if (!desc->action) {
-/*
 		pr_crit("CPU%u: Unknown IPI message 0x%x, no custom handler\n",
 			smp_processor_id(), irq);
-*/
 		return;
 	}
 

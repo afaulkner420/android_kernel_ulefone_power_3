@@ -58,10 +58,9 @@
 #include "mtk-auddrv-kernel.h"
 #include "mtk-soc-afe-control.h"
 #include "mtk-soc-pcm-platform.h"
-#include "mtk-auddrv-gpio.h"
 
 
-static struct afe_mem_control_t *pI2s0MemControl;
+static AFE_MEM_CONTROL_T *pI2s0MemControl;
 
 static struct device *mDev;
 
@@ -100,9 +99,9 @@ static int Audio_i2s0_SideGen_Set(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
 {
 	bool ret = false;
-	static int samplerate;
-	unsigned int u32AudioI2sOut = 0;
-	unsigned int u32Audio2ndI2sIn = 0;
+	int samplerate = 0;
+	uint32 u32AudioI2sOut = 0;
+	uint32 u32Audio2ndI2sIn = 0;
 
 	AudDrv_Clk_On();
 
@@ -111,10 +110,6 @@ static int Audio_i2s0_SideGen_Set(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 	mi2s0_sidegen_control = ucontrol->value.integer.value[0];
-
-	/* Config smart pa I2S pin */
-	AudDrv_GPIO_SMARTPA_Select(mi2s0_sidegen_control > 0 ? 1 : 0);
-
 	pr_debug("%s(), sidegen = %d, hdoutput = %d, extcodec_echoref = %d, always_hd = %d\n",
 		 __func__,
 		 mi2s0_sidegen_control,
@@ -130,7 +125,6 @@ static int Audio_i2s0_SideGen_Set(struct snd_kcontrol *kcontrol,
 							      mtk_soc_always_hd);
 		goto i2s_config_done;
 	}
-
 
 	if (mi2s0_sidegen_control) {
 		/* Phone call echo ref, speaker mode connection*/
@@ -181,10 +175,8 @@ static int Audio_i2s0_SideGen_Set(struct snd_kcontrol *kcontrol,
 		}
 
 		AudDrv_Clk_On();
-		if (!mtk_soc_always_hd) {
+		if (!mtk_soc_always_hd)
 			EnableALLbySampleRate(samplerate);
-			EnableAPLLTunerbySampleRate(samplerate);
-		}
 
 		if (extcodec_echoref_control > 0) {
 			/* I2S0 clock-gated */
@@ -263,15 +255,10 @@ static int Audio_i2s0_SideGen_Set(struct snd_kcontrol *kcontrol,
 					  Soc_Aud_AFE_IO_Block_MODEM_PCM_1_I_CH1, Soc_Aud_AFE_IO_Block_I2S3);
 			pr_debug("%s(), Turn off. AFE_I2S_CON=0x%x, AFE_I2S_CON3=0x%x\n", __func__,
 				 Afe_Get_Reg(AFE_I2S_CON), Afe_Get_Reg(AFE_I2S_CON3));
+			EnableAfe(false);
 		}
-
-		if (!mtk_soc_always_hd) {
-			DisableAPLLTunerbySampleRate(samplerate);
+		if (!mtk_soc_always_hd)
 			DisableALLbySampleRate(samplerate);
-		}
-
-		EnableAfe(false);
-
 		AudDrv_Clk_Off();
 	}
 
@@ -387,7 +374,7 @@ static struct snd_pcm_hardware mtk_i2s0_hardware = {
 
 static int mtk_pcm_i2s0_stop(struct snd_pcm_substream *substream)
 {
-	struct afe_block_t *Afe_Block = &(pI2s0MemControl->rBlock);
+	AFE_BLOCK_T *Afe_Block = &(pI2s0MemControl->rBlock);
 
 	pr_debug("mtk_pcm_i2s0_stop\n");
 	irq_remove_user(substream, irq_request_number(Soc_Aud_Digital_Block_MEM_DL1));
@@ -520,7 +507,7 @@ static int mtk_pcm_i2s0_prepare(struct snd_pcm_substream *substream)
 static int mtk_pcm_i2s0_start(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned int u32AudioI2S = 0;
+	uint32 u32AudioI2S = 0;
 
 	SetMemifSubStream(Soc_Aud_Digital_Block_MEM_DL1, substream);
 	if (runtime->format == SNDRV_PCM_FORMAT_S32_LE

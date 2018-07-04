@@ -60,7 +60,6 @@
 #include <linux/cgroup.h>
 #include <linux/wait.h>
 
-struct static_key cpusets_pre_enable_key __read_mostly = STATIC_KEY_INIT_FALSE;
 struct static_key cpusets_enabled_key __read_mostly = STATIC_KEY_INIT_FALSE;
 
 /* See "Frequency meter" comments, below. */
@@ -178,9 +177,9 @@ typedef enum {
 } cpuset_flagbits_t;
 
 /* convenient tests for these bits */
-static inline bool is_cpuset_online(struct cpuset *cs)
+static inline bool is_cpuset_online(const struct cpuset *cs)
 {
-	return test_bit(CS_ONLINE, &cs->flags) && !css_is_dying(&cs->css);
+	return test_bit(CS_ONLINE, &cs->flags);
 }
 
 static inline int is_cpu_exclusive(const struct cpuset *cs)
@@ -348,7 +347,8 @@ static struct file_system_type cpuset_fs_type = {
 /*
  * Return in pmask the portion of a cpusets's cpus_allowed that
  * are online.  If none are online, walk up the cpuset hierarchy
- * until we find one that does have some online cpus.
+ * until we find one that does have some online cpus.  The top
+ * cpuset always has some cpus online.
  *
  * One way or another, we guarantee to return some non-empty subset
  * of cpu_online_mask.
@@ -358,18 +358,11 @@ static struct file_system_type cpuset_fs_type = {
 static void guarantee_online_cpus(struct cpuset *cs, struct cpumask *pmask)
 {
 	while (!cpumask_intersects(cs->effective_cpus, cpu_online_mask)) {
-		cs = parent_cs(cs);
-		if (unlikely(!cs)) {
-			/*
-			 * The top cpuset doesn't have any online cpu as a
-			 * consequence of a race between cpuset_hotplug_work
-			 * and cpu hotplug notifier.  But we know the top
-			 * cpuset's effective_cpus is on its way to to be
-			 * identical to cpu_online_mask.
-			 */
+		if (cs == &top_cpuset) {
 			cpumask_copy(pmask, cpu_online_mask);
 			return;
 		}
+		cs = parent_cs(cs);
 	}
 	cpumask_and(pmask, cs->effective_cpus, cpu_online_mask);
 }
@@ -869,22 +862,6 @@ void rebuild_sched_domains(void)
 	mutex_unlock(&cpuset_mutex);
 }
 
-void rebuild_sched_domains_unlocked(void)
-{
-	struct sched_domain_attr *attr;
-	cpumask_var_t *doms;
-	int ndoms;
-
-	if (!cpumask_equal(top_cpuset.effective_cpus, cpu_active_mask))
-		return;
-
-	/* Generate domain masks and attrs */
-	ndoms = generate_sched_domains(&doms, &attr);
-
-	/* Have scheduler rebuild the domains */
-	partition_sched_domains(ndoms, doms, attr);
-}
-
 /**
  * update_tasks_cpumask - Update the cpumasks of tasks in the cpuset.
  * @cs: the cpuset in which each task's cpus_allowed mask needs to be changed
@@ -1026,7 +1003,7 @@ static int update_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 		printk_deferred("[name:global_cpuset&]global set: new=0x%lx, orig=0x%lx\n",
 				global_cpus_set.bits[0], cs->cpus_requested->bits[0]);
 
-		set_user_space_global_cpuset(&global_cpus_set, 0);
+		set_user_space_global_cpuset(&global_cpus_set);
 		return 0;
 	}
 #endif
@@ -1429,7 +1406,7 @@ static int update_flag(cpuset_flagbits_t bit, struct cpuset *cs,
 #ifdef CONFIG_MTK_USER_SPACE_GLOBAL_CPUSET
 		if (bit == CS_USER_SPACE_GLOBAL_CPUSET && cs == &top_cpuset && global_cpuset_flag) {
 			global_cpuset_flag = false;
-			unset_user_space_global_cpuset(0);
+			unset_user_space_global_cpuset();
 		}
 #endif
 	}
@@ -1631,6 +1608,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 	cs = css_cs(css);
 
 	mutex_lock(&cpuset_mutex);
+	get_online_cpus();
 
 	/* prepare for attach */
 	if (cs == &top_cpuset)
@@ -1650,6 +1628,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
 		cpuset_update_task_spread_flag(cs, task);
 	}
+	put_online_cpus();
 
 	/*
 	 * Change mm for all threadgroup leaders. This is expensive and may
@@ -2017,7 +1996,6 @@ static struct cftype files[] = {
 	{
 		.name = "memory_pressure",
 		.read_u64 = cpuset_read_u64,
-		.private = FILE_MEMORY_PRESSURE,
 	},
 
 	{
@@ -2213,7 +2191,7 @@ static void cpuset_bind(struct cgroup_subsys_state *root_css)
  * which could have been changed by cpuset just after it inherits the
  * state from the parent and before it sits on the cgroup's task list.
  */
-void cpuset_fork(struct task_struct *task, void *priv)
+void cpuset_fork(struct task_struct *task, void *private)
 {
 	if (task_css_is_root(task, cpuset_cgrp_id))
 		return;
@@ -2401,14 +2379,8 @@ retry:
 	else
 		hotplug_update_tasks_legacy(cs, &new_cpus, &new_mems,
 					    cpus_updated, mems_updated);
+
 	mutex_unlock(&cpuset_mutex);
-}
-
-static bool force_rebuild;
-
-void cpuset_force_rebuild(void)
-{
-	force_rebuild = true;
 }
 
 /**
@@ -2434,7 +2406,6 @@ static void cpuset_hotplug_workfn(struct work_struct *work)
 	bool cpus_updated, mems_updated;
 	bool on_dfl = cpuset_v2_behavior();
 
-	get_online_cpus();
 	mutex_lock(&cpuset_mutex);
 
 	/* fetch the available cpus/mems and find out which changed how */
@@ -2485,15 +2456,9 @@ static void cpuset_hotplug_workfn(struct work_struct *work)
 		rcu_read_unlock();
 	}
 
-	mutex_lock(&cpuset_mutex);
 	/* rebuild sched domains if cpus_allowed has changed */
-	if (cpus_updated || force_rebuild) {
-		force_rebuild = false;
-		rebuild_sched_domains_unlocked();
-	}
-
-	mutex_unlock(&cpuset_mutex);
-	put_online_cpus();
+	if (cpus_updated)
+		rebuild_sched_domains();
 }
 
 void cpuset_update_active_cpus(bool cpu_online)
@@ -2518,9 +2483,8 @@ void cpuset_update_active_cpus(bool cpu_online)
  * Only change user space mask.
  * If global cpuset and original cs request no intersects,
  * use original cs request.
- * cgroup_id: if 0, set all child groups.
  */
-void set_user_space_global_cpuset(struct cpumask *global_cpus, int cgroup_id)
+void set_user_space_global_cpuset(struct cpumask *global_cpus)
 {
 	bool need_rebuild_sched_domains = false;
 	struct cpuset *cs;
@@ -2531,8 +2495,7 @@ void set_user_space_global_cpuset(struct cpumask *global_cpus, int cgroup_id)
 		struct cpumask *final_set_cpus = cs->cpus_allowed;
 		struct cpuset *parent;
 
-		if (cs == &top_cpuset || !css_tryget_online(&cs->css) ||
-			(cgroup_id != 0 && cs->css.cgroup->id != cgroup_id))
+		if (cs == &top_cpuset || !css_tryget_online(&cs->css))
 			continue;
 
 		parent = parent_cs(cs);
@@ -2565,9 +2528,10 @@ void set_user_space_global_cpuset(struct cpumask *global_cpus, int cgroup_id)
 		WARN_ON(!cpuset_v2_behavior() &&
 			!cpumask_equal(cs->cpus_allowed, cs->effective_cpus));
 
-		printk_deferred("[name:global_cpuset&]final set:0x%lx, cgroup:%s, id:%d\n",
-				cs->effective_cpus->bits[0], cs->css.cgroup->kn->name,
-				cs->css.cgroup->id);
+		printk_deferred("[name:global_cpuset&]final set:0x%lx cgroup:",
+				cs->effective_cpus->bits[0]);
+		pr_cont_cgroup_name(cs->css.cgroup);
+		printk_deferred("\n");
 
 		/* use cs->effective_cpus to update cs cpumask */
 		update_tasks_cpumask(cs);
@@ -2594,9 +2558,8 @@ void set_user_space_global_cpuset(struct cpumask *global_cpus, int cgroup_id)
  * mtk: unset user space global cpuset
  * When no need global cpuset, restore original cpu request.
  * If original cs request is empty, use parent effective_cpus.
- * cgroup_id: if 0, unset all child groups.
  */
-void unset_user_space_global_cpuset(int cgroup_id)
+void unset_user_space_global_cpuset(void)
 {
 	bool need_rebuild_sched_domains = false;
 	struct cpuset *cs;
@@ -2613,8 +2576,7 @@ void unset_user_space_global_cpuset(int cgroup_id)
 		struct cpumask restore_cpus;
 		struct cpuset *parent;
 
-		if (cs == &top_cpuset || !css_tryget_online(&cs->css) ||
-			(cgroup_id != 0 && cs->css.cgroup->id != cgroup_id))
+		if (cs == &top_cpuset || !css_tryget_online(&cs->css))
 			continue;
 
 		parent = parent_cs(cs);
@@ -2643,9 +2605,8 @@ void unset_user_space_global_cpuset(int cgroup_id)
 		WARN_ON(!cpuset_v2_behavior() &&
 			!cpumask_equal(cs->cpus_allowed, cs->effective_cpus));
 
-		printk_deferred("[name:global_cpuset&]final unset:0x%lx, cgroup:%s, id:%d\n",
-				cs->effective_cpus->bits[0], cs->css.cgroup->kn->name,
-				cs->css.cgroup->id);
+		printk_deferred("[name:global_cpuset&]final unset:0x%lx cgroup:",
+				cs->effective_cpus->bits[0]);
 		pr_cont_cgroup_name(cs->css.cgroup);
 		printk_deferred("\n");
 
@@ -2671,11 +2632,6 @@ void unset_user_space_global_cpuset(int cgroup_id)
 }
 
 #endif
-
-void cpuset_wait_for_hotplug(void)
-{
-	flush_work(&cpuset_hotplug_work);
-}
 
 /*
  * Keep top_cpuset.mems_allowed tracking node_states[N_MEMORY].

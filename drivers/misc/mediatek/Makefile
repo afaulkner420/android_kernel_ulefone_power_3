@@ -13,15 +13,52 @@
 
 #$(call all-subdir-src-or-makefile)
 MTK_PLATFORM := $(subst ",,$(CONFIG_MTK_PLATFORM))
-subdir-ccflags-y += -Werror
+# Vanzo:yucheng on: Wed, 12 Nov 2014 21:08:36 +0800
+# added for aosp management to import our variable
+project_name:=$(shell echo $(VANZO_INNER_PROJECT_NAME))
+ifneq ($(strip $(project_name)),)
+-include $(srctree)/../zprojects/$(project_name)/$(project_name).mk
+VANZO_PROJECT_HEADERS:=$(srctree)/../zprojects/$(project_name)/kernel-headers
+subdir-ccflags-y += -I$(VANZO_PROJECT_HEADERS)
+endif
+# End of Vanzo:yucheng
+#subdir-ccflags-y += -Werror
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/hibcore
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include
 subdir-ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat
 subdir-ccflags-y += -I$(srctree)/drivers/mmc/host/mediatek/$(MTK_PLATFORM)
+# Vanzo:yucheng on: Thu, 25 Dec 2014 15:02:51 +0800
+# for compatible the old config usage,so here I use the custom config to replace the kernel config 
+ifneq ($(strip $(project_name)),)
+ifneq ($(strip $(CUSTOM_KERNEL_FLASHLIGHT)),)
+CONFIG_CUSTOM_KERNEL_FLASHLIGHT:=$(CUSTOM_KERNEL_FLASHLIGHT)
+endif
+ifneq ($(strip $(CUSTOM_KERNEL_LCM)),)
+CONFIG_CUSTOM_KERNEL_LCM:=$(CUSTOM_KERNEL_LCM)
+endif
+ifneq ($(strip $(CUSTOM_KERNEL_IMGSENSOR)),)
+CONFIG_CUSTOM_KERNEL_IMGSENSOR:=$(CUSTOM_KERNEL_IMGSENSOR)
+endif
 
-obj-$(CONFIG_MTK_EMI) += emi/
-obj-$(CONFIG_MTK_EMI_MPU) += emi_mpu/
+ifneq ($(strip $(CUSTOM_KERNEL_HALL)),)
+    obj-y += hall/
+endif
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/dtv/),)
+    ifneq ($(strip $(CUSTOM_KERNEL_DTV)),)
+        obj-y	+= dtv/
+    endif
+endif
+endif
+$(info CONFIG_CUSTOM_KERNEL_GYROSCOPE $(CONFIG_CUSTOM_KERNEL_GYROSCOPE))
+$(info CUSTOM_KERNEL_GYROSCOPE $(CUSTOM_KERNEL_GYROSCOPE))
+$(info CONFIG_CUSTOM_KERNEL_MAGNETOMETER $(CONFIG_CUSTOM_KERNEL_MAGNETOMETER))
+$(info CUSTOM_KERNEL_MAGNETOMETER $(CUSTOM_KERNEL_MAGNETOMETER))
+$(info CONFIG_CUSTOM_KERNEL_ACCELEROMETER $(CONFIG_CUSTOM_KERNEL_ACCELEROMETER))
+$(info CUSTOM_KERNEL_ACCELEROMETER $(CUSTOM_KERNEL_ACCELEROMETER))
+# End of Vanzo:yucheng
+
+obj-$(CONFIG_MTK_EMI_MPU)	+= emi_mpu/
 obj-$(CONFIG_MTK_DCS) += mtkdcs/
 
 obj-$(CONFIG_MTK_BASE_POWER) += base/
@@ -44,7 +81,43 @@ obj-$(CONFIG_MTK_SYSENV)	+= sysenv/
 obj-$(CONFIG_MTK_PWM)	    += pwm/
 obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += scp/
 obj-$(CONFIG_MTK_TINYSYS_SCP_SUPPORT) += audio_ipi/
-obj-$(CONFIG_MTK_SENSORS_1_0) += sensors-1.0/
+ifneq ($(CONFIG_MTK_SENSOR_BIO),y)
+ifeq ($(CONFIG_MTK_SENSOR_SUPPORT),y)
+#obj-$(CONFIG_CUSTOM_KERNEL_SENSORHUB)	+= sensorHub/
+obj-$(CONFIG_MTK_HWMON)	    += hwmon/
+obj-$(CONFIG_CUSTOM_KERNEL_ALSPS) += alsps/
+obj-$(CONFIG_CUSTOM_KERNEL_RGBW) += rgbw/
+obj-$(CONFIG_CUSTOM_KERNEL_ACCELEROMETER) += accelerometer/
+obj-$(CONFIG_CUSTOM_KERNEL_GYROSCOPE) += gyroscope/
+obj-$(CONFIG_CUSTOM_KERNEL_MAGNETOMETER) += magnetometer/
+obj-$(CONFIG_CUSTOM_KERNEL_BAROMETER) += barometer/
+#obj-$(CONFIG_CUSTOM_KERNEL_HUMIDITY) += humidity/
+#obj-$(CONFIG_CUSTOM_KERNEL_STEP_COUNTER)	+= step_counter/
+#obj-$(CONFIG_CUSTOM_KERNEL_SIGNIFICANT_MOTION_SENSOR)	+= step_counter/
+#obj-$(CONFIG_CUSTOM_KERNEL_ACTIVITY_SENSOR)	+= activity_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_PICK_UP_SENSOR)	+= pick_up_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_SHAKE_SENSOR)	+= shake_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_FACE_DOWN_SENSOR)	+= face_down_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_GESTURE_SENSOR) += gesture/
+#obj-$(CONFIG_CUSTOM_KERNEL_PEDOMETER)	+= pedometer/
+#obj-$(CONFIG_CUSTOM_KERNEL_HEART)	+= heart_rate_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_TILT_DETECTOR_SENSOR)	+= tilt_detector_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_WAKE_GESTURE_SENSOR)	+= wake_gesture_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_GLANCE_GESTURE_SENSOR)	+= glance_gesture_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_ANSWER_CALL_SENSOR)	+= answer_call_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_GRAVITY_SENSOR)	+= gravity/
+#obj-$(CONFIG_CUSTOM_KERNEL_RV_SENSOR)	+= rotationvector/
+#obj-$(CONFIG_CUSTOM_KERNEL_LINEARACCEL_SENSOR)	+= linearacceleration/
+#obj-$(CONFIG_CUSTOM_KERNEL_GRV_SENSOR)	+= gamerotationvector/
+#obj-$(CONFIG_CUSTOM_KERNEL_GMRV_SENSOR)	+= geomagneticrotationvector/
+#obj-$(CONFIG_CUSTOM_KERNEL_PDR_SENSOR)	+= pdr_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_FREEFALL_SENSOR)	+= freefall_sensor/
+#obj-$(CONFIG_CUSTOM_KERNEL_UNCALI_GYRO_SENSOR)	+= uncali_gyro/
+#obj-$(CONFIG_CUSTOM_KERNEL_UNCALI_MAG_SENSOR)	+= uncali_mag/
+endif
+else
+obj-y   += sensor_bio/
+endif
 obj-$(CONFIG_MTPROF)	+= mtprof/
 ifeq ($(CONFIG_MTK_I2C_EXTENSION),y)
 #obj-$(CONFIG_MTK_I2C)  += i2c/
@@ -78,7 +151,6 @@ obj-$(CONFIG_MTK_MT6306_GPIO_SUPPORT) += gpio/
 obj-$(CONFIG_SECURITY_SELINUX)	+= selinux_warning/
 obj-$(CONFIG_MTK_MEM) += mem/
 obj-$(CONFIG_MTK_MEMORY_LOWPOWER) += memory-lowpower/
-obj-y += memory-amms/
 obj-$(CONFIG_MTK_CMDQ) += cmdq/
 obj-$(CONFIG_MTK_BOOT) += boot/
 obj-$(CONFIG_MTK_BOOT_REASON) += boot_reason/
@@ -103,7 +175,7 @@ obj-$(CONFIG_MTK_FREQ_HOPPING) += freqhopping/
 obj-$(CONFIG_MTK_SECURITY_SW_SUPPORT) +=masp/
 obj-$(CONFIG_MTK_BLOCK_TAG) +=blocktag/
 obj-$(CONFIG_MEDIATEK_SOLUTION)  += sched/
-obj-y += cameraisp/
+obj-y += cameraisp/src/
 obj-$(CONFIG_MTK_IMGSENSOR) += imgsensor/src/
 obj-$(CONFIG_MTK_CAM_CAL) += cam_cal/src/
 obj-$(CONFIG_MTK_LENS)   += lens/
@@ -111,8 +183,8 @@ obj-$(CONFIG_MTK_FLASHLIGHT)	+= flashlight/
 obj-$(CONFIG_RT_FLASHLIGHT)	+= flashlight/richtek/
 obj-$(CONFIG_MTK_VPU_SUPPORT) += vpu/
 obj-$(CONFIG_MTK_CCU)	+= ccu/src/
-ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/met_drv/),)
-obj-y += met_drv/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/met/),)
+obj-$(CONFIG_MTK_MET) += met/
 endif
 obj-$(CONFIG_MTK_CCCI_DEVICES)	+=  ccci_util/
 obj-$(CONFIG_MTK_NET_CCMNI) +=  ccmni/
@@ -134,6 +206,7 @@ endif
 obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += gud/
 obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += secmem/
 obj-$(CONFIG_MICROTRUST_TEE_SUPPORT) += teei/
+obj-$(CONFIG_TRUSTKERNEL_TEE_SUPPORT) += tkcore/
 obj-$(CONFIG_MTK_IN_HOUSE_TEE_SUPPORT) += mtee/
 obj-$(CONFIG_MTK_DEBUG_LATCH)	+= debug_latch/
 obj-$(CONFIG_MTK_DEBUG_TRACER)	+= debug_tracer/
@@ -149,6 +222,11 @@ obj-$(CONFIG_MTK_SVP) += memory-ssvp/
 obj-$(CONFIG_ZONE_MOVABLE_CMA) += zone_movable_cma/
 
 obj-y += performance/
+
+# gator driver is platform-independent
+ifneq ($(wildcard $(srctree)/$(src)/gator-driver/),)
+obj-$(CONFIG_GATOR) += gator-driver/
+endif # gator-driver folder exist
 
 ifeq ($(CONFIG_HAVE_MTK_IN_HOUSE_TEE_SUPPORT),y)
 #obj-$(CONFIG_TRUSTY) += mtee/
@@ -179,6 +257,9 @@ obj-n += crypto/
 #widevine drm
 obj-$(CONFIG_TRUSTONIC_TEE_SUPPORT) += secwidevine/
 obj-y += sspm/
+ifneq ($(wildcard $(srctree)/drivers/misc/mediatek/cpu_stress/),)
+obj-$(CONFIG_MTK_CPU_STRESS)	+= cpu_stress/
+endif
 obj-$(CONFIG_MTK_VOW_SUPPORT)	+= vow/
 obj-$(CONFIG_USB)	+= usb_boost/
 #obj-$(CONFIG_RT_REGMAP) += rt-regmap/
@@ -190,22 +271,26 @@ obj-$(CONFIG_MTK_ICCS_SUPPORT)+= iccs/
 obj-$(CONFIG_MACH_MT8167) += xo/
 obj-$(CONFIG_MTK_MD_DIRECT_TETHERING_SUPPORT)	+= pkt_track/
 obj-$(CONFIG_MTK_GZ_KREE)  += geniezone/
-obj-$(CONFIG_MTK_ES_REG) += es_reg/
 
-#timer
-obj-y += timer/
-#add OSODEV-1176 by haiping.bai 20171123 start
-obj-$(CONFIG_SENSORS_HALL)      +=hall_rlk/
-#add OSODEV-1176 by haiping.bai 20171123 end
+# Vanzo:yucheng on: Wed, 12 Nov 2014 21:09:12 +0800
+# added for aosp management to define some macros
 
-#add XLLWHLSE-1 by xumin.yan 20180111 start
-obj-$(CONFIG_SMARTPA_TFA98XX) += tfa98xx/
-#add XLLWHLSE-1 by xumin.yan 20180111 end
+ifneq ($(strip $(project_name)),)
+MTK_INTERNAL_CDEFS := $(foreach t,$(AUTO_ADD_GLOBAL_DEFINE_BY_NAME),$(if $(filter-out no NO none NONE false FALSE,$($(t))),-D$(t)))
+MTK_INTERNAL_CDEFS += $(foreach t,$(AUTO_ADD_GLOBAL_DEFINE_BY_VALUE),$(if $(filter-out no NO none NONE false FALSE,$($(t))),$(foreach v,$(shell echo $($(t)) | tr '[a-z]' '[A-Z]'),-D$(v))))
+MTK_INTERNAL_CDEFS += $(foreach t,$(AUTO_ADD_GLOBAL_DEFINE_BY_NAME_VALUE),$(if $(filter-out no NO none NONE false FALSE,$($(t))),-D$(t)=\"$($(t))\"))
+VANZO_INTERNAL_CDEFS := $(foreach t,$(VANZO_DEFINE_BY_NAME),$(if $(filter-out no NO none NONE false FALSE,$($(t))),-D$(t)))
+VANZO_INTERNAL_CDEFS += $(foreach t,$(VANZO_DEFINE_BY_VALUE),$(if $(filter-out no NO none NONE false FALSE,$($(t))),$(foreach v,$(shell echo $($(t)) | tr '[a-z]' '[A-Z]'),-D$(v))))
+VANZO_INTERNAL_CDEFS += $(foreach t,$(VANZO_DEFINE_BY_NAME_VALUE),$(if $(filter-out no NO none NONE false FALSE,$($(t))),-D$(t)=\"$($(t))\"))
 
-#io boost
-obj-y += io_boost/
 
-#add XLLWHLSE-35 by hao.wu2 20180227 start
-obj-$(CONFIG_TRANSSION_PEN)      +=transsion_pen/
-#add XLLWHLSE-35 by hao.wu2 20180227 end
-
+subdir-ccflags-y += $(VANZO_INTERNAL_CDEFS)
+subdir-ccflags-y += $(MTK_INTERNAL_CDEFS)
+endif
+# End of Vanzo:yucheng
+# Vanzo:yangbinbin on: Mon, 24 Oct 2016 16:40:39 +0800
+# add hall
+ifneq ($(strip $(CUSTOM_KERNEL_HALL)),)
+    obj-y += hall/
+endif
+# End of Vanzo: yangbinbin

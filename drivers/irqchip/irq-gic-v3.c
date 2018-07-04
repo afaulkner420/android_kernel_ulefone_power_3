@@ -299,7 +299,6 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 	if (irq < 16)
 		return -EINVAL;
 
-#ifndef CONFIG_MTK_SYSIRQ
 	/* setup polarity registers */
 	if (type & (IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING))
 		_mt_irq_set_polarity(irq,
@@ -307,12 +306,7 @@ static int gic_set_type(struct irq_data *d, unsigned int type)
 	else if (type & (IRQF_TRIGGER_HIGH | IRQF_TRIGGER_LOW))
 		_mt_irq_set_polarity(irq,
 			(type & IRQF_TRIGGER_LOW) ? 0 : 1);
-#else
-		/* SPIs have restrictions on the supported types */
-	if (irq >= 32 && type != IRQ_TYPE_LEVEL_HIGH &&
-			type != IRQ_TYPE_EDGE_RISING)
-		return -EINVAL;
-#endif
+
 	if (gic_irq_in_rdist(d)) {
 		base = gic_data_rdist_sgi_base();
 		rwp_wait = gic_redist_wait_for_rwp;

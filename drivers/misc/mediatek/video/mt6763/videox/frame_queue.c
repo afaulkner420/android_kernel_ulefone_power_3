@@ -138,20 +138,17 @@ static int frame_wait_all_fence(struct disp_frame_cfg_t *cfg)
 	int session_id = cfg->session_id;
 	unsigned int present_fence_idx = cfg->present_fence_idx;
 	static int cnt;
-
 	/* wait present fence */
 	if (cfg->prev_present_fence_struct) {
 		tmp = _do_wait_fence((struct sync_fence **)&cfg->prev_present_fence_struct,
-					session_id, disp_sync_get_present_timeline_id(session_id),
+					session_id, disp_sync_get_present_timeline_id(),
 					cfg->prev_present_fence_fd, present_fence_idx, present_fence_idx);
 
 		if (tmp) {
 			DISPERR("wait present fence fail! cnt=%d\n", cnt);
 			cnt++;
-#if 0
 			if (disp_helper_get_option(DISP_OPT_FENCE_TIMEOUT_AEE) && (cnt == 1))
-				disp_aee_print_with_ftrace("wait present fence fail!\n");
-#endif
+				disp_aee_print("wait present fence fail!\n");
 			ret = -1;
 		}
 	}
@@ -305,17 +302,12 @@ struct frame_queue_t *frame_queue_node_create(void)
 	return framequeue;
 }
 
-void frame_queue_node_recycle(struct frame_queue_t *framequeue)
+void frame_queue_node_destroy(struct frame_queue_t *framequeue)
 {
+	disp_input_free_dirty_roi(&framequeue->frame_cfg);
 	mutex_lock(&framequeue_pool_lock);
 	list_add_tail(&framequeue->link, &framequeue_pool_head);
 	mutex_unlock(&framequeue_pool_lock);
-}
-
-void frame_queue_node_destroy(struct frame_queue_t *framequeue)
-{
-	frame_queue_node_recycle(framequeue);
-	disp_input_free_dirty_roi(&framequeue->frame_cfg);
 }
 
 static int fence_wait_worker_func(void *data)

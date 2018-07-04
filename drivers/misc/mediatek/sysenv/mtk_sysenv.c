@@ -106,11 +106,6 @@ env_proc_write(struct file *file, const char __user *buf, size_t size, loff_t *p
 {
 	u8 *buffer = NULL;
 	int ret = 0, i, v_index = 0;
-	if (size > CFG_ENV_DATA_SIZE) {
-		ret = -ERANGE;
-		pr_err("[%s]break for size too large\n", MODULE_NAME);
-		goto fail_malloc;
-	}
 
 	buffer = kzalloc(size+1, GFP_KERNEL);
 	if (!buffer) {
@@ -479,7 +474,7 @@ static int send_sysenv_msg(int pid, int seq, void *payload, int payload_len)
 {
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
-	int size = payload_len;
+	int size = payload_len+1;
 	int len = NLMSG_SPACE(size);
 	void *data;
 	int ret;

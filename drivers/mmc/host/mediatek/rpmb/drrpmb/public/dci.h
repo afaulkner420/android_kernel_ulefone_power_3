@@ -45,16 +45,16 @@ typedef uint32_t dciReturnCode_t;
 /**
  * DCI command header.
  */
-struct dciCommandHeader_t {
+typedef struct{
 	dciCommandId_t commandId; /**< Command ID */
-};
+} dciCommandHeader_t;
 
 /**
  * DCI response header.
  */
-struct dciResponseHeader_t {
+typedef struct{
 	dciResponseId_t     responseId; /**< Response ID (must be command ID | RSP_ID_MASK )*/
 	dciReturnCode_t     returnCode; /**< Return code of command */
-};
+} dciResponseHeader_t;
 
 #endif

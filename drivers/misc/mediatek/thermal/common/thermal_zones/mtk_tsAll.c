@@ -221,15 +221,15 @@ static void mtkts_allts_start_timer(void)
 		if (!g_tsData[i].isTimerCancelled)
 			continue;
 
+		g_tsData[i].isTimerCancelled = 0;
 
 		if (down_trylock(&g_tsData[i].sem_mutex))
 			continue;
 
-		if (g_tsData[i].thz_dev != NULL && g_tsData[i].interval != 0) {
+		if (g_tsData[i].thz_dev != NULL && g_tsData[i].interval != 0)
 			mod_delayed_work(system_freezable_power_efficient_wq, &(g_tsData[i].thz_dev->poll_queue),
 				round_jiffies(msecs_to_jiffies(1000)));
-			g_tsData[i].isTimerCancelled = 0;
-		}
+
 		up(&g_tsData[i].sem_mutex);
 		/*1000 = 1sec */
 	}
@@ -302,7 +302,7 @@ static ssize_t tz ## num ## _proc_write(struct file *file, const char __user *bu
 	pTempD->desc[len] = '\0';\
 \
 	i = sscanf(pTempD->desc,	\
-"%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",\
+		"%d %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d %d %19s %d",\
 		&pTempD->num_trip,	\
 		&pTempD->trip[0], &pTempD->t_type[0], pTempD->bind[0],	\
 		&pTempD->trip[1], &pTempD->t_type[1], pTempD->bind[1],	\

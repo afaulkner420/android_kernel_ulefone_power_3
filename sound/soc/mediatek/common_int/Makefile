@@ -43,7 +43,6 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common/framework
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/audio_ipi/common/tasks/spkprotect
 endif
 # Common object
-obj-y += mtk-soc-speaker-amp.o
 obj-y += mtk-auddrv-afe.o mtk-auddrv-gpio.o
 obj-y += mtk-soc-afe-control.o mtk-soc-pcm-common.o
 obj-$(CONFIG_MTK_AUDIO_TUNNELING_SUPPORT) += mtk-soc-offload-common.o
@@ -53,7 +52,7 @@ obj-y += mtk-soc-pcm-voice-md1.o mtk-soc-pcm-voice-md2.o mtk-soc-pcm-voice-md1-b
 obj-y += mtk-soc-pcm-voice-usb.o mtk-soc-pcm-voice-usb-echoref.o
 obj-y += mtk-soc-pcm-dl1-i2s0.o mtk-soc-pcm-dl1-i2s0Dl1.o mtk-soc-pcm-i2s0-awb.o
 #obj-y += mtk-soc-pcm-hdmi.o
-obj-y += mtk-soc-pcm-uldlloopback.o mtk-soc-pcm-dl2.o mtk-soc-pcm-deep-buffer-dl.o
+obj-y += mtk-soc-pcm-uldlloopback.o mtk-soc-pcm-dl2.o
 #obj-y += mtk-soc-pcm-mod-dai.o
 #obj-y += mtk-soc-pcm_anc.o
 #obj-y += mtk-soc-pcm-voice-ultra.o

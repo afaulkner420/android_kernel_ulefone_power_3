@@ -21,19 +21,10 @@ endif
 
 ifeq ($(CONFIG_MACH_MT6799),y)
   ccflags-y += -DJPEG_DEC_DRIVER
-  ccflags-y += -DSMI_CG_SUPPORT
 endif
 
-ifeq ($(CONFIG_MACH_MT6739),y)
-  ccflags-y += -DSMI_CG_SUPPORT
-endif
-
-ifeq ($(CONFIG_MACH_MT6771),y)
-  ccflags-y += -DSMI_CG_SUPPORT
-endif
-
-ifeq ($(CONFIG_MACH_MT6775),y)
-  ccflags-y += -DSMI_CG_SUPPORT
+ifeq ($(CONFIG_MACH_MT6799),y)
+  ccflags-y += -DJPEG_DRV_MT6799
 endif
 
 ccflags-y += -I$(srctree)/drivers/misc/mediatek/smi/

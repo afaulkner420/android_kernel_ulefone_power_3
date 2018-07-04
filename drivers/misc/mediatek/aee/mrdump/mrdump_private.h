@@ -58,16 +58,7 @@ struct mrdump_platform {
 
 struct pt_regs;
 
-extern struct mrdump_rsvmem_block mrdump_sram_cb;
-extern struct mrdump_control_block *mrdump_cblock;
-extern const unsigned long kallsyms_addresses[] __weak;
-extern const u8 kallsyms_names[] __weak;
-extern const u8 kallsyms_token_table[] __weak;
-extern const u16 kallsyms_token_index[] __weak;
-extern const unsigned long kallsyms_markers[] __weak;
-extern const unsigned long kallsyms_num_syms
-__attribute__((weak, section(".rodata")));
-
+extern struct mrdump_control_block mrdump_cblock;
 
 void mrdump_cblock_init(void);
 
@@ -78,7 +69,6 @@ void mrdump_save_current_backtrace(struct pt_regs *regs);
 extern int mrdump_rsv_conflict;
 extern void __disable_dcache__inner_flush_dcache_L1__inner_flush_dcache_L2(void);
 extern void __inner_flush_dcache_all(void);
-extern void mrdump_mini_add_entry(unsigned long addr, unsigned long size);
 
 static inline void mrdump_mini_save_regs(struct pt_regs *regs)
 {
@@ -117,8 +107,4 @@ static inline void mrdump_mini_save_regs(struct pt_regs *regs)
 		      "mrs %0, cpsr\n":"=r" (regs->uregs[16]) : "r"(regs) : "memory");
 #endif
 }
-
-/* dedicated reboot flow for exception */
-extern void aee_exception_reboot(void);
-
 #endif /* __MRDUMP_PRIVATE_H__ */

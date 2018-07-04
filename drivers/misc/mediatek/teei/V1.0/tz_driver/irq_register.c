@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 MICROTRUST Incorporated
+ * Copyright (c) 2015-2016 MICROTRUST Incorporated
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -69,8 +69,7 @@ void nt_sched_t_call(void)
 
 	retVal = add_work_entry(SCHED_CALL, NULL);
 	if (retVal != 0)
-		IMSG_ERROR("[%s][%d] add_work_entry function failed!\n",
-		 __func__, __LINE__);
+		IMSG_ERROR("[%s][%d] add_work_entry function failed!\n", __func__, __LINE__);
 
 
 }
@@ -206,7 +205,7 @@ void secondary_load_func(void)
 	uint64_t smc_type = 2;
 
 	Flush_Dcache_By_Area((unsigned long)boot_vfs_addr, (unsigned long)boot_vfs_addr + VFS_SIZE);
-	/* IMSG_DEBUG("[%s][%d]: %s end.\n", __func__, __LINE__, __func__); */
+	IMSG_DEBUG("[%s][%d]: %s end.\n", __func__, __LINE__, __func__);
 	n_ack_t_load_img(&smc_type, 0, 0);
 	while (smc_type == 0x54)
 		nt_sched_t(&smc_type);

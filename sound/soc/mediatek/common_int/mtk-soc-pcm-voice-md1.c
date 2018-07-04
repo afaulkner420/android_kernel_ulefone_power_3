@@ -77,7 +77,7 @@ bool get_voice_status(void)
 }
 EXPORT_SYMBOL(get_voice_status);
 
-static struct audio_digital_pcm  Voice1Pcm = {
+static AudioDigitalPCM  Voice1Pcm = {
 	.mTxLchRepeatSel = Soc_Aud_TX_LCH_RPT_TX_LCH_NO_REPEAT,
 	.mVbt16kModeSel  = Soc_Aud_VBT_16K_MODE_VBT_16K_MODE_DISABLE,
 	.mExtModemSel = Soc_Aud_EXT_MODEM_MODEM_2_USE_INTERNAL_MODEM,
@@ -117,10 +117,7 @@ static struct snd_pcm_hardware mtk_pcm_hardware = {
 	.fifo_size =        0,
 };
 
-//modify OSODEV-1176 by haiping.bai 20171123 start
-volatile int speech_md_usage_control;
-//modify OSODEV-1176 by haiping.bai 20171123 end
-
+static int speech_md_usage_control;
 static const char * const speech_md_usage[] = {"Off", "On"};
 static const struct soc_enum Audio_Speech_Enum[] = {
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(speech_md_usage), speech_md_usage),
@@ -206,10 +203,8 @@ static int mtk_voice_close(struct snd_pcm_substream *substream)
 			Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S1_DAC);
 	SetIntfConnection(Soc_Aud_InterCon_DisConnect,
 			Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S1_DAC_2);
-	//modify XLLWHLSE-1 by xumin.yan 20180119 start
-        SetIntfConnection(Soc_Aud_InterCon_DisConnect,
-                        Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S3);
-	//modify XLLWHLSE-1 by xumin.yan 20180119 end
+
+
 	SetI2SDacEnable(false);
 	SetModemPcmEnable(MODEM_1, false);
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, false);
@@ -293,10 +288,7 @@ static int mtk_voice1_prepare(struct snd_pcm_substream *substream)
 			Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S1_DAC);
 	SetIntfConnection(Soc_Aud_InterCon_Connection,
 			Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S1_DAC_2);
-	//modify XLLWHLSE-1 by xumin.yan 20180119 start
-        SetIntfConnection(Soc_Aud_InterCon_Connection,
-                        Soc_Aud_AFE_IO_Block_MODEM_PCM_2_I_CH1, Soc_Aud_AFE_IO_Block_I2S3);
-	//modify XLLWHLSE-1 by xumin.yan 20180119 end
+
 	/* start I2S DAC out */
 	SetI2SDacOut(substream->runtime->rate, false, Soc_Aud_I2S_WLEN_WLEN_16BITS);
 	SetMemoryPathEnable(Soc_Aud_Digital_Block_I2S_OUT_DAC, true);

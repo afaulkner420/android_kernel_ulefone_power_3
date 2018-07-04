@@ -19,7 +19,7 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
-#include <linux/atomic.h>
+#include <asm/atomic.h>
 
 #include "kd_camera_typedef.h"
 #include "kd_camera_hw.h"
@@ -38,7 +38,7 @@
 
 /****************************Modify Following Strings for Debug****************************/
 #define PFX "imx386_camera_primax"
-#define LOG_INF_LOD(format, args...)    pr_info(PFX "[%s] " format, __func__, ##args)
+#define LOG_INF_LOD(format, args...)    pr_info(PFX "[%s] " format, __FUNCTION__, ##args)
 #define LOG_1 LOG_INF("IMX386,MIPI 4LANE\n")
 #define SENSORDB LOG_INF
 /****************************   Modify end    *******************************************/
@@ -447,28 +447,17 @@ static void imx386_set_pdaf_reg_setting(MUINT32 regNum, kal_uint16 *regDa)
 static void load_imx386_spc_data(void)
 {
 #if 1
-	unsigned int start_reg = SENSOR_SPC_START_ADDR; /* 0x7d4c */
+	unsigned int start_reg = SENSOR_SPC_START_ADDR;
 	char puSendCmd[SPC_DATA_SIZE + 2];
 	kal_uint32 tosend;
 
-	/* RG_SPC_GAIN_TABLE_0: 0x7d4c - 0x7d7b */
 	tosend = 0;
 	puSendCmd[tosend++] = (char)(start_reg >> 8);
 	puSendCmd[tosend++] = (char)(start_reg & 0xFF);
-	memcpy((void *)&puSendCmd[tosend], (void *)(imx386_primax_otp_buf + (spc_start_addr - OTP_START_ADDR)),
-	       (SPC_DATA_SIZE/2));
-	tosend += (SPC_DATA_SIZE/2);
-	iBurstWriteReg_multi(puSendCmd, tosend, imgsensor.i2c_write_id, tosend, imgsensor_info.i2c_speed);
 
-	/* RG_SPC_GAIN_TABLE_1: 0x7d80 - 0x7daf */
-	tosend = 0;
-	start_reg = SENSOR_SPC_START_ADDR + (SPC_DATA_SIZE/2) + 4; /* 0x7d80 */
-	puSendCmd[tosend++] = (char)(start_reg >> 8);
-	puSendCmd[tosend++] = (char)(start_reg & 0xFF);
-	memcpy((void *)&puSendCmd[tosend],
-	       (void *)(imx386_primax_otp_buf + (spc_start_addr - OTP_START_ADDR) + (SPC_DATA_SIZE/2)),
-	       (SPC_DATA_SIZE/2));
-	tosend += (SPC_DATA_SIZE/2);
+	memcpy((void *)&puSendCmd[tosend], (void *)(imx386_primax_otp_buf + (spc_start_addr - OTP_START_ADDR)),
+	       SPC_DATA_SIZE);
+	tosend += SPC_DATA_SIZE;
 	iBurstWriteReg_multi(puSendCmd, tosend, imgsensor.i2c_write_id, tosend, imgsensor_info.i2c_speed);
 
 #else
@@ -2901,14 +2890,14 @@ static kal_uint32 get_sensor_temperature(void)
 	return temperature_convert;
 }
 static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
-				  UINT8 *feature_para, UINT32 *feature_para_len)
+                             UINT8 *feature_para,UINT32 *feature_para_len)
 {
-	UINT16 *feature_return_para_16 = (UINT16 *) feature_para;
-	UINT16 *feature_data_16 = (UINT16 *) feature_para;
-	UINT32 *feature_return_para_32 = (UINT32 *) feature_para;
-	UINT32 *feature_data_32 = (UINT32 *) feature_para;
+    UINT16 *feature_return_para_16=(UINT16 *) feature_para;
+    UINT16 *feature_data_16=(UINT16 *) feature_para;
+    UINT32 *feature_return_para_32=(UINT32 *) feature_para;
+    UINT32 *feature_data_32=(UINT32 *) feature_para;
 	INT32 *feature_return_para_i32 = (INT32 *) feature_para;
-	unsigned long long *feature_data = (unsigned long long *)feature_para;
+    unsigned long long *feature_data=(unsigned long long *) feature_para;
 
 	SENSOR_WINSIZE_INFO_STRUCT *wininfo;
 	SENSOR_VC_INFO_STRUCT *pvcinfo;
@@ -2930,7 +2919,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		set_shutter(*feature_data);
 		break;
 	case SENSOR_FEATURE_SET_NIGHTMODE:
-		night_mode((BOOL)*feature_data);
+		night_mode((BOOL) (*feature_data));
 		break;
 	case SENSOR_FEATURE_SET_GAIN:
 		set_gain((UINT16) *feature_data);
@@ -2958,7 +2947,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 		get_imgsensor_id(feature_return_para_32);
 		break;
 	case SENSOR_FEATURE_SET_AUTO_FLICKER_MODE:
-		set_auto_flicker_mode((BOOL)*feature_data_16, *(feature_data_16 + 1));
+		set_auto_flicker_mode((BOOL) (*feature_data_16), *(feature_data_16 + 1));
 		break;
 	case SENSOR_FEATURE_SET_MAX_FRAME_RATE_BY_SCENARIO:
 		set_max_framerate_by_scenario((MSDK_SCENARIO_ID_ENUM) *feature_data,
@@ -2969,7 +2958,7 @@ static kal_uint32 feature_control(MSDK_SENSOR_FEATURE_ENUM feature_id,
 						  (MUINT32 *) (uintptr_t) (*(feature_data + 1)));
 		break;
 	case SENSOR_FEATURE_SET_TEST_PATTERN:
-		set_test_pattern_mode((BOOL)*feature_data);
+		set_test_pattern_mode((BOOL) (*feature_data));
 		break;
 	case SENSOR_FEATURE_GET_TEST_PATTERN_CHECKSUM_VALUE:	/* for factory mode auto testing */
 		*feature_return_para_32 = imgsensor_info.checksum_value;

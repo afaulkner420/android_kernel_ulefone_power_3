@@ -231,7 +231,6 @@ static int debug_shrinker_show(struct seq_file *s, void *unused)
 	sc.gfp_mask = -1;
 	sc.nr_to_scan = 0;
 	sc.nid = 0;
-	sc.memcg = 0;
 
 	down_read(&shrinker_rwsem);
 	list_for_each_entry(shrinker, &shrinker_list, list) {
@@ -322,7 +321,6 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 	int nid = shrinkctl->nid;
 	long batch_size = shrinker->batch ? shrinker->batch
 					  : SHRINK_BATCH;
-	long scanned = 0, next_deferred;
 
 	freeable = shrinker->count_objects(shrinker, shrinkctl);
 	if (freeable == 0)
@@ -344,9 +342,7 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 		pr_err("shrink_slab: %pF negative objects to delete nr=%ld\n",
 		       shrinker->scan_objects, total_scan);
 		total_scan = freeable;
-		next_deferred = nr;
-	} else
-		next_deferred = total_scan;
+	}
 
 	/*
 	 * We need to avoid excessive windup on filesystem shrinkers
@@ -403,22 +399,17 @@ static unsigned long do_shrink_slab(struct shrink_control *shrinkctl,
 
 		count_vm_events(SLABS_SCANNED, nr_to_scan);
 		total_scan -= nr_to_scan;
-		scanned += nr_to_scan;
 
 		cond_resched();
 	}
 
-	if (next_deferred >= scanned)
-		next_deferred -= scanned;
-	else
-		next_deferred = 0;
 	/*
 	 * move the unused scan count back into the shrinker in a
 	 * manner that handles concurrent updates. If we exhausted the
 	 * scan, there is no need to do an update.
 	 */
-	if (next_deferred > 0)
-		new_nr = atomic_long_add_return(next_deferred,
+	if (total_scan > 0)
+		new_nr = atomic_long_add_return(total_scan,
 						&shrinker->nr_deferred[nid]);
 	else
 		new_nr = atomic_long_read(&shrinker->nr_deferred[nid]);
@@ -2011,60 +2002,6 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 	return shrink_inactive_list(nr_to_scan, lruvec, sc, lru);
 }
 
-#ifdef CONFIG_MTK_GMO_RAM_OPTIMIZE
-/* threshold of swapin and out */
-static int swpinout_threshold = 3000;
-module_param_named(threshold, swpinout_threshold, int, S_IRUGO | S_IWUSR);
-static int vmscan_swap_file_ratio = 1;
-module_param_named(swap_file_ratio, vmscan_swap_file_ratio, int, S_IRUGO | S_IWUSR);
-static bool is_swap_thrashing(void)
-{
-	static unsigned long prev_time;
-	static unsigned long prev_swpinout;
-	int cpu;
-	bool thrashing = false;
-	unsigned long swpinout = 0;
-
-	if (prev_time == 0)
-		prev_time = jiffies;
-
-	if (time_after(jiffies, prev_time + (HZ >> 2))) {
-		for_each_online_cpu(cpu) {
-			struct vm_event_state *this = &per_cpu(vm_event_states, cpu);
-
-			swpinout += this->event[PSWPIN] + this->event[PSWPOUT];
-		}
-
-		if (((swpinout - prev_swpinout) / (jiffies - prev_time + 1) * HZ) >
-		    swpinout_threshold)
-			thrashing = true;
-		else
-			thrashing = false;
-
-		prev_swpinout = swpinout;
-		prev_time = jiffies;
-	}
-
-	return thrashing;
-}
-
-static unsigned long get_adaptive_anon_prio(int swappiness, unsigned long anon,
-					    unsigned long file, unsigned long *file_prio)
-{
-	unsigned long anon_prio;
-
-	if (likely(vmscan_swap_file_ratio) && !is_swap_thrashing()) {
-		anon_prio = (swappiness * anon) / (anon + file + 1);
-		*file_prio = (unsigned long)(200 - swappiness) * file / (anon + file + 1);
-	} else {
-		anon_prio = swappiness;
-		*file_prio = (unsigned long)(200 - swappiness);
-	}
-
-	return anon_prio;
-}
-#endif
-
 enum scan_balance {
 	SCAN_EQUAL,
 	SCAN_FRACT,
@@ -2202,11 +2139,6 @@ static void get_scan_count(struct lruvec *lruvec, int swappiness,
 		get_lru_size(lruvec, LRU_INACTIVE_ANON);
 	file  = get_lru_size(lruvec, LRU_ACTIVE_FILE) +
 		get_lru_size(lruvec, LRU_INACTIVE_FILE);
-
-#ifdef CONFIG_MTK_GMO_RAM_OPTIMIZE
-	/* Compute anon_prio adaptively */
-	anon_prio = get_adaptive_anon_prio(swappiness, anon, file, &file_prio);
-#endif
 
 	spin_lock_irq(&zone->lru_lock);
 	if (unlikely(reclaim_stat->recent_scanned[0] > anon / 4)) {
@@ -2428,11 +2360,9 @@ static void shrink_lruvec(struct lruvec *lruvec, int swappiness,
 	/* Record the original scan target for proportional adjustments later */
 	memcpy(targets, nr, sizeof(nr));
 
-#ifndef CONFIG_MTK_GMO_RAM_OPTIMIZE
 	/* Give a chance to migrate anon pages */
 	if (IS_ENABLED(CONFIG_ZONE_MOVABLE_CMA) && nr[LRU_INACTIVE_ANON] == 0)
 		nr[LRU_INACTIVE_ANON] = SWAP_CLUSTER_MAX;
-#endif
 
 	/*
 	 * Global reclaiming within direct reclaim at DEF_PRIORITY is a normal
@@ -2447,6 +2377,8 @@ static void shrink_lruvec(struct lruvec *lruvec, int swappiness,
 	 */
 	scan_adjusted = (global_reclaim(sc) && !current_is_kswapd() &&
 			 sc->priority == DEF_PRIORITY);
+
+	init_tlb_ubc();
 
 	blk_start_plug(&plug);
 	while (nr[LRU_INACTIVE_ANON] || nr[LRU_ACTIVE_FILE] ||
@@ -2789,7 +2721,7 @@ static bool shrink_zones(struct zonelist *zonelist, struct scan_control *sc)
 			if (zone_reclaimable_pages(zone) == 0)
 				continue;
 
-		classzone_idx = gfp_zone(sc->gfp_mask);
+		classzone_idx = requested_highidx;
 		while (!populated_zone(zone->zone_pgdat->node_zones +
 							classzone_idx))
 			classzone_idx--;
@@ -3178,9 +3110,7 @@ unsigned long try_to_free_mem_cgroup_pages(struct mem_cgroup *memcg,
 					    sc.may_writepage,
 					    sc.gfp_mask);
 
-	current->flags |= PF_MEMALLOC;
 	nr_reclaimed = do_try_to_free_pages(zonelist, &sc);
-	current->flags &= ~PF_MEMALLOC;
 
 	trace_mm_vmscan_memcg_reclaim_end(nr_reclaimed);
 

@@ -37,25 +37,17 @@ extern int spm_for_gps_flag;
 
 enum {
 	SPM_ARGS_SPMFW_IDX = 0,
-	SPM_ARGS_SPMFW_INIT,
-	SPM_ARGS_PCM_WDT,
-	SPM_ARGS_SUSPEND,
-	SPM_ARGS_SUSPEND_FINISH,
-	SPM_ARGS_SODI,
-	SPM_ARGS_SODI_FINISH,
-	SPM_ARGS_DPIDLE,
-	SPM_ARGS_DPIDLE_FINISH,
 	SPM_ARGS_NUM,
 };
 
-enum {
+typedef enum {
 	WR_NONE = 0,
 	WR_UART_BUSY = 1,
 	WR_PCM_ASSERT = 2,
 	WR_PCM_TIMER = 3,
 	WR_WAKE_SRC = 4,
 	WR_UNKNOWN = 5,
-};
+} wake_reason_t;
 
 enum mt_sodi_fw {
 	SODI_FW_LPM	= (1 << 0),	/*  1600/1.0  : 1270/0.9 : 1066/0.9 */
@@ -128,10 +120,6 @@ extern void unmask_edge_trig_irqs_for_cirq(void);
 extern bool is_sspm_ipi_lock_spm(void);
 extern void sspm_ipi_lock_spm_scenario(int start, int id, int opt, const char *name);
 #endif /* CONFIG_MTK_TINYSYS_SSPM_SUPPORT */
-
-#if defined(CONFIG_MACH_MT6775)
-extern bool is_big_buck_pdn_by_spm(void);
-#endif /* CONFIG_MACH_MT6775 */
 
 /**************************************
  * Macro and Inline

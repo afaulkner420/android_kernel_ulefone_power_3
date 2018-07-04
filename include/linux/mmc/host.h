@@ -395,7 +395,6 @@ struct mmc_host {
 
 	unsigned long		state;
 	wait_queue_head_t	cmp_que;
-	wait_queue_head_t	cmdq_que;
 	struct mmc_request	*done_mrq;
 	struct mmc_command	chk_cmd;
 	struct mmc_request	chk_mrq;
@@ -490,9 +489,6 @@ void mmc_request_done(struct mmc_host *, struct mmc_request *);
 void mmc_handle_queued_request(struct mmc_host *host);
 int mmc_blk_end_queued_req(struct mmc_host *host,
 	struct mmc_async_req *areq, int index, int status);
-/* add for reset emmc when error happen */
-extern int current_mmc_part_type;
-extern int emmc_resetting_when_cmdq;
 #endif
 
 static inline void mmc_signal_sdio_irq(struct mmc_host *host)

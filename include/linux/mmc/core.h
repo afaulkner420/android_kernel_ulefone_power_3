@@ -143,10 +143,9 @@ struct mmc_request {
 	struct list_head	hlist;
 #endif
 
-#if defined(CONFIG_MTK_HW_FDE) || defined(CONFIG_HIE)
-	unsigned int            bi_hw_fde;
-	unsigned int            bi_key_idx;
-	bool			is_mmc_req; /* request is from mmc layer */
+#ifdef CONFIG_MTK_HW_FDE
+	unsigned int		bi_hw_fde;
+	unsigned int		bi_key_idx;
 #endif
 	ktime_t			io_start;
 #ifdef CONFIG_BLOCK
@@ -212,7 +211,9 @@ extern int mmc_flush_cache(struct mmc_card *);
 
 extern int mmc_detect_card_removed(struct mmc_host *host);
 
+#if defined(CONFIG_MMC_FFU)
 extern int mmc_reinit_oldcard(struct mmc_host *host);
+#endif
 
 #ifdef CONFIG_MTK_EMMC_CQ_SUPPORT
 extern int mmc_blk_cmdq_switch(struct mmc_card *card, int enable);
