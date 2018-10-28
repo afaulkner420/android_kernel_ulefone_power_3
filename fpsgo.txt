@@ -1,0 +1,12 @@
+drivers/misc/mediatek/performance/fpsgo/fstb/fstb_usedext.h:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo/fbt/src/fbt_cpu.c:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo/fbt/src/xgf.c:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo_v2/fpsgo_main.c:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo_v2/base/src/fpsgo_base.c:int fpsgo_has_bypass(void)
+drivers/misc/mediatek/performance/fpsgo_v2/base/include/fpsgo_base.h:int fpsgo_has_bypass(void);
+drivers/misc/mediatek/performance/fpsgo_v2/fstb/fstb_usedext.h:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo_v2/fbt/src/mini_top.c:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo_v2/fbt/src/fbt_cpu.c:#include <trace/events/fpsgo.h>
+drivers/misc/mediatek/performance/fpsgo_v2/fbt/src/fbt_cpu.c:	has_bypass = fpsgo_has_bypass();
+drivers/misc/mediatek/performance/fpsgo_v2/fbt/src/xgf.c:#include <trace/events/fpsgo.h>
+include/uapi/linux/Kbuild:header-y += fpsgo.h

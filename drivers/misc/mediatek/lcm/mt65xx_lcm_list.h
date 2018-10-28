@@ -285,6 +285,7 @@ extern LCM_DRIVER td4310_tft60_hxgd_lfhd_lcm_drv;
 extern LCM_DRIVER td4310_auo60_wcl_lfhd_lcm_drv;
 extern LCM_DRIVER oppo_tianma_td4310_fhdp_dsi_vdo_rt5081_lcm_drv;
 extern LCM_DRIVER rm69297_lfhd_dsi_vdo_boe_lcm_drv;
+extern LCM_DRIVER hct_td4310_dsi_vdo_fhd_auo_60_by_lcm_drv;
 
 
 #ifdef BUILD_LK

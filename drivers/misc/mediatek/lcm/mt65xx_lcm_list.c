@@ -1087,6 +1087,9 @@ LCM_DRIVER *lcm_driver_list[] = {
 	&oppo_tianma_td4310_fhdp_dsi_vdo_rt5081_lcm_drv,
 #endif
 
+#if defined(HCT_TD4310_DSI_VDO_FHD_AUO_60_BY)
+	&hct_td4310_dsi_vdo_fhd_auo_60_by_lcm_drv,
+#endif
 };
 
 unsigned char lcm_name_list[][128] = {
